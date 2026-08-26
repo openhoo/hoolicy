@@ -1,0 +1,64 @@
+version: 1
+name: supply-chain
+release: 0.1.0
+description: Artifact source allowlists and expiring security exception policies.
+parameters:
+  registries:
+    type: string_list
+    required: true
+    description: OCI registries approved for builds and deployments.
+  npm_registries:
+    type: string_list
+    required: true
+    description: npm registries approved for dependency resolution.
+  nuget_sources:
+    type: string_list
+    required: true
+    description: NuGet sources approved for dependency resolution.
+  require_image_digests:
+    type: bool
+    default: true
+    description: Require sha256 pins for literal OCI references.
+rules:
+  - id: supply-chain.approved-sources
+    title: Build inputs come only from approved artifact sources
+    description: Parses npm, NuGet, Dockerfile, JSON, and YAML source references instead of matching configuration indentation.
+    rationale: Repository-wide source allowlists reduce dependency-confusion and mutable-image risk while remaining reviewable in one place.
+    remediation: Mirror the dependency or image into an approved source, then replace the literal reference.
+    severity: error
+    kind: sources.allowed
+    files:
+      - '**/.npmrc'
+      - '**/nuget.config'
+      - '**/{Dockerfile,Containerfile}'
+      - '**/{Dockerfile,Containerfile}.*'
+      - '**/*.{json,yaml,yml}'
+    exclude:
+      - '.hoolicy/vendor/**'
+    spec:
+      registries: "{{ registries }}"
+      npm: "{{ npm_registries }}"
+      nuget: "{{ nuget_sources }}"
+      requireDigest: "{{ require_image_digests }}"
+      message: Artifact source is outside the approved supply chain
+  - id: supply-chain.exception-lifecycle
+    title: Security exceptions are owned, justified, ticketed, and short-lived
+    description: Validates structured exception records and blocks missing, duplicate, overlong, or expired entries.
+    rationale: Permanent or anonymous suppressions silently turn a temporary risk decision into an undocumented security baseline.
+    remediation: Narrow the exception and add its owner, HTTPS ticket, rationale, creation date, and expiry no later than 90 days.
+    severity: error
+    kind: exceptions.lifecycle
+    files:
+      - '.trivyignore.yaml'
+    spec:
+      format: yaml
+      collection: vulnerabilities
+      idField: id
+      reasonField: statement
+      ownerField: owner
+      ticketField: ticket
+      createdField: created_at
+      expiresField: expired_at
+      required: [id, reason, owner, ticket, created, expires]
+      maximumDays: 90
+      message: Security exception violates lifecycle policy

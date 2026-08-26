@@ -1,0 +1,22 @@
+module github.com/openhoo/hoolicy
+
+go 1.26
+
+require (
+	cel.dev/cel-go v0.32.0
+	github.com/BurntSushi/toml v1.6.0
+	github.com/cucumber/gherkin/go/v30 v30.1.3
+	github.com/cucumber/messages/go/v24 v24.1.0
+	go.yaml.in/yaml/v3 v3.0.5
+)
+
+require (
+	cel.dev/expr v0.25.1 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
+	github.com/gofrs/uuid v4.4.0+incompatible // indirect
+	github.com/stretchr/testify v1.10.0 // indirect
+	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240826202546-f6391c0de4c7 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240826202546-f6391c0de4c7 // indirect
+	google.golang.org/protobuf v1.36.10 // indirect
+)

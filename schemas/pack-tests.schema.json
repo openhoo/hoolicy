@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/pack-tests.schema.json",
+  "title": "Hoolicy policy pack tests",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "cases"],
+  "properties": {
+    "version": { "const": 1 },
+    "parameters": { "type": "object" },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "rule", "outcome"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "rule": { "type": "string", "minLength": 1 },
+          "outcome": { "enum": ["pass", "fail"] },
+          "files": { "type": "object", "additionalProperties": { "type": "string" } },
+          "branch": { "type": "string" },
+          "mergeRequestTitle": { "type": "string" },
+          "parameters": { "type": "object" }
+        }
+      }
+    }
+  }
+}

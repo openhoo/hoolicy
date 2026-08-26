@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/hoolicy.schema.json",
+  "title": "Hoolicy project configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "project"],
+  "properties": {
+    "version": { "const": 1 },
+    "project": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "failOn": { "enum": ["info", "warning", "error"], "default": "error" },
+    "waivers": { "type": "string", "default": ".hoolicy/waivers.yaml" },
+    "parameters": { "type": "object" },
+    "packs": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "path"],
+            "properties": {
+              "name": { "$ref": "#/$defs/name" },
+              "path": { "type": "string" },
+              "with": { "type": "object" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "git", "ref"],
+            "properties": {
+              "name": { "$ref": "#/$defs/name" },
+              "git": { "type": "string" },
+              "ref": { "type": "string" },
+              "subdir": { "type": "string" },
+              "with": { "type": "object" }
+            }
+          }
+        ]
+      }
+    },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rule" }
+    }
+  },
+  "$defs": {
+    "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "description", "rationale", "remediation", "severity", "kind"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$" },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 },
+        "remediation": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "kind": {
+          "enum": ["files", "text", "structured.cel", "git.naming", "manifest.consistency", "sources.allowed", "exceptions.lifecycle", "i18n.parity", "gherkin.requirements"]
+        },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "exclude": { "type": "array", "items": { "type": "string" } },
+        "controls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["framework", "id"],
+            "properties": { "framework": { "type": "string" }, "id": { "type": "string" } }
+          }
+        },
+        "spec": { "type": "object" }
+      }
+    }
+  }
+}

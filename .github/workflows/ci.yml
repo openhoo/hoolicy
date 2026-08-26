@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - run: go test ./...
+
+  quality:
+    name: Policy and quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Formatting and module graph
+        run: |
+          test -z "$(gofmt -l .)"
+          go mod tidy
+          git diff --exit-code
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: Build and dogfood
+        run: |
+          mkdir -p dist
+          go build -trimpath -o dist/hoolicy ./cmd/hoolicy
+          dist/hoolicy validate
+          dist/hoolicy test packs/repository packs/supply-chain packs/product-quality
+          dist/hoolicy check
+      - name: Validate JSON schemas
+        run: jq empty schemas/*.json
+      - name: Build container
+        run: docker build --tag hoolicy:ci .

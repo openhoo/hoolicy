@@ -1,0 +1,7 @@
+.git
+.github
+.hoolicy
+dist
+coverage.out
+*.test
+*.prof

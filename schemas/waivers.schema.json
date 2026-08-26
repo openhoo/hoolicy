@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/waivers.schema.json",
+  "title": "Hoolicy waiver file",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "waivers"],
+  "properties": {
+    "version": { "const": 1 },
+    "waivers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "rule", "reason", "owner", "ticket", "created", "expires"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "rule": { "$ref": "#/$defs/id" },
+          "fingerprints": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+          "paths": { "type": "array", "items": { "type": "string" } },
+          "reason": { "type": "string", "minLength": 20 },
+          "owner": { "type": "string", "minLength": 1 },
+          "ticket": { "type": "string", "format": "uri", "pattern": "^https://" },
+          "created": { "type": "string", "format": "date" },
+          "expires": { "type": "string", "format": "date" }
+        },
+        "anyOf": [{ "required": ["fingerprints"] }, { "required": ["paths"] }]
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$" }
+  }
+}

@@ -1,0 +1,1 @@
+FROM registry.example.com/runtime/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

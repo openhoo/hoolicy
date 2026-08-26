@@ -1,0 +1,57 @@
+version: 1
+name: product-quality
+release: 0.1.0
+description: Translation parity and semantic Gherkin acceptance-criteria policies.
+parameters:
+  language_manifest:
+    type: string
+    required: true
+    description: JSON file defining supported language codes.
+  language_codes_pointer:
+    type: string
+    required: true
+    description: JSON pointer resolving to strings or objects with a code property.
+  locales_directory:
+    type: string
+    required: true
+    description: Directory containing one catalog directory per language.
+  feature_glob:
+    type: string
+    required: true
+    description: Gherkin feature file glob.
+  gherkin_language:
+    type: string
+    default: en
+    description: Expected Gherkin dialect.
+  required_scenario_tags:
+    type: string_list
+    required: true
+    description: Tags that must appear in at least one scenario per feature.
+rules:
+  - id: product-quality.translation-parity
+    title: Every supported language contains the same non-empty text keys
+    description: Flattens nested JSON catalogs and compares their complete key union against the language manifest.
+    rationale: Missing translations otherwise surface only at runtime and disproportionately affect users outside the default locale.
+    remediation: Add a reviewed non-empty translation for every reported language and key.
+    severity: error
+    kind: i18n.parity
+    spec:
+      manifest: "{{ language_manifest }}"
+      codesPointer: "{{ language_codes_pointer }}"
+      localesDirectory: "{{ locales_directory }}"
+      filename: translation.json
+      message: Public translation catalogs are incomplete
+  - id: product-quality.gherkin-coverage
+    title: Acceptance features contain required semantic scenario classes
+    description: Uses the official Gherkin parser to check dialect, scenario count, and required scenario tags.
+    rationale: Happy-path-only acceptance suites hide failure behavior and provide weak delivery evidence.
+    remediation: Add real scenarios carrying each missing tag; do not add unused tags merely to satisfy the check.
+    severity: error
+    kind: gherkin.requirements
+    files:
+      - "{{ feature_glob }}"
+    spec:
+      language: "{{ gherkin_language }}"
+      requiredTags: "{{ required_scenario_tags }}"
+      minimumScenarios: 2
+      message: Acceptance feature lacks required scenario coverage

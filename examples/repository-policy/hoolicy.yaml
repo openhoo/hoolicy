@@ -1,0 +1,42 @@
+version: 1
+project: repository-policy-example
+failOn: error
+rules:
+  - id: example.required-repository-files
+    title: Repository contains contributor guidance
+    description: Requires a README and contributor guide without asserting their exact prose.
+    rationale: Contributors need discoverable setup and delivery guidance.
+    remediation: Add the missing document with project-specific, reviewed instructions.
+    severity: error
+    kind: files
+    files: [README.md, CONTRIBUTING.md]
+    spec:
+      mode: count
+      minimum: 2
+      maximum: 2
+      message: README.md and CONTRIBUTING.md are required
+  - id: example.no-public-images
+    title: Container images come from the approved registry
+    description: Parses literal Dockerfile and structured image references.
+    rationale: Builds must use the reviewed artifact boundary.
+    remediation: Mirror the image into registry.example.com and pin the mirror reference.
+    severity: error
+    kind: sources.allowed
+    files: ['**/{Dockerfile,Containerfile}', '**/*.{yaml,yml,json}']
+    spec:
+      registries: [registry.example.com]
+      requireDigest: true
+      message: Image is outside the approved source boundary
+  - id: example.acceptance-coverage
+    title: Every feature demonstrates success and failure behavior
+    description: Parses German Gherkin and checks semantic scenario tags.
+    rationale: A happy path alone is not sufficient acceptance evidence.
+    remediation: Add a real failure scenario tagged @fehlerfall.
+    severity: error
+    kind: gherkin.requirements
+    files: [features/**/*.feature]
+    spec:
+      language: de
+      requiredTags: ['@happy-path', '@fehlerfall']
+      minimumScenarios: 2
+      message: Feature lacks required scenario coverage

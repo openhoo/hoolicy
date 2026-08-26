@@ -1,0 +1,45 @@
+version: 1
+parameters:
+  registries: [registry.example.com]
+  npm_registries: ['https://npm.example.com']
+  nuget_sources: ['https://nuget.example.com/v3/index.json']
+  require_image_digests: true
+cases:
+  - name: approved digest-pinned sources pass
+    rule: supply-chain.approved-sources
+    outcome: pass
+    files:
+      Dockerfile: |
+        FROM registry.example.com/runtime/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      .npmrc: |
+        registry=https://npm.example.com
+  - name: public mutable image fails
+    rule: supply-chain.approved-sources
+    outcome: fail
+    files:
+      Dockerfile: |
+        FROM docker.io/library/alpine:latest
+  - name: narrow current exception passes
+    rule: supply-chain.exception-lifecycle
+    outcome: pass
+    files:
+      .trivyignore.yaml: |
+        vulnerabilities:
+          - id: CVE-2025-0001
+            statement: Upstream image owner must publish the patched image.
+            owner: platform-team
+            ticket: https://issues.example.com/SEC-1
+            created_at: 2025-12-15
+            expired_at: 2026-02-15
+  - name: expired exception fails
+    rule: supply-chain.exception-lifecycle
+    outcome: fail
+    files:
+      .trivyignore.yaml: |
+        vulnerabilities:
+          - id: CVE-2025-0001
+            statement: Upstream image owner must publish the patched image.
+            owner: platform-team
+            ticket: https://issues.example.com/SEC-1
+            created_at: 2025-01-01
+            expired_at: 2025-03-01

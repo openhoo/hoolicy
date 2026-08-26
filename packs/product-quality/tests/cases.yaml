@@ -1,0 +1,48 @@
+version: 1
+parameters:
+  language_manifest: config/languages.json
+  language_codes_pointer: /languages
+  locales_directory: locales
+  feature_glob: features/**/*.feature
+  gherkin_language: en
+  required_scenario_tags: ['@happy-path', '@failure']
+cases:
+  - name: complete catalogs pass
+    rule: product-quality.translation-parity
+    outcome: pass
+    files:
+      config/languages.json: '{"languages":[{"code":"de"},{"code":"en"}]}'
+      locales/de/translation.json: '{"title":"Hallo","nested":{"save":"Speichern"}}'
+      locales/en/translation.json: '{"title":"Hello","nested":{"save":"Save"}}'
+  - name: empty translated key fails
+    rule: product-quality.translation-parity
+    outcome: fail
+    files:
+      config/languages.json: '{"languages":["de","en"]}'
+      locales/de/translation.json: '{"title":"Hallo"}'
+      locales/en/translation.json: '{"title":""}'
+  - name: happy and failure scenarios pass
+    rule: product-quality.gherkin-coverage
+    outcome: pass
+    files:
+      features/example.feature: |
+        Feature: Policy evaluation
+          @happy-path
+          Scenario: Valid policy
+            Given a valid policy
+            Then it passes
+
+          @failure
+          Scenario: Invalid policy
+            Given an invalid policy
+            Then it fails
+  - name: happy-path-only feature fails
+    rule: product-quality.gherkin-coverage
+    outcome: fail
+    files:
+      features/example.feature: |
+        Feature: Policy evaluation
+          @happy-path
+          Scenario: Valid policy
+            Given a valid policy
+            Then it passes
