@@ -1,0 +1,15 @@
+branches:
+  - main
+packages:
+  - name: hoolicy
+    path: .
+    type: version-file
+    manifest: VERSION
+    changelog: CHANGELOG.md
+    scopes:
+      - hoolicy
+hooks:
+  afterVersion:
+    - go run ./scripts/sync_release_version.go
+github:
+  releases: true

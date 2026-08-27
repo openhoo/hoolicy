@@ -14,6 +14,6 @@ go run ./cmd/hoolicy check
 
 Run `gofmt` on Go changes. Add positive and negative tests for new behavior. A new built-in pack rule requires both pass and fail fixtures. Security-sensitive path, pack, waiver, or fix changes need regression tests.
 
-Use Conventional Commits. Keep pull requests small enough to review. Explain user-visible behavior, threat-model changes, and compatibility impact.
+Use Conventional Commits. Hooversion maps `feat` to minor releases, `fix` and `perf` to patch releases, and `!` or a `BREAKING CHANGE:` footer to major releases. Other valid commit types do not publish a version. Keep pull requests small enough to review. Explain user-visible behavior, threat-model changes, and compatibility impact.
 
 By contributing, you agree that your contribution is licensed under Apache-2.0.

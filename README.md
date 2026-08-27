@@ -1,6 +1,7 @@
 # Hoolicy
 
 [![CI](https://github.com/openhoo/hoolicy/actions/workflows/ci.yml/badge.svg)](https://github.com/openhoo/hoolicy/actions/workflows/ci.yml)
+[![Release](https://github.com/openhoo/hoolicy/actions/workflows/release.yml/badge.svg)](https://github.com/openhoo/hoolicy/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Understandable policy as code for repositories.
@@ -99,5 +100,7 @@ Start with [rule authoring](docs/authoring-rules.md), [policy packs](docs/policy
 ## Project status
 
 `v0.1.x` is usable and intentionally conservative. Configuration version `1` is strict; the compile-time Go SDK may evolve before `v1.0.0`.
+
+Commits use Conventional Commits and are checked by Hooversion. After CI passes on `main`, `feat` commits publish a minor release, `fix` and `perf` commits publish a patch release, and breaking changes publish a major release. Hooversion updates `VERSION` and `CHANGELOG.md`, creates the tag and GitHub release, then the release workflow attaches signed binaries, an SPDX SBOM, provenance, and a signed multi-platform GHCR image.
 
 Apache-2.0. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
