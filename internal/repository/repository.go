@@ -18,12 +18,14 @@ import (
 type Options struct {
 	BaseSHA           string
 	MergeRequestTitle string
+	GitContext        *sdk.GitContext
 }
 
 type Repository struct {
-	root  string
-	files []sdk.File
-	git   sdk.GitContext
+	root   string
+	files  []sdk.File
+	byPath map[string]sdk.File
+	git    sdk.GitContext
 }
 
 func Open(root string, options Options) (*Repository, error) {
@@ -35,8 +37,16 @@ func Open(root string, options Options) (*Repository, error) {
 	if err != nil {
 		return nil, err
 	}
-	repository := &Repository{root: absolute, files: files}
-	repository.git = inspectGit(absolute, options)
+	byPath := make(map[string]sdk.File, len(files))
+	for _, file := range files {
+		byPath[file.Path] = file
+	}
+	repository := &Repository{root: absolute, files: files, byPath: byPath}
+	if options.GitContext != nil {
+		repository.git = *options.GitContext
+	} else {
+		repository.git = inspectGit(absolute, options)
+	}
 	return repository, nil
 }
 
@@ -52,20 +62,20 @@ func (r *Repository) Match(include, exclude []string) ([]sdk.File, error) {
 	if len(include) == 0 {
 		include = []string{"**/*"}
 	}
-	var matches []sdk.File
+	includedPatterns, err := compileGlobs(include)
+	if err != nil {
+		return nil, err
+	}
+	excludedPatterns, err := compileGlobs(exclude)
+	if err != nil {
+		return nil, err
+	}
+	matches := make([]sdk.File, 0, len(r.files))
 	for _, file := range r.files {
-		included, err := matchesAny(file.Path, include)
-		if err != nil {
-			return nil, err
-		}
-		if !included {
+		if !matchesCompiled(file.Path, includedPatterns) {
 			continue
 		}
-		excluded, err := matchesAny(file.Path, exclude)
-		if err != nil {
-			return nil, err
-		}
-		if !excluded {
+		if !matchesCompiled(file.Path, excludedPatterns) {
 			matches = append(matches, file)
 		}
 	}
@@ -73,25 +83,15 @@ func (r *Repository) Match(include, exclude []string) ([]sdk.File, error) {
 }
 
 func (r *Repository) Read(path string) (sdk.File, error) {
-	clean, absolute, err := safePath(r.root, path)
+	clean, _, err := safePath(r.root, path)
 	if err != nil {
 		return sdk.File{}, err
 	}
-	info, err := os.Lstat(absolute)
-	if err != nil {
-		return sdk.File{}, err
+	file, ok := r.byPath[clean]
+	if !ok {
+		return sdk.File{}, fmt.Errorf("%s: file is not part of the repository snapshot", clean)
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return sdk.File{}, fmt.Errorf("%s: symbolic links are not read", clean)
-	}
-	if !info.Mode().IsRegular() {
-		return sdk.File{}, fmt.Errorf("%s: not a regular file", clean)
-	}
-	data, err := os.ReadFile(absolute)
-	if err != nil {
-		return sdk.File{}, err
-	}
-	return sdk.File{Path: clean, Mode: info.Mode(), Data: data}, nil
+	return file, nil
 }
 
 func discoverFiles(root string) ([]sdk.File, error) {
@@ -170,23 +170,42 @@ func gitFileList(root string) ([]string, error) {
 
 func inspectGit(root string, options Options) sdk.GitContext {
 	context := sdk.GitContext{MergeRequestTitle: options.MergeRequestTitle, Properties: make(map[string]any)}
-	context.Branch = gitOutput(root, "branch", "--show-current")
-	context.Commit = gitOutput(root, "rev-parse", "HEAD")
-	context.Dirty = strings.TrimSpace(gitOutput(root, "status", "--porcelain=v1", "--untracked-files=normal")) != ""
-	if options.BaseSHA != "" && context.Commit != "" {
-		output := gitOutput(root, "log", "--format=%H%x00%s", "-z", options.BaseSHA+".."+context.Commit)
-		parts := strings.Split(output, "\x00")
-		for i := 0; i+1 < len(parts); i += 2 {
-			sha := strings.TrimSpace(parts[i])
-			subject := strings.TrimSpace(parts[i+1])
-			if sha != "" {
-				context.CommitSubjects = append(context.CommitSubjects, sdk.Commit{SHA: sha, Subject: subject})
+	status := gitOutput(root, "status", "--porcelain=v2", "--branch", "--untracked-files=normal")
+	for _, line := range strings.Split(status, "\n") {
+		switch {
+		case strings.HasPrefix(line, "# branch.oid "):
+			value := strings.TrimSpace(strings.TrimPrefix(line, "# branch.oid "))
+			if value != "(initial)" {
+				context.Commit = value
 			}
+		case strings.HasPrefix(line, "# branch.head "):
+			value := strings.TrimSpace(strings.TrimPrefix(line, "# branch.head "))
+			if value != "(detached)" {
+				context.Branch = value
+			}
+		case line != "" && !strings.HasPrefix(line, "# "):
+			context.Dirty = true
 		}
+	}
+	if options.BaseSHA != "" && context.Commit != "" {
+		context.CommitSubjects = parseGitLog(gitOutput(root, "log", "--format=%H%x00%s", "-z", options.BaseSHA+".."+context.Commit))
 	} else if context.Commit != "" {
-		context.CommitSubjects = []sdk.Commit{{SHA: context.Commit, Subject: gitOutput(root, "show", "-s", "--format=%s", "HEAD")}}
+		context.CommitSubjects = parseGitLog(gitOutput(root, "log", "-1", "--format=%H%x00%s", "-z", "HEAD"))
 	}
 	return context
+}
+
+func parseGitLog(output string) []sdk.Commit {
+	parts := strings.Split(output, "\x00")
+	commits := make([]sdk.Commit, 0, len(parts)/2)
+	for i := 0; i+1 < len(parts); i += 2 {
+		sha := strings.TrimSpace(parts[i])
+		subject := strings.TrimSpace(parts[i+1])
+		if sha != "" {
+			commits = append(commits, sdk.Commit{SHA: sha, Subject: subject})
+		}
+	}
+	return commits
 }
 
 func gitOutput(root string, args ...string) string {

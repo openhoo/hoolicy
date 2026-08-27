@@ -22,8 +22,8 @@ build_one() {
   local name="hoolicy_${version}_${goos}_${goarch}"
   local stage="$temporary/$name"
   mkdir -p "$stage"
-  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
-    -ldflags="-s -w -X main.version=${version} -X main.commit=${commit} -X main.date=${build_date}" \
+  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -buildvcs=false -tags=hoolicy_release -trimpath \
+    -ldflags="-s -w -buildid= -X main.version=${version} -X main.commit=${commit} -X main.date=${build_date}" \
     -o "$stage/hoolicy${suffix}" ./cmd/hoolicy
   cp LICENSE README.md "$stage/"
   if [[ "$goos" == "windows" ]]; then

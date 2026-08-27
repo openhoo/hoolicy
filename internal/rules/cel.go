@@ -5,13 +5,30 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"cel.dev/cel-go/cel"
 	"github.com/openhoo/hoolicy/internal/document"
 	"github.com/openhoo/hoolicy/sdk"
 )
 
-type CEL struct{}
+const celProgramCacheLimit = 128
+
+type CEL struct {
+	compiler *celCompiler
+}
+
+type celCompiler struct {
+	environment *cel.Env
+	mu          sync.Mutex
+	programs    map[celProgramKey]cel.Program
+	order       []celProgramKey
+}
+
+type celProgramKey struct {
+	expression string
+	costLimit  uint64
+}
 
 type celSpec struct {
 	Format     string `yaml:"format,omitempty"`
@@ -20,7 +37,7 @@ type celSpec struct {
 	CostLimit  uint64 `yaml:"costLimit,omitempty"`
 }
 
-func (CEL) Validate(rule sdk.Rule) error {
+func (kind CEL) Validate(rule sdk.Rule) error {
 	if err := requireFiles(rule); err != nil {
 		return err
 	}
@@ -31,16 +48,16 @@ func (CEL) Validate(rule sdk.Rule) error {
 	if strings.TrimSpace(spec.Expression) == "" || strings.TrimSpace(spec.Message) == "" {
 		return fmt.Errorf("rule %s: structured.cel requires expression and message", rule.ID)
 	}
-	_, _, err := compileCEL(spec)
+	_, err := kind.compile(spec)
 	return err
 }
 
-func (CEL) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Rule) ([]sdk.Finding, error) {
+func (kind CEL) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Rule) ([]sdk.Finding, error) {
 	var spec celSpec
 	if err := decodeSpec(rule, &spec); err != nil {
 		return nil, err
 	}
-	_, program, err := compileCEL(spec)
+	program, err := kind.compile(spec)
 	if err != nil {
 		return nil, fmt.Errorf("rule %s: %w", rule.ID, err)
 	}
@@ -104,7 +121,7 @@ func (CEL) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Rule) ([]
 	return findings, nil
 }
 
-func compileCEL(spec celSpec) (*cel.Env, cel.Program, error) {
+func newCEL() (CEL, error) {
 	environment, err := cel.NewEnv(
 		cel.Variable("repo", cel.DynType), cel.Variable("git", cel.DynType),
 		cel.Variable("files", cel.ListType(cel.DynType)), cel.Variable("documents", cel.ListType(cel.DynType)),
@@ -112,24 +129,63 @@ func compileCEL(spec celSpec) (*cel.Env, cel.Program, error) {
 		cel.Variable("now", cel.TimestampType),
 	)
 	if err != nil {
-		return nil, nil, err
+		return CEL{}, err
 	}
-	ast, issues := environment.Compile(spec.Expression)
+	return CEL{compiler: &celCompiler{environment: environment, programs: make(map[celProgramKey]cel.Program)}}, nil
+}
+
+func (kind CEL) compile(spec celSpec) (cel.Program, error) {
+	limit, err := celCostLimit(spec.CostLimit)
+	if err != nil {
+		return nil, err
+	}
+	if kind.compiler == nil {
+		uncached, err := newCEL()
+		if err != nil {
+			return nil, err
+		}
+		return compileCEL(uncached.compiler.environment, spec.Expression, limit)
+	}
+	key := celProgramKey{expression: spec.Expression, costLimit: limit}
+	kind.compiler.mu.Lock()
+	defer kind.compiler.mu.Unlock()
+	if program, ok := kind.compiler.programs[key]; ok {
+		return program, nil
+	}
+	program, err := compileCEL(kind.compiler.environment, spec.Expression, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(kind.compiler.order) == celProgramCacheLimit {
+		delete(kind.compiler.programs, kind.compiler.order[0])
+		copy(kind.compiler.order, kind.compiler.order[1:])
+		kind.compiler.order = kind.compiler.order[:celProgramCacheLimit-1]
+	}
+	kind.compiler.programs[key] = program
+	kind.compiler.order = append(kind.compiler.order, key)
+	return program, nil
+}
+
+func compileCEL(environment *cel.Env, expression string, limit uint64) (cel.Program, error) {
+	ast, issues := environment.Compile(expression)
 	if issues != nil && issues.Err() != nil {
-		return nil, nil, fmt.Errorf("CEL compile: %w", issues.Err())
+		return nil, fmt.Errorf("CEL compile: %w", issues.Err())
 	}
-	limit := spec.CostLimit
+	program, err := environment.Program(ast, cel.CostLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	return program, nil
+}
+
+func celCostLimit(limit uint64) (uint64, error) {
 	if limit == 0 {
 		limit = 100_000
 	}
 	if limit > 1_000_000 {
-		return nil, nil, fmt.Errorf("CEL costLimit may not exceed 1000000")
+		return 0, fmt.Errorf("CEL costLimit may not exceed 1000000")
 	}
-	program, err := environment.Program(ast, cel.CostLimit(limit))
-	if err != nil {
-		return nil, nil, err
-	}
-	return environment, program, nil
+	return limit, nil
 }
 
 func stringValue(value any, fallback string) string {

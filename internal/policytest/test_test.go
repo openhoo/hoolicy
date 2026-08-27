@@ -10,7 +10,7 @@ import (
 )
 
 func TestBuiltInPacksHavePassingPositiveAndNegativeCases(t *testing.T) {
-	t.Parallel()
+	t.Setenv("PATH", "")
 	registry := sdk.NewRegistry()
 	if err := rules.RegisterCore(registry); err != nil {
 		t.Fatal(err)

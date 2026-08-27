@@ -3,10 +3,14 @@ package rules
 import "github.com/openhoo/hoolicy/sdk"
 
 func RegisterCore(registry *sdk.Registry) error {
+	celKind, err := newCEL()
+	if err != nil {
+		return err
+	}
 	for name, kind := range map[string]sdk.RuleKind{
 		"files":                Files{},
 		"text":                 Text{},
-		"structured.cel":       CEL{},
+		"structured.cel":       celKind,
 		"git.naming":           GitNaming{},
 		"manifest.consistency": ManifestConsistency{},
 		"sources.allowed":      SourcesAllowed{},

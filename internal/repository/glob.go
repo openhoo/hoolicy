@@ -78,17 +78,33 @@ func compileGlob(pattern string) (*regexp.Regexp, error) {
 }
 
 func matchesAny(path string, patterns []string) (bool, error) {
+	compiled, err := compileGlobs(patterns)
+	if err != nil {
+		return false, err
+	}
+	return matchesCompiled(path, compiled), nil
+}
+
+func compileGlobs(patterns []string) ([]*regexp.Regexp, error) {
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, pattern := range patterns {
+		expression, err := compileGlob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		compiled = append(compiled, expression)
+	}
+	return compiled, nil
+}
+
+func matchesCompiled(path string, patterns []*regexp.Regexp) bool {
 	path = strings.TrimPrefix(strings.ReplaceAll(path, "\\", "/"), "./")
 	for _, pattern := range patterns {
-		compiled, err := compileGlob(pattern)
-		if err != nil {
-			return false, err
-		}
-		if compiled.MatchString(path) {
-			return true, nil
+		if pattern.MatchString(path) {
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 func Matches(path string, patterns []string) (bool, error) {

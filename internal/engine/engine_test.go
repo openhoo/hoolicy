@@ -82,7 +82,51 @@ waivers:
 	}
 }
 
-func writeEngineFile(t *testing.T, path, body string) {
+func BenchmarkEngineCheck(b *testing.B) {
+	root := b.TempDir()
+	for index := range 500 {
+		writeEngineFile(b, filepath.Join(root, "services", fmt.Sprintf("service-%04d.json", index)), fmt.Sprintf("{\"name\":\"service-%04d\",\"enabled\":true}\n", index))
+	}
+	projectPath := filepath.Join(root, config.DefaultFilename)
+	writeEngineFile(b, projectPath, "version: 1\nproject: benchmark\nfailOn: error\nrules: []\n")
+	project := &config.Project{
+		Version: 1, Project: "benchmark", FailOn: sdk.SeverityError, Waivers: config.DefaultWaivers,
+		Root: root, Path: projectPath,
+		Rules: []sdk.Rule{
+			benchmarkRule("benchmark.files", "files", []string{"services/**/*.json"}, map[string]any{"mode": "require", "message": "services required"}),
+			benchmarkRule("benchmark.text", "text", []string{"services/**/*.json"}, map[string]any{"require": []any{"enabled"}, "message": "enabled required"}),
+			benchmarkRule("benchmark.cel", "structured.cel", []string{"services/**/*.json"}, map[string]any{
+				"format": "json", "expression": "documents.all(d, d.data.enabled == true)", "message": "services must be enabled",
+			}),
+		},
+	}
+	registry := sdk.NewRegistry()
+	if err := rules.RegisterCore(registry); err != nil {
+		b.Fatal(err)
+	}
+	checker := New(registry)
+	options := Options{Now: time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC), ToolVersion: "benchmark"}
+	if _, err := checker.Check(context.Background(), project, options); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		if _, err := checker.Check(context.Background(), project, options); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchmarkRule(id, kind string, files []string, spec map[string]any) sdk.Rule {
+	return sdk.Rule{
+		ID: id, Title: "Benchmark rule", Description: "Exercises representative repository policy work.",
+		Rationale: "Performance must remain predictable on large repositories.", Remediation: "Correct benchmark fixture.",
+		Severity: sdk.SeverityError, Kind: kind, Files: files, Spec: spec,
+	}
+}
+
+func writeEngineFile(t testing.TB, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)

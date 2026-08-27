@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -135,13 +134,6 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 			return false, err
 		}
 	}
-	if err := exec.Command("git", "-C", root, "init", "-q", "-b", fallback(testCase.Branch, "main")).Run(); err != nil {
-		return false, err
-	}
-	_ = exec.Command("git", "-C", root, "config", "user.name", "Hoolicy Tests").Run()
-	_ = exec.Command("git", "-C", root, "config", "user.email", "tests@hoolicy.invalid").Run()
-	_ = exec.Command("git", "-C", root, "add", ".").Run()
-	_ = exec.Command("git", "-C", root, "commit", "-qm", "test: fixture").Run()
 	project := config.Project{Version: 1, Project: "fixture", FailOn: sdk.SeverityError, Rules: []sdk.Rule{rule}, Root: root, Path: filepath.Join(root, "hoolicy.yaml")}
 	if err := config.SaveProject(project.Path, project); err != nil {
 		return false, err
@@ -150,7 +142,15 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 	if err != nil {
 		return false, err
 	}
-	report, err := engine.New(registry).Check(ctx, loaded, engine.Options{Now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), MergeRequestTitle: testCase.MRTitle, ToolVersion: "test"})
+	const fixtureCommit = "0000000000000000000000000000000000000001"
+	gitContext := sdk.GitContext{
+		Branch: fallback(testCase.Branch, "main"), Commit: fixtureCommit,
+		CommitSubjects:    []sdk.Commit{{SHA: fixtureCommit, Subject: "test: fixture"}},
+		MergeRequestTitle: testCase.MRTitle, Properties: make(map[string]any),
+	}
+	report, err := engine.New(registry).Check(ctx, loaded, engine.Options{
+		Now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), ToolVersion: "test", GitContext: &gitContext,
+	})
 	if err != nil {
 		return false, err
 	}

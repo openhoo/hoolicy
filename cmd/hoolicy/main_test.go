@@ -1,3 +1,5 @@
+//go:build !hoolicy_release
+
 package main
 
 import (

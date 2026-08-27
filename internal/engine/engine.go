@@ -25,6 +25,7 @@ type Options struct {
 	BaseSHA           string
 	MergeRequestTitle string
 	ToolVersion       string
+	GitContext        *sdk.GitContext
 }
 
 type Report struct {
@@ -85,7 +86,7 @@ func (e *Engine) Check(ctx context.Context, project *config.Project, options Opt
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	repo, err := repository.Open(project.Root, repository.Options{BaseSHA: options.BaseSHA, MergeRequestTitle: options.MergeRequestTitle})
+	repo, err := repository.Open(project.Root, repository.Options{BaseSHA: options.BaseSHA, MergeRequestTitle: options.MergeRequestTitle, GitContext: options.GitContext})
 	if err != nil {
 		return nil, err
 	}

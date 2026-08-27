@@ -2,9 +2,11 @@ package rules
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -46,6 +48,55 @@ func TestGenericRuleKinds(t *testing.T) {
 	}
 }
 
+func TestCELProgramCacheConcurrent(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeRuleFile(t, root, "source.json", "{\"enabled\": true}\n")
+	repo, err := repository.Open(root, repository.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kind, err := newCEL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := baseRule("concurrent.cel", "structured.cel", []string{"source.json"}, map[string]any{
+		"expression": "documents.all(d, d.data.enabled == true)", "message": "enabled must be true",
+	})
+	input := sdk.EvalContext{Repository: repo, Now: time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)}
+	const workers = 32
+	errors := make(chan error, workers)
+	var group sync.WaitGroup
+	for range workers {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			if err := kind.Validate(rule); err != nil {
+				errors <- err
+				return
+			}
+			findings, err := kind.Evaluate(context.Background(), input, rule)
+			if err != nil {
+				errors <- err
+				return
+			}
+			if len(findings) != 0 {
+				errors <- fmt.Errorf("unexpected findings: %#v", findings)
+			}
+		}()
+	}
+	group.Wait()
+	close(errors)
+	for err := range errors {
+		t.Error(err)
+	}
+	kind.compiler.mu.Lock()
+	defer kind.compiler.mu.Unlock()
+	if len(kind.compiler.programs) != 1 {
+		t.Fatalf("expected one cached CEL program, got %d", len(kind.compiler.programs))
+	}
+}
+
 func TestCELAndManifestConsistency(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -60,12 +111,22 @@ func TestCELAndManifestConsistency(t *testing.T) {
 	celRule := baseRule("demo.cel", "structured.cel", []string{"source.json"}, map[string]any{
 		"expression": "documents.all(d, d.data.enabled == true)", "message": "enabled must be true",
 	})
-	if err := (CEL{}).Validate(celRule); err != nil {
-		t.Fatal(err)
-	}
-	findings, err := (CEL{}).Evaluate(context.Background(), input, celRule)
+	celKind, err := newCEL()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := celKind.Validate(celRule); err != nil {
+		t.Fatal(err)
+	}
+	if len(celKind.compiler.programs) != 1 {
+		t.Fatalf("expected one cached CEL program, got %d", len(celKind.compiler.programs))
+	}
+	findings, err := celKind.Evaluate(context.Background(), input, celRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(celKind.compiler.programs) != 1 {
+		t.Fatalf("CEL evaluation recompiled program, cache has %d entries", len(celKind.compiler.programs))
 	}
 	if len(findings) != 1 || findings[0].Message != "enabled must be true" {
 		t.Fatalf("unexpected CEL findings: %#v", findings)
@@ -88,6 +149,43 @@ func TestCELAndManifestConsistency(t *testing.T) {
 	}
 	if len(findings) != 1 || findings[0].Fix == nil || string(findings[0].Fix.Edits[0].Replacement) != "2" {
 		t.Fatalf("unexpected manifest finding: %#v", findings)
+	}
+}
+
+func BenchmarkCELValidateAndEvaluate(b *testing.B) {
+	root := b.TempDir()
+	writeRuleFile(b, root, "source.json", "{\"version\": 2, \"enabled\": true}\n")
+	repo, err := repository.Open(root, repository.Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	input := sdk.EvalContext{Repository: repo, Now: time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)}
+	rule := baseRule("bench.cel", "structured.cel", []string{"source.json"}, map[string]any{
+		"expression": "documents.all(d, d.data.enabled == true)", "message": "enabled must be true",
+	})
+	cached, err := newCEL()
+	if err != nil {
+		b.Fatal(err)
+	}
+	benchmarks := []struct {
+		name string
+		kind CEL
+	}{
+		{name: "cached", kind: cached},
+		{name: "uncached", kind: CEL{}},
+	}
+	for _, benchmark := range benchmarks {
+		b.Run(benchmark.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				if err := benchmark.kind.Validate(rule); err != nil {
+					b.Fatal(err)
+				}
+				if _, err := benchmark.kind.Evaluate(context.Background(), input, rule); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
@@ -169,7 +267,7 @@ func cloneMap(source map[string]any) map[string]any {
 	return target
 }
 
-func writeRuleFile(t *testing.T, root, path, body string) {
+func writeRuleFile(t testing.TB, root, path, body string) {
 	t.Helper()
 	absolute := filepath.Join(root, filepath.FromSlash(path))
 	if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {

@@ -2,7 +2,7 @@
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION
@@ -10,11 +10,18 @@ ARG COMMIT
 ARG BUILD_DATE
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
-    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
-    -o /out/hoolicy ./cmd/hoolicy
+RUN --mount=type=cache,id=hoolicy-go-mod,target=/go/pkg/mod,sharing=shared go mod download
+COPY hoolicy.go ./
+COPY cmd ./cmd
+COPY internal ./internal
+COPY sdk ./sdk
+RUN --mount=type=cache,id=hoolicy-go-mod,target=/go/pkg/mod,sharing=shared \
+    --mount=type=cache,id=hoolicy-go-build,target=/root/.cache/go-build,sharing=shared \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -buildvcs=false -tags=hoolicy_release -trimpath \
+    -ldflags="-s -w -buildid= -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
+    -o /out/rootfs/hoolicy ./cmd/hoolicy && \
+    mkdir -m 1777 /out/rootfs/tmp && \
+    touch /out/rootfs/tmp/.keep
 
 FROM scratch
 ARG VERSION
@@ -28,5 +35,5 @@ LABEL org.opencontainers.image.title="Hoolicy" \
       org.opencontainers.image.created="$BUILD_DATE" \
       org.opencontainers.image.licenses="Apache-2.0"
 USER 65532:65532
-COPY --from=build /out/hoolicy /hoolicy
+COPY --from=build /out/rootfs/ /
 ENTRYPOINT ["/hoolicy"]
