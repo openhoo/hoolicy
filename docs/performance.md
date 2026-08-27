@@ -4,7 +4,7 @@ Hoolicy ships one statically linked Go binary in a `scratch` image. The image ha
 
 ## Measured results
 
-Baseline is commit `51d1ca2f4952`. Measurements used Linux amd64, an Intel Core i9-14900K, and the pinned Go 1.26.6 Alpine builder. Values are medians of five runs unless noted otherwise.
+Benchmark baseline is the implementation published in `v0.1.2`. Measurements used Linux amd64, an Intel Core i9-14900K, and the pinned Go 1.26.6 Alpine builder. Values are medians of five runs unless noted otherwise. Artifact measurements compare the published `v0.1.1` and `v0.1.2` releases.
 
 | Workload | Baseline | Optimized | Change |
 | --- | ---: | ---: | ---: |
@@ -21,10 +21,10 @@ Footprint stayed essentially flat while adding bounded caches and benchmarks:
 | Artifact | Baseline | Optimized | Change |
 | --- | ---: | ---: | ---: |
 | Stripped Linux amd64 binary | 11,980,962 B | 11,976,830 B | 4,132 B smaller |
-| Runtime image | 11,986,044 B | 11,982,974 B | 3,070 B smaller |
-| Compressed OCI layer | 4,366,775 B | 4,361,217 B | 5,558 B smaller |
+| Runtime image | 11,987,596 B | 11,984,502 B | 3,094 B smaller |
+| Compressed OCI layer | 4,362,368 B | 4,359,770 B | 2,598 B smaller |
 
-The runtime image remains one layer. Local comparison on 2026-08-27 measured HooCloak at 11,912,505 bytes and Hoomail at 14,278,924 bytes, putting Hoolicy within 71 KB of HooCloak and about 2.3 MB below Hoomail.
+The runtime image remains one layer. Local comparison on 2026-08-27 measured HooCloak at 11,912,505 bytes and Hoomail at 14,278,924 bytes, putting Hoolicy within 72 KB of HooCloak and about 2.3 MB below Hoomail.
 
 ## What changed
 
