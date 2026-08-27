@@ -35,15 +35,15 @@ func syncReleaseVersion(root string) error {
 	majorMinor := strings.Join(strings.Split(version, ".")[:2], ".")
 
 	if err := updateFile(filepath.Join(root, "README.md"), []replacement{
-		{regexp.MustCompile(`(github\.com/openhoo/hoolicy/cmd/hoolicy@)v[0-9]+\.[0-9]+\.[0-9]+`), "${1}v" + version},
-		{regexp.MustCompile(`(ghcr\.io/openhoo/hoolicy:)v[0-9]+\.[0-9]+\.[0-9]+`), "${1}v" + version},
-		{regexp.MustCompile(`(ref: )v[0-9]+\.[0-9]+\.[0-9]+`), "${1}v" + version},
+		{regexp.MustCompile(`(?m)^([^\r\n]*github\.com/openhoo/hoolicy/cmd/hoolicy@)v[0-9]+\.[0-9]+\.[0-9]+([^\r\n]*)$`), "${1}v" + version + "${2}"},
+		{regexp.MustCompile(`(?m)^([^\r\n]*ghcr\.io/openhoo/hoolicy:)v[0-9]+\.[0-9]+\.[0-9]+([^\r\n]*)$`), "${1}v" + version + "${2}"},
+		{regexp.MustCompile(`(?m)^([\t ]*ref: )v[0-9]+\.[0-9]+\.[0-9]+([\t ]*)$`), "${1}v" + version + "${2}"},
 	}); err != nil {
 		return err
 	}
 
 	return updateFile(filepath.Join(root, "SECURITY.md"), []replacement{
-		{regexp.MustCompile("(latest `)v[0-9]+\\.[0-9]+\\.x(` release)"), "${1}v" + majorMinor + ".x${2}"},
+		{regexp.MustCompile("(?m)^([^\\r\\n]*latest `)v[0-9]+\\.[0-9]+\\.x(` release[^\\r\\n]*)$"), "${1}v" + majorMinor + ".x${2}"},
 	})
 }
 
