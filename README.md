@@ -94,7 +94,7 @@ Run `hoolicy pack update repository` once. It resolves the Git ref, vendors the 
 - Safe fixes are hash-bound, refuse dirty targets and symlinks, show a diff first, and require `--apply`.
 - Pack tests require at least one passing and one failing fixture for every published rule.
 
-Start with [rule authoring](docs/authoring-rules.md), [policy packs](docs/policy-packs.md), or [architecture and threat model](docs/architecture.md). A generic repository-policy example lives in [examples/repository-policy](examples/repository-policy).
+Start with [rule authoring](docs/authoring-rules.md), [policy packs](docs/policy-packs.md), or [architecture and threat model](docs/architecture.md). Planned work and explicit non-goals live in the [roadmap](ROADMAP.md). A generic repository-policy example lives in [examples/repository-policy](examples/repository-policy).
 
 ## Project status
 
