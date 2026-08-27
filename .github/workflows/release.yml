@@ -6,6 +6,11 @@ on:
     branches: [main]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      rebuild_tag:
+        description: Existing release tag to rebuild after a history rewrite
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -27,32 +32,58 @@ jobs:
     permissions:
       contents: write
     outputs:
-      published: ${{ steps.release.outputs.published }}
-      version: ${{ steps.release.outputs.version }}
-      tag: ${{ steps.release.outputs.tag }}
+      published: ${{ steps.rebuild.outputs.published || steps.release.outputs.published }}
+      version: ${{ steps.rebuild.outputs.version || steps.release.outputs.version }}
+      tag: ${{ steps.rebuild.outputs.tag || steps.release.outputs.tag }}
     steps:
       - name: Checkout validated revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ inputs.rebuild_tag || (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha) || github.sha }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: inputs.rebuild_tag == ''
         with:
           go-version: '1.26.x'
           cache: true
       - name: Set up Hooversion
+        if: inputs.rebuild_tag == ''
         uses: openhoo/hooversion/actions/setup@2f977d9c91d98d800cac6557fa170cf1a7fccd39 # v1.0.1
         with:
           version: ${{ env.HOOVERSION_VERSION }}
       - name: Configure release git author
+        if: inputs.rebuild_tag == ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Release
         id: release
+        if: inputs.rebuild_tag == ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: hooversion release
+      - name: Resolve rebuild target
+        id: rebuild
+        if: inputs.rebuild_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.rebuild_tag }}
+        run: |
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "rebuild_tag must be a stable semantic version prefixed with v" >&2
+            exit 2
+          fi
+          version="${TAG#v}"
+          if [[ "$(tr -d '[:space:]' < VERSION)" != "$version" ]]; then
+            echo "VERSION does not match $TAG" >&2
+            exit 2
+          fi
+          gh release view "$TAG" >/dev/null
+          {
+            echo "published=true"
+            echo "version=$version"
+            echo "tag=$TAG"
+          } >> "$GITHUB_OUTPUT"
 
   binaries:
     name: Release binaries
