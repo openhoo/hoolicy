@@ -13,8 +13,8 @@ Hoolicy turns repeated repository, compliance, supply-chain, and product-quality
 Install a release binary, use the container, or build with Go 1.26+:
 
 ```sh
-go install github.com/openhoo/hoolicy/cmd/hoolicy@v0.1.1
-# or: docker run --rm -v "$PWD:/work" -w /work ghcr.io/openhoo/hoolicy:v0.1.1 check
+go install github.com/openhoo/hoolicy/cmd/hoolicy@v0.1.2
+# or: docker run --rm -v "$PWD:/work" -w /work ghcr.io/openhoo/hoolicy:v0.1.2 check
 ```
 
 Create a useful starter policy:
@@ -75,7 +75,7 @@ Use this repository as a versioned remote pack source:
 packs:
   - name: repository
     git: https://github.com/openhoo/hoolicy.git
-    ref: v0.1.1
+    ref: v0.1.2
     subdir: packs/repository
     with:
       branch_pattern: '^(feat|fix|chore)/[a-z0-9]+(?:-[a-z0-9]+)*$'

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2 (2026-08-27)
+
+### Performance
+
+- accelerate policy checks and shrink runtime image
+
+### Other Changes
+
+- use node 24 docker actions
+- add product roadmap
+- add hooversion release automation
+- invoke hooversion CLI directly
+
 All notable changes follow Keep a Changelog conventions. Releases use semantic versioning.
 
 ## [0.1.1] - 2026-08-26
