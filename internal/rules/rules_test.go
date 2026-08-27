@@ -65,6 +65,10 @@ func TestRuleValidationRejectsDisabledNumericConstraints(t *testing.T) {
 		{name: "negative title maximum", kind: GitNaming{}, rule: baseRule("demo.git", "git.naming", nil, map[string]any{"mergeRequestTitleMaximum": -1})},
 		{name: "orphan branch allowlist", kind: GitNaming{}, rule: baseRule("demo.git", "git.naming", nil, map[string]any{"commitPattern": ".+", "allowedBranches": []any{"main"}})},
 		{name: "negative scenarios", kind: GherkinRequirements{}, rule: baseRule("demo.gherkin", "gherkin.requirements", []string{"*.feature"}, map[string]any{"minimumScenarios": -1})},
+		{name: "traversing manifest path", kind: ManifestConsistency{}, rule: baseRule("demo.manifest", "manifest.consistency", nil, map[string]any{"authoritative": map[string]any{"path": "../source.json", "pointer": "/version"}, "targets": []any{map[string]any{"path": "target.json", "pointer": "/version"}}})},
+		{name: "invalid JSON pointer escape", kind: ManifestConsistency{}, rule: baseRule("demo.manifest", "manifest.consistency", nil, map[string]any{"authoritative": map[string]any{"path": "source.json", "pointer": "/~2"}, "targets": []any{map[string]any{"path": "target.json", "pointer": "/version"}}})},
+		{name: "duplicate manifest target", kind: ManifestConsistency{}, rule: baseRule("demo.manifest", "manifest.consistency", nil, map[string]any{"authoritative": map[string]any{"path": "source.json", "pointer": "/version"}, "targets": []any{map[string]any{"path": "target.json", "pointer": "/version"}, map[string]any{"path": "target.json", "pointer": "/version"}}})},
+		{name: "traversing locale filename", kind: I18nParity{}, rule: baseRule("demo.i18n", "i18n.parity", nil, map[string]any{"manifest": "languages.json", "codesPointer": "/languages", "localesDirectory": "locales", "filename": "../translation.json"})},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -72,6 +76,21 @@ func TestRuleValidationRejectsDisabledNumericConstraints(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestReadPointerSupportsDocumentRoot(t *testing.T) {
+	t.Parallel()
+	value, err := readPointer(sdk.File{Path: "root.json", Data: []byte(`{"version":1}`)}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, ok := value.(map[string]any)
+	if !ok || object["version"] != int64(1) {
+		t.Fatalf("unexpected document root: %#v", value)
+	}
+	if _, err := languageCodes([]any{"en", "../secret"}); err == nil {
+		t.Fatal("expected traversing language code rejection")
 	}
 }
 
@@ -284,6 +303,87 @@ func TestSourceAndExceptionRules(t *testing.T) {
 	findings, err = (ExceptionsLifecycle{}).Evaluate(context.Background(), input, exceptionRule)
 	if err != nil || len(findings) != 1 || !strings.Contains(findings[0].Message, "lifetime exceeds") {
 		t.Fatalf("unexpected exception result: %#v, %v", findings, err)
+	}
+}
+
+func TestDockerfileCurrentStageAliasCannotHideBaseImage(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeRuleFile(t, root, "Dockerfile", "FROM evil.example/app:latest AS evil.example/app:latest\nFROM evil.example/app:latest AS final\n")
+	repo, err := repository.Open(root, repository.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := baseRule("demo.sources", "sources.allowed", []string{"Dockerfile"}, map[string]any{
+		"registries": []any{"ghcr.io"}, "message": "Bad source",
+	})
+	findings, err := (SourcesAllowed{}).Evaluate(context.Background(), sdk.EvalContext{Repository: repo}, rule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || !strings.Contains(findings[0].Message, "evil.example") {
+		t.Fatalf("current stage alias hid base image: %#v", findings)
+	}
+}
+
+func TestDockerfileDynamicBaseStillRegistersStageAlias(t *testing.T) {
+	t.Parallel()
+	rule := baseRule("demo.sources", "sources.allowed", nil, nil)
+	file := sdk.File{Path: "Dockerfile", Data: []byte("FROM ${BASE_IMAGE} AS build\nFROM build AS final\n")}
+	findings := checkDockerfileSources(rule, file, sourcesSpec{Registries: []string{"ghcr.io"}, RequireDigest: true}, "Bad source")
+	if len(findings) != 0 {
+		t.Fatalf("dynamic base stage alias produced false positive: %#v", findings)
+	}
+}
+
+func TestSourcesAllowedRejectsMalformedAllowlists(t *testing.T) {
+	t.Parallel()
+	tests := []map[string]any{
+		{"registries": []any{"https://ghcr.io"}},
+		{"registries": []any{"ghcr.io/openhoo"}},
+		{"npm": []any{"registry.npmjs.org"}},
+		{"npm": []any{"https://user@example.com/registry"}},
+		{"nuget": []any{"https://api.nuget.org/v3/index.json?token=secret"}},
+	}
+	for _, spec := range tests {
+		rule := baseRule("demo.sources", "sources.allowed", []string{"Dockerfile"}, spec)
+		if err := (SourcesAllowed{}).Validate(rule); err == nil {
+			t.Fatalf("expected malformed allowlist rejection: %#v", spec)
+		}
+	}
+	rule := baseRule("demo.sources", "sources.allowed", []string{"Dockerfile"}, map[string]any{
+		"registries": []any{"GHCR.IO"},
+		"npm":        []any{"HTTPS://REGISTRY.NPMJS.ORG/"},
+		"nuget":      []any{"https://API.NUGET.ORG/v3/index.json"},
+	})
+	if err := (SourcesAllowed{}).Validate(rule); err != nil {
+		t.Fatalf("valid canonicalizable allowlists rejected: %v", err)
+	}
+	if !containsCanonicalURL([]string{"HTTPS://REGISTRY.NPMJS.ORG/"}, "https://registry.npmjs.org") {
+		t.Fatal("URL comparison should canonicalize scheme and host")
+	}
+}
+
+func TestPackageSourceParsingIgnoresUnrelatedRegistryLikeValues(t *testing.T) {
+	t.Parallel()
+	rule := baseRule("demo.sources", "sources.allowed", nil, nil)
+	spec := sourcesSpec{NPM: []string{"https://registry.npmjs.org"}, NuGet: []string{"https://api.nuget.org/v3/index.json"}}
+	npm := sdk.File{Path: ".npmrc", Data: []byte("notregistry=https://evil.example\nregistry=https://registry.npmjs.org/\n")}
+	if findings := checkNPMSources(rule, npm, spec, "Bad source"); len(findings) != 0 {
+		t.Fatalf("unrelated npm key produced findings: %#v", findings)
+	}
+	nuget := sdk.File{Path: "nuget.config", Data: []byte(`<configuration>
+  <packageSources><add key="nuget" value="https://api.nuget.org/v3/index.json" /></packageSources>
+  <config><add key="http_proxy" value="https://evil.example" /></config>
+</configuration>`)}
+	findings, err := checkNuGetSources(rule, nuget, spec, "Bad source")
+	if err != nil || len(findings) != 0 {
+		t.Fatalf("unrelated NuGet add produced findings: %#v, %v", findings, err)
+	}
+	nuget.Data = []byte(`<configuration><packageSources><add key="local" value="../local-feed" /></packageSources></configuration>`)
+	findings, err = checkNuGetSources(rule, nuget, spec, "Bad source")
+	if err != nil || len(findings) != 1 || !strings.Contains(findings[0].Message, "local-feed") {
+		t.Fatalf("local NuGet source bypassed allowlist: %#v, %v", findings, err)
 	}
 }
 

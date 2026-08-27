@@ -45,11 +45,30 @@ func requireFiles(rule sdk.Rule) error {
 }
 
 func safeRelativeRulePath(path string) bool {
-	if strings.TrimSpace(path) == "" || filepath.IsAbs(path) {
+	if strings.TrimSpace(path) == "" || strings.TrimSpace(path) != path || strings.ContainsAny(path, "\\\x00") || filepath.IsAbs(path) {
 		return false
 	}
 	clean := filepath.Clean(filepath.FromSlash(path))
 	return clean != "." && clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
+}
+
+func validateJSONPointer(pointer string) error {
+	if pointer == "" {
+		return nil
+	}
+	if !strings.HasPrefix(pointer, "/") {
+		return fmt.Errorf("%q must be a JSON pointer", pointer)
+	}
+	for index := 0; index < len(pointer); index++ {
+		if pointer[index] != '~' {
+			continue
+		}
+		if index+1 >= len(pointer) || (pointer[index+1] != '0' && pointer[index+1] != '1') {
+			return fmt.Errorf("%q contains an invalid JSON pointer escape", pointer)
+		}
+		index++
+	}
+	return nil
 }
 
 func finding(rule sdk.Rule, message, path, key string, line, column int) sdk.Finding {

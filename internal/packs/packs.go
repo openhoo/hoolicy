@@ -30,18 +30,28 @@ func Resolve(project *config.Project) ([]sdk.Rule, error) {
 			remoteCount++
 		}
 	}
-	if remoteCount > 0 {
-		loaded, err := config.LoadLock(lockPath)
-		if err != nil {
-			return nil, fmt.Errorf("remote packs require a valid %s: %w", config.DefaultLockfile, err)
-		}
+	loaded, lockErr := config.LoadLock(lockPath)
+	if lockErr == nil {
 		lock = loaded
+	} else if remoteCount > 0 {
+		return nil, fmt.Errorf("remote packs require a valid %s: %w", config.DefaultLockfile, lockErr)
+	} else if !errors.Is(lockErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("invalid %s: %w", config.DefaultLockfile, lockErr)
+	}
+	configuredRemote := make(map[string]bool, remoteCount)
+	for _, reference := range project.Packs {
+		if reference.Git != "" {
+			configuredRemote[reference.Name] = true
+		}
 	}
 	lockedByName := make(map[string]config.LockedPack)
 	if lock != nil {
 		for _, entry := range lock.Packs {
 			if _, exists := lockedByName[entry.Name]; exists {
 				return nil, fmt.Errorf("lock contains duplicate pack %s", entry.Name)
+			}
+			if !configuredRemote[entry.Name] {
+				return nil, fmt.Errorf("lock contains stale pack %s not present as a remote project pack", entry.Name)
 			}
 			lockedByName[entry.Name] = entry
 		}
@@ -246,6 +256,22 @@ func Sync(project *config.Project, name string) (config.LockedPack, error) {
 }
 
 func UpdateLock(project *config.Project, names []string) (*config.Lock, error) {
+	remote := make(map[string]bool)
+	for _, reference := range project.Packs {
+		if reference.Git != "" {
+			remote[reference.Name] = true
+		}
+	}
+	selected := make(map[string]bool, len(names))
+	for _, name := range names {
+		if selected[name] {
+			return nil, fmt.Errorf("pack %s was selected more than once", name)
+		}
+		selected[name] = true
+		if !remote[name] {
+			return nil, fmt.Errorf("pack %s is not a configured remote pack", name)
+		}
+	}
 	lockPath := filepath.Join(project.Root, config.DefaultLockfile)
 	lock := &config.Lock{Version: config.CurrentVersion}
 	if existing, err := config.LoadLock(lockPath); err == nil {
@@ -255,7 +281,9 @@ func UpdateLock(project *config.Project, names []string) (*config.Lock, error) {
 	}
 	byName := make(map[string]config.LockedPack)
 	for _, entry := range lock.Packs {
-		byName[entry.Name] = entry
+		if remote[entry.Name] {
+			byName[entry.Name] = entry
+		}
 	}
 	for _, name := range names {
 		entry, err := Sync(project, name)

@@ -11,10 +11,13 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 )
+
+var kindNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
 
 type Severity string
 
@@ -100,33 +103,19 @@ type Finding struct {
 }
 
 func (f *Finding) Finalize(rule Rule) {
-	if f.RuleID == "" {
-		f.RuleID = rule.ID
-	}
-	if f.Title == "" {
-		f.Title = rule.Title
-	}
-	if f.Remediation == "" {
-		f.Remediation = rule.Remediation
-	}
-	if !f.Severity.Valid() {
-		f.Severity = rule.Severity
-	}
-	if len(f.Controls) == 0 {
-		f.Controls = append([]Control(nil), rule.Controls...)
-	}
-	if f.Pack == "" {
-		f.Pack = rule.Pack
-	}
-	if f.Fingerprint == "" {
-		h := sha256.Sum256([]byte(strings.Join([]string{
-			f.RuleID,
-			filepath.ToSlash(filepath.Clean(f.Location.Path)),
-			fmt.Sprintf("%d:%d", f.Location.Line, f.Location.Column),
-			f.Key,
-		}, "\x00")))
-		f.Fingerprint = hex.EncodeToString(h[:])
-	}
+	f.RuleID = rule.ID
+	f.Title = rule.Title
+	f.Remediation = rule.Remediation
+	f.Severity = rule.Severity
+	f.Controls = append([]Control(nil), rule.Controls...)
+	f.Pack = rule.Pack
+	h := sha256.Sum256([]byte(strings.Join([]string{
+		f.RuleID,
+		filepath.ToSlash(filepath.Clean(f.Location.Path)),
+		fmt.Sprintf("%d:%d", f.Location.Line, f.Location.Column),
+		f.Key,
+	}, "\x00")))
+	f.Fingerprint = hex.EncodeToString(h[:])
 }
 
 type File struct {
@@ -186,9 +175,11 @@ func NewRegistry() *Registry {
 }
 
 func (r *Registry) Register(name string, kind RuleKind) error {
-	name = strings.TrimSpace(name)
-	if name == "" || kind == nil {
-		return fmt.Errorf("rule kind name and implementation are required")
+	if !kindNamePattern.MatchString(name) {
+		return fmt.Errorf("rule kind name must be lowercase dot/hyphen-separated")
+	}
+	if kind == nil {
+		return fmt.Errorf("rule kind implementation is required")
 	}
 	if _, exists := r.kinds[name]; exists {
 		return fmt.Errorf("rule kind %q is already registered", name)

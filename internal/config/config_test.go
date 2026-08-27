@@ -6,7 +6,21 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/openhoo/hoolicy/sdk"
 )
+
+func TestValidateRuleAcceptsCustomKindAndRejectsMalformedKind(t *testing.T) {
+	t.Parallel()
+	rule := sdk.Rule{ID: "demo.rule", Title: "Demo", Description: "Demo rule.", Rationale: "Needed for testing.", Remediation: "Correct it.", Severity: sdk.SeverityError, Kind: "company.custom-kind"}
+	if problems := ValidateRule(rule); len(problems) != 0 {
+		t.Fatalf("valid custom kind rejected: %v", problems)
+	}
+	rule.Kind = "company_custom"
+	if problems := ValidateRule(rule); len(problems) == 0 || !strings.Contains(strings.Join(problems, " "), "kind must") {
+		t.Fatalf("malformed kind accepted: %v", problems)
+	}
+}
 
 func TestLoadProjectIsStrict(t *testing.T) {
 	t.Parallel()
@@ -122,6 +136,16 @@ func TestProjectRejectsUnsafeRemotePackInputs(t *testing.T) {
 	option.Packs = []PackRef{{Name: "pack", Git: "https://example.com/policy.git", Ref: "--upload-pack=evil"}}
 	if err := option.Validate(); err == nil || !strings.Contains(err.Error(), ".ref is unsafe") {
 		t.Fatalf("expected option-like ref rejection, got %v", err)
+	}
+}
+
+func TestProjectRejectsPathsThatRuntimeCannotResolve(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{".", " ../outside", "waivers.yaml\x00ignored"} {
+		project := Project{Version: 1, Project: "demo", FailOn: "error", Waivers: path}
+		if err := project.Validate(); err == nil || !strings.Contains(err.Error(), "waivers") {
+			t.Fatalf("expected unsafe path rejection for %q, got %v", path, err)
+		}
 	}
 }
 

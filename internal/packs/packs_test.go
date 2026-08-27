@@ -58,6 +58,11 @@ rules:
 
 	root := t.TempDir()
 	project := &config.Project{Version: 1, Project: "consumer", Root: root, Path: filepath.Join(root, config.DefaultFilename), Packs: []config.PackRef{{Name: "demo", Git: remote, Ref: "main"}}}
+	if err := config.SaveLock(filepath.Join(root, config.DefaultLockfile), config.Lock{Version: 1, Packs: []config.LockedPack{{
+		Name: "stale", Git: remote, Ref: "main", Commit: strings.Repeat("a", 40), Digest: "sha256:" + strings.Repeat("b", 64), Vendor: ".hoolicy/vendor/stale",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
 	lock, err := UpdateLock(project, []string{"demo"})
 	if err != nil {
 		t.Fatal(err)
@@ -78,6 +83,36 @@ rules:
 	}
 	if _, err := Resolve(project); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
 		t.Fatalf("expected offline digest mismatch, got %v", err)
+	}
+}
+
+func TestResolveRejectsStaleLockWithoutRemotePacks(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	lock := config.Lock{Version: 1, Packs: []config.LockedPack{{
+		Name: "stale", Git: "https://example.com/policy.git", Ref: "v1.0.0",
+		Commit: strings.Repeat("a", 40), Digest: "sha256:" + strings.Repeat("b", 64), Vendor: ".hoolicy/vendor/stale",
+	}}}
+	if err := config.SaveLock(filepath.Join(root, config.DefaultLockfile), lock); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{Version: 1, Project: "consumer", Root: root}
+	if _, err := Resolve(project); err == nil || !strings.Contains(err.Error(), "stale pack") {
+		t.Fatalf("expected stale lock rejection, got %v", err)
+	}
+}
+
+func TestUpdateLockValidatesSelectionBeforeSync(t *testing.T) {
+	t.Parallel()
+	project := &config.Project{Version: 1, Project: "consumer", Root: t.TempDir(), Packs: []config.PackRef{{Name: "demo", Git: "https://example.com/policy.git", Ref: "main"}}}
+	if _, err := UpdateLock(project, []string{"demo", "demo"}); err == nil || !strings.Contains(err.Error(), "more than once") {
+		t.Fatalf("expected duplicate selection rejection, got %v", err)
+	}
+	if _, err := UpdateLock(project, []string{"unknown"}); err == nil || !strings.Contains(err.Error(), "not a configured remote pack") {
+		t.Fatalf("expected unknown selection rejection, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(project.Root, config.DefaultLockfile)); !os.IsNotExist(err) {
+		t.Fatalf("selection validation should not touch lockfile, got %v", err)
 	}
 }
 

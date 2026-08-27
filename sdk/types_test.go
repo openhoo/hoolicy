@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +18,22 @@ func TestFindingFingerprintIsStable(t *testing.T) {
 	}
 }
 
+func TestFindingFinalizeBindsConfiguredRuleMetadata(t *testing.T) {
+	t.Parallel()
+	rule := Rule{ID: "demo.rule", Title: "Configured title", Remediation: "Configured fix", Severity: SeverityError, Pack: "demo", Controls: []Control{{Framework: "SOC2", ID: "CC8.1"}}}
+	item := Finding{
+		RuleID: "spoofed.rule", Title: "Spoofed", Remediation: "Ignore it", Severity: SeverityInfo,
+		Fingerprint: strings.Repeat("a", 64), Pack: "spoofed", Controls: []Control{{Framework: "fake", ID: "fake"}}, Key: "stable",
+	}
+	item.Finalize(rule)
+	if item.RuleID != rule.ID || item.Title != rule.Title || item.Remediation != rule.Remediation || item.Severity != rule.Severity || item.Pack != rule.Pack {
+		t.Fatalf("finding escaped configured rule metadata: %#v", item)
+	}
+	if len(item.Controls) != 1 || item.Controls[0] != rule.Controls[0] || item.Fingerprint == strings.Repeat("a", 64) {
+		t.Fatalf("finding escaped configured controls or fingerprint: %#v", item)
+	}
+}
+
 func TestRegistryRejectsDuplicateKinds(t *testing.T) {
 	t.Parallel()
 	registry := NewRegistry()
@@ -29,6 +46,18 @@ func TestRegistryRejectsDuplicateKinds(t *testing.T) {
 	}
 	if names := registry.Names(); len(names) != 1 || names[0] != "noop" {
 		t.Fatalf("unexpected names: %#v", names)
+	}
+}
+
+func TestRegistryRejectsInvalidKindNames(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"", " custom", "Custom", "custom_kind", "custom..kind"} {
+		if err := NewRegistry().Register(name, noopKind{}); err == nil {
+			t.Fatalf("expected invalid kind name rejection: %q", name)
+		}
+	}
+	if err := NewRegistry().Register("company.custom-kind", noopKind{}); err != nil {
+		t.Fatalf("valid custom kind rejected: %v", err)
 	}
 }
 

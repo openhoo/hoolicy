@@ -114,7 +114,10 @@ func (a application) version(args []string) int {
 	flags.SetOutput(a.stderr)
 	asJSON := flags.Bool("json", false, "print machine-readable build information")
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
+	}
+	if flags.NArg() != 0 {
+		return a.unexpectedArguments("version", flags.Args())
 	}
 	if *asJSON {
 		_ = json.NewEncoder(a.stdout).Encode(a.info)
@@ -131,7 +134,10 @@ func (a application) init(args []string) int {
 	directory := flags.String("directory", ".", "target directory")
 	profile := flags.String("profile", "standard", "starter profile: empty, standard, or strict")
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
+	}
+	if flags.NArg() != 0 {
+		return a.unexpectedArguments("init", flags.Args())
 	}
 	root, err := filepath.Abs(*directory)
 	if err != nil {
@@ -183,7 +189,10 @@ func (a application) validate(args []string) int {
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
+	}
+	if flags.NArg() != 0 {
+		return a.unexpectedArguments("validate", flags.Args())
 	}
 	project, err := loadProject(*configPath)
 	if err != nil {
@@ -207,7 +216,10 @@ func (a application) check(ctx context.Context, args []string) int {
 	mrTitle := flags.String("merge-request-title", envFirst("HOOLICY_MERGE_REQUEST_TITLE", "CI_MERGE_REQUEST_TITLE"), "merge request title")
 	failOn := flags.String("fail-on", "", "use an equal or stricter failure threshold")
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
+	}
+	if flags.NArg() != 0 {
+		return a.unexpectedArguments("check", flags.Args())
 	}
 	if !report.ValidFormat(*format) {
 		return a.fail(fmt.Errorf("unknown report format %q", *format))
@@ -256,7 +268,7 @@ func (a application) fix(ctx context.Context, args []string) int {
 	base := flags.String("base", envFirst("HOOLICY_BASE_SHA", "CI_MERGE_REQUEST_DIFF_BASE_SHA"), "base commit")
 	mrTitle := flags.String("merge-request-title", envFirst("HOOLICY_MERGE_REQUEST_TITLE", "CI_MERGE_REQUEST_TITLE"), "merge request title")
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
 	}
 	project, err := loadProject(*configPath)
 	if err != nil {
@@ -287,7 +299,10 @@ func (a application) list(args []string) int {
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
+	}
+	if flags.NArg() != 0 {
+		return a.unexpectedArguments("list", flags.Args())
 	}
 	project, err := loadProject(*configPath)
 	if err != nil {
@@ -312,7 +327,7 @@ func (a application) explain(args []string) int {
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
 	}
 	if flags.NArg() != 1 {
 		return a.fail(fmt.Errorf("usage: hoolicy explain [--config path] <rule-id>"))
@@ -345,7 +360,7 @@ func (a application) test(ctx context.Context, args []string) int {
 	flags := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
 	}
 	paths := flags.Args()
 	if len(paths) == 0 {
@@ -377,6 +392,9 @@ func (a application) pack(ctx context.Context, args []string) int {
 		return 2
 	}
 	switch args[0] {
+	case "help", "-h", "--help":
+		fmt.Fprintln(a.stdout, "Usage: hoolicy pack add|update|verify")
+		return 0
 	case "add":
 		return a.packAdd(args[1:])
 	case "update":
@@ -397,7 +415,7 @@ func (a application) packAdd(args []string) int {
 	subdir := flags.String("subdir", "", "pack subdirectory")
 	local := flags.String("path", "", "local pack path")
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
 	}
 	if flags.NArg() != 1 {
 		return a.fail(fmt.Errorf("usage: hoolicy pack add [options] <name>"))
@@ -426,6 +444,9 @@ func (a application) packAdd(args []string) int {
 			return a.fail(err)
 		}
 	}
+	if _, err := a.engine.Validate(project); err != nil {
+		return a.fail(fmt.Errorf("added pack is invalid: %w", err))
+	}
 	if err := config.SaveProject(project.Path, *project); err != nil {
 		return a.fail(err)
 	}
@@ -438,7 +459,7 @@ func (a application) packUpdate(args []string) int {
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
 	}
 	project, err := loadProject(*configPath)
 	if err != nil {
@@ -453,11 +474,27 @@ func (a application) packUpdate(args []string) int {
 		}
 	}
 	if len(names) == 0 {
-		return a.fail(fmt.Errorf("no remote packs selected"))
+		lockPath := filepath.Join(project.Root, config.DefaultLockfile)
+		if _, err := os.Lstat(lockPath); errors.Is(err, os.ErrNotExist) {
+			return a.fail(fmt.Errorf("no remote packs selected"))
+		} else if err != nil {
+			return a.fail(err)
+		}
+		if _, err := packs.UpdateLock(project, nil); err != nil {
+			return a.fail(err)
+		}
+		if _, err := a.engine.Validate(project); err != nil {
+			return a.fail(fmt.Errorf("pruned lock is invalid: %w", err))
+		}
+		fmt.Fprintf(a.stdout, "Pruned stale pack entries from %s; no remote packs are configured.\n", config.DefaultLockfile)
+		return 0
 	}
 	sort.Strings(names)
 	if _, err := packs.UpdateLock(project, names); err != nil {
 		return a.fail(err)
+	}
+	if _, err := a.engine.Validate(project); err != nil {
+		return a.fail(fmt.Errorf("updated packs are invalid: %w", err))
 	}
 	fmt.Fprintf(a.stdout, "Updated and verified %d packs. Review vendored changes and %s.\n", len(names), config.DefaultLockfile)
 	return 0
@@ -468,7 +505,7 @@ func (a application) packVerify(ctx context.Context, args []string) int {
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return flagErrorCode(err)
 	}
 	if flags.NArg() > 0 {
 		code := a.test(ctx, flags.Args())
@@ -504,6 +541,15 @@ func loadProject(explicit string) (*config.Project, error) {
 	return config.LoadProject(path)
 }
 func (a application) fail(err error) int { fmt.Fprintln(a.stderr, "hoolicy:", err); return 2 }
+func (a application) unexpectedArguments(command string, args []string) int {
+	return a.fail(fmt.Errorf("%s does not accept positional arguments: %s", command, strings.Join(args, " ")))
+}
+func flagErrorCode(err error) int {
+	if errors.Is(err, flag.ErrHelp) {
+		return 0
+	}
+	return 2
+}
 func envFirst(names ...string) string {
 	for _, name := range names {
 		if value := os.Getenv(name); value != "" {

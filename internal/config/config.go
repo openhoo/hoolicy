@@ -265,6 +265,9 @@ func ValidateRule(rule sdk.Rule) []string {
 			problems = append(problems, field+" is required")
 		}
 	}
+	if !ruleIDPattern.MatchString(rule.Kind) {
+		problems = append(problems, "kind must be lowercase dot/hyphen-separated")
+	}
 	if !rule.Severity.Valid() {
 		problems = append(problems, "severity must be info, warning, or error")
 	}
@@ -273,6 +276,7 @@ func ValidateRule(rule sdk.Rule) []string {
 			problems = append(problems, "controls require framework and id")
 		}
 	}
+	sort.Strings(problems)
 	return problems
 }
 
@@ -719,10 +723,16 @@ func validateRelativePath(path string) error {
 	if path == "" {
 		return nil
 	}
+	if strings.TrimSpace(path) != path || strings.ContainsRune(path, '\x00') {
+		return errors.New("path contains unsafe whitespace or NUL")
+	}
 	if filepath.IsAbs(path) {
 		return errors.New("absolute paths are forbidden")
 	}
-	clean := filepath.Clean(path)
+	clean := filepath.Clean(filepath.FromSlash(path))
+	if clean == "." {
+		return errors.New("path must name a file or subdirectory")
+	}
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return errors.New("path escapes repository root")
 	}

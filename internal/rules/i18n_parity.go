@@ -26,11 +26,17 @@ func (I18nParity) Validate(rule sdk.Rule) error {
 	if err := decodeSpec(rule, &spec); err != nil {
 		return err
 	}
-	if spec.Manifest == "" || spec.CodesPointer == "" || spec.LocalesDirectory == "" {
-		return fmt.Errorf("rule %s: i18n.parity requires manifest, codesPointer, and localesDirectory", rule.ID)
+	if spec.Manifest == "" || spec.LocalesDirectory == "" {
+		return fmt.Errorf("rule %s: i18n.parity requires manifest and localesDirectory", rule.ID)
 	}
-	if !strings.HasPrefix(spec.CodesPointer, "/") {
-		return fmt.Errorf("rule %s: codesPointer must be a JSON pointer", rule.ID)
+	if !safeRelativeRulePath(spec.Manifest) || !safeRelativeRulePath(spec.LocalesDirectory) {
+		return fmt.Errorf("rule %s: manifest and localesDirectory must stay within the repository", rule.ID)
+	}
+	if err := validateJSONPointer(spec.CodesPointer); err != nil {
+		return fmt.Errorf("rule %s: codesPointer %w", rule.ID, err)
+	}
+	if spec.Filename != "" && (!safeRelativeRulePath(spec.Filename) || strings.ContainsAny(spec.Filename, "/\\")) {
+		return fmt.Errorf("rule %s: filename must be one safe path segment", rule.ID)
 	}
 	return nil
 }
@@ -122,6 +128,9 @@ func languageCodes(value any) ([]string, error) {
 		code = strings.TrimSpace(code)
 		if code == "" {
 			return nil, fmt.Errorf("language entry lacks code")
+		}
+		if code == "." || code == ".." || strings.ContainsAny(code, "/\\\x00") {
+			return nil, fmt.Errorf("language code %q must be one safe path segment", code)
 		}
 		if seen[code] {
 			return nil, fmt.Errorf("duplicate language code %s", code)

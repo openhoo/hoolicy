@@ -21,7 +21,7 @@
             "required": ["name", "path"],
             "properties": {
               "name": { "$ref": "#/$defs/name" },
-              "path": { "type": "string" },
+              "path": { "type": "string", "minLength": 1 },
               "with": { "type": "object" }
             }
           },
@@ -31,9 +31,9 @@
             "required": ["name", "git", "ref"],
             "properties": {
               "name": { "$ref": "#/$defs/name" },
-              "git": { "type": "string" },
-              "ref": { "type": "string" },
-              "subdir": { "type": "string" },
+              "git": { "type": "string", "minLength": 1 },
+              "ref": { "type": "string", "minLength": 1 },
+              "subdir": { "type": "string", "minLength": 1 },
               "with": { "type": "object" }
             }
           }
@@ -47,6 +47,7 @@
   },
   "$defs": {
     "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "kind": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$" },
     "rule": {
       "type": "object",
       "additionalProperties": false,
@@ -58,11 +59,9 @@
         "rationale": { "type": "string", "minLength": 1 },
         "remediation": { "type": "string", "minLength": 1 },
         "severity": { "enum": ["info", "warning", "error"] },
-        "kind": {
-          "enum": ["files", "text", "structured.cel", "git.naming", "manifest.consistency", "sources.allowed", "exceptions.lifecycle", "i18n.parity", "gherkin.requirements"]
-        },
-        "files": { "type": "array", "items": { "type": "string" } },
-        "exclude": { "type": "array", "items": { "type": "string" } },
+        "kind": { "$ref": "#/$defs/kind" },
+        "files": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "exclude": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "controls": {
           "type": "array",
           "items": {

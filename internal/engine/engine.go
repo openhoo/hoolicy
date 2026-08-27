@@ -222,21 +222,36 @@ func sortFindings(findings []sdk.Finding) {
 
 func projectDigest(project *config.Project, rules []sdk.Rule) (string, error) {
 	hash := sha256.New()
+	writeInput := func(label string, data []byte) {
+		hash.Write([]byte(label))
+		hash.Write([]byte{0})
+		hash.Write(data)
+		hash.Write([]byte{0})
+	}
 	for _, input := range []struct{ label, path string }{
 		{label: config.DefaultFilename, path: project.Path},
 		{label: config.DefaultLockfile, path: filepath.Join(project.Root, config.DefaultLockfile)},
-		{label: filepath.ToSlash(project.Waivers), path: filepath.Join(project.Root, filepath.FromSlash(project.Waivers))},
 	} {
 		data, exists, err := readDigestFile(input.path)
 		if err != nil {
 			return "", err
 		}
 		if exists {
-			hash.Write([]byte(input.label))
-			hash.Write([]byte{0})
-			hash.Write(data)
-			hash.Write([]byte{0})
+			writeInput(input.label, data)
 		}
+	}
+	waiverLabel := filepath.ToSlash(project.Waivers)
+	_, waiverPath, waiverPathErr := safepath.Existing(project.Root, project.Waivers)
+	if waiverPathErr == nil {
+		data, _, err := readDigestFile(waiverPath)
+		if err != nil {
+			return "", err
+		}
+		writeInput(waiverLabel, data)
+	} else if !errors.Is(waiverPathErr, os.ErrNotExist) {
+		// Unsafe waiver metadata is represented without following or reading it.
+		// applyWaivers emits the actionable blocking finding.
+		writeInput(waiverLabel, []byte("unsafe"))
 	}
 	active, err := json.Marshal(rules)
 	if err != nil {

@@ -31,13 +31,22 @@ func (ManifestConsistency) Validate(rule sdk.Rule) error {
 	if err := decodeSpec(rule, &spec); err != nil {
 		return err
 	}
-	if spec.Authoritative.Path == "" || spec.Authoritative.Pointer == "" || len(spec.Targets) == 0 {
-		return fmt.Errorf("rule %s: manifest.consistency requires authoritative path/pointer and targets", rule.ID)
+	if spec.Authoritative.Path == "" || len(spec.Targets) == 0 {
+		return fmt.Errorf("rule %s: manifest.consistency requires an authoritative path and targets", rule.ID)
 	}
-	for _, value := range append([]manifestValue{spec.Authoritative}, spec.Targets...) {
-		if !strings.HasPrefix(value.Pointer, "/") {
-			return fmt.Errorf("rule %s: pointer %q must be a JSON pointer", rule.ID, value.Pointer)
+	seen := make(map[string]bool, len(spec.Targets))
+	for index, value := range append([]manifestValue{spec.Authoritative}, spec.Targets...) {
+		if !safeRelativeRulePath(value.Path) {
+			return fmt.Errorf("rule %s: manifest path %q must stay within the repository", rule.ID, value.Path)
 		}
+		if err := validateJSONPointer(value.Pointer); err != nil {
+			return fmt.Errorf("rule %s: %w", rule.ID, err)
+		}
+		key := value.Path + "\x00" + value.Pointer
+		if index > 0 && seen[key] {
+			return fmt.Errorf("rule %s: duplicate target %s%s", rule.ID, value.Path, value.Pointer)
+		}
+		seen[key] = true
 	}
 	return nil
 }
@@ -106,6 +115,9 @@ func readPointer(file sdk.File, pointer string) (any, error) {
 		return nil, fmt.Errorf("expected exactly one document")
 	}
 	current := documents[0].Data
+	if pointer == "" {
+		return current, nil
+	}
 	for _, token := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
 		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
 		switch value := current.(type) {

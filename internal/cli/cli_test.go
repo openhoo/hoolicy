@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openhoo/hoolicy/internal/config"
 	"github.com/openhoo/hoolicy/internal/engine"
 	"github.com/openhoo/hoolicy/internal/rules"
 	"github.com/openhoo/hoolicy/sdk"
@@ -63,6 +64,109 @@ func TestFailOnCannotWeakenProjectPolicy(t *testing.T) {
 	app, _, stderr := testApplication(t)
 	if code := app.run(context.Background(), []string{"check", "--config", path, "--fail-on", "error"}); code != 2 || !strings.Contains(stderr.String(), "may not weaken") {
 		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestCommandsRejectUnexpectedArguments(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "hoolicy.yaml")
+	writeCLIFile(t, path, "version: 1\nproject: demo\nrules: []\n")
+	tests := [][]string{
+		{"version", "extra"},
+		{"init", "extra"},
+		{"validate", "--config", path, "extra"},
+		{"check", "--config", path, "extra"},
+		{"list", "--config", path, "extra"},
+	}
+	for _, args := range tests {
+		args := args
+		t.Run(args[0], func(t *testing.T) {
+			app, _, stderr := testApplication(t)
+			if code := app.run(context.Background(), args); code != 2 || !strings.Contains(stderr.String(), "does not accept positional arguments") {
+				t.Fatalf("args=%v code=%d stderr=%q", args, code, stderr.String())
+			}
+		})
+	}
+}
+
+func TestCommandHelpExitsSuccessfully(t *testing.T) {
+	t.Parallel()
+	commands := [][]string{
+		{"version", "-h"}, {"init", "-h"}, {"validate", "-h"}, {"check", "-h"},
+		{"fix", "-h"}, {"list", "-h"}, {"explain", "-h"}, {"test", "-h"},
+		{"pack", "-h"}, {"pack", "add", "-h"}, {"pack", "update", "-h"}, {"pack", "verify", "-h"},
+	}
+	for _, args := range commands {
+		args := args
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			app, _, stderr := testApplication(t)
+			if code := app.run(context.Background(), args); code != 0 {
+				t.Fatalf("args=%v code=%d stderr=%q", args, code, stderr.String())
+			}
+		})
+	}
+}
+
+func TestPackAddDoesNotSaveInvalidLocalPack(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, "hoolicy.yaml")
+	writeCLIFile(t, configPath, "version: 1\nproject: demo\nrules: []\n")
+	writeCLIFile(t, filepath.Join(root, "packs", "broken", "pack.yaml"), `version: 1
+name: broken
+release: 1.0.0
+description: Broken pack.
+rules:
+  - id: broken.files
+    title: Broken files
+    description: Contains an invalid count range.
+    rationale: Invalid policy must not be activated.
+    remediation: Correct the range.
+    severity: error
+    kind: files
+    files: ['*.txt']
+    spec:
+      mode: count
+      minimum: 2
+      maximum: 1
+`)
+	app, _, stderr := testApplication(t)
+	args := []string{"pack", "add", "--config", configPath, "--path", "packs/broken", "broken"}
+	if code := app.run(context.Background(), args); code != 2 || !strings.Contains(stderr.String(), "added pack is invalid") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	project, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(project), "broken") {
+		t.Fatalf("invalid pack was saved:\n%s", project)
+	}
+}
+
+func TestPackUpdatePrunesLockAfterLastRemotePackWasRemoved(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, configPath, "version: 1\nproject: demo\nrules: []\n")
+	lockPath := filepath.Join(root, config.DefaultLockfile)
+	if err := config.SaveLock(lockPath, config.Lock{Version: 1, Packs: []config.LockedPack{{
+		Name: "stale", Git: "https://example.com/policy.git", Ref: "v1.0.0", Commit: strings.Repeat("a", 40),
+		Digest: "sha256:" + strings.Repeat("b", 64), Vendor: ".hoolicy/vendor/stale",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	app, stdout, stderr := testApplication(t)
+	if code := app.run(context.Background(), []string{"pack", "update", "--config", configPath}); code != 0 || !strings.Contains(stdout.String(), "Pruned stale") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	lock, err := config.LoadLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lock.Packs) != 0 {
+		t.Fatalf("stale lock entries remain: %#v", lock.Packs)
 	}
 }
 

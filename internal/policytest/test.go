@@ -201,7 +201,7 @@ func safeFixturePath(path string) (string, error) {
 		return "", fmt.Errorf("fixture path must be relative")
 	}
 	clean := filepath.Clean(path)
-	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("fixture path escapes root")
 	}
 	return clean, nil

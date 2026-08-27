@@ -40,10 +40,18 @@ func (SourcesAllowed) Validate(rule sdk.Rule) error {
 	if len(spec.Registries) == 0 && len(spec.NPM) == 0 && len(spec.NuGet) == 0 {
 		return fmt.Errorf("rule %s: sources.allowed needs at least one allowlist", rule.ID)
 	}
-	for _, values := range [][]string{spec.Registries, spec.NPM, spec.NuGet} {
-		for _, value := range values {
-			if strings.TrimSpace(value) == "" || strings.Contains(value, "@") {
-				return fmt.Errorf("rule %s: source allowlists must not be empty or contain credentials", rule.ID)
+	for _, registry := range spec.Registries {
+		if _, err := canonicalRegistry(registry); err != nil {
+			return fmt.Errorf("rule %s: invalid registry %q: %w", rule.ID, registry, err)
+		}
+	}
+	for _, allowlist := range []struct {
+		name   string
+		values []string
+	}{{name: "npm", values: spec.NPM}, {name: "nuget", values: spec.NuGet}} {
+		for _, value := range allowlist.values {
+			if _, err := canonicalSourceURL(value); err != nil {
+				return fmt.Errorf("rule %s: invalid %s source %q: %w", rule.ID, allowlist.name, value, err)
 			}
 		}
 	}
@@ -99,7 +107,7 @@ func checkNPMSources(rule sdk.Rule, file sdk.File, spec sourcesSpec, message str
 		text := strings.TrimSpace(string(data))
 		key, value, found := strings.Cut(text, "=")
 		key = strings.TrimSpace(key)
-		if !found || (!strings.HasSuffix(key, "registry") && !strings.HasSuffix(key, ":registry")) {
+		if !found || (key != "registry" && !strings.HasSuffix(key, ":registry")) {
 			continue
 		}
 		value = canonicalURL(value)
@@ -116,6 +124,7 @@ func checkNuGetSources(rule sdk.Rule, file sdk.File, spec sourcesSpec, message s
 	}
 	decoder := xml.NewDecoder(bytes.NewReader(file.Data))
 	var findings []sdk.Finding
+	inPackageSources := false
 	for {
 		token, err := decoder.Token()
 		if err != nil {
@@ -124,8 +133,19 @@ func checkNuGetSources(rule sdk.Rule, file sdk.File, spec sourcesSpec, message s
 			}
 			return nil, fmt.Errorf("%s: %w", file.Path, err)
 		}
+		if end, ok := token.(xml.EndElement); ok && strings.EqualFold(end.Name.Local, "packageSources") {
+			inPackageSources = false
+			continue
+		}
 		start, ok := token.(xml.StartElement)
-		if !ok || start.Name.Local != "add" {
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(start.Name.Local, "packageSources") {
+			inPackageSources = true
+			continue
+		}
+		if !inPackageSources || !strings.EqualFold(start.Name.Local, "add") {
 			continue
 		}
 		value := ""
@@ -138,7 +158,7 @@ func checkNuGetSources(rule sdk.Rule, file sdk.File, spec sourcesSpec, message s
 				key = attribute.Value
 			}
 		}
-		if value != "" && strings.Contains(value, "://") && !containsCanonicalURL(spec.NuGet, value) {
+		if value != "" && !containsCanonicalURL(spec.NuGet, value) {
 			findings = append(findings, finding(rule, fmt.Sprintf("%s: NuGet source %s", message, redactURL(value)), file.Path, "nuget:"+key, 1, 1))
 		}
 	}
@@ -158,19 +178,20 @@ func checkDockerfileSources(rule sdk.Rule, file sdk.File, spec sourcesSpec, mess
 		if strings.HasPrefix(image, "--platform=") && len(fields) > 2 {
 			image = fields[2]
 		}
+		alias := ""
 		for index := 2; index+1 < len(fields); index++ {
 			if strings.EqualFold(fields[index], "AS") {
-				stages[strings.ToLower(fields[index+1])] = true
+				alias = strings.ToLower(fields[index+1])
 				break
 			}
 		}
-		if strings.ContainsAny(image, "${}") {
-			continue
-		}
-		if !stages[strings.ToLower(image)] {
+		if !strings.ContainsAny(image, "${}") && !stages[strings.ToLower(image)] {
 			if problem := imageProblem(image, spec); problem != "" {
 				findings = append(findings, finding(rule, message+": "+problem, file.Path, "image:"+image, entry.line, 1))
 			}
+		}
+		if alias != "" {
+			stages[alias] = true
 		}
 	}
 	return findings
@@ -268,7 +289,7 @@ func imageProblem(image string, spec sourcesSpec) string {
 			registry = first
 		}
 	}
-	if len(spec.Registries) > 0 && !containsFold(spec.Registries, registry) {
+	if len(spec.Registries) > 0 && !containsRegistry(spec.Registries, registry) {
 		return fmt.Sprintf("registry %s is not allowed", registry)
 	}
 	if strings.Contains(normalized, "@sha256:") && !imageDigestPattern.MatchString(normalized) {
@@ -310,7 +331,11 @@ func logicalLines(data []byte) []logicalLine {
 }
 
 func canonicalURL(value string) string {
-	return strings.TrimRight(strings.TrimSpace(value), "/")
+	canonical, err := canonicalSourceURL(value)
+	if err != nil {
+		return strings.TrimRight(strings.TrimSpace(value), "/")
+	}
+	return canonical
 }
 
 func containsCanonicalURL(values []string, expected string) bool {
@@ -323,13 +348,45 @@ func containsCanonicalURL(values []string, expected string) bool {
 	return false
 }
 
-func containsFold(values []string, expected string) bool {
+func containsRegistry(values []string, expected string) bool {
 	for _, value := range values {
-		if strings.EqualFold(strings.TrimSpace(value), expected) {
+		canonical, err := canonicalRegistry(value)
+		if err == nil && canonical == strings.ToLower(expected) {
 			return true
 		}
 	}
 	return false
+}
+
+func canonicalRegistry(value string) (string, error) {
+	if value == "" || strings.TrimSpace(value) != value || strings.ContainsAny(value, "/@?# \t\r\n") {
+		return "", errors.New("expected a registry host without scheme, path, or credentials")
+	}
+	parsed, err := url.Parse("https://" + value)
+	if err != nil || parsed.Host == "" || parsed.Host != value || parsed.Hostname() == "" {
+		return "", errors.New("expected a valid registry host")
+	}
+	return strings.ToLower(value), nil
+}
+
+func canonicalSourceURL(value string) (string, error) {
+	if value == "" || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n") {
+		return "", errors.New("expected an absolute HTTP(S) URL")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || (!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) || parsed.Host == "" {
+		return "", errors.New("expected an absolute HTTP(S) URL")
+	}
+	if parsed.User != nil {
+		return "", errors.New("embedded credentials are forbidden")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("query strings and fragments are forbidden")
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return parsed.String(), nil
 }
 
 func redactURL(value string) string {

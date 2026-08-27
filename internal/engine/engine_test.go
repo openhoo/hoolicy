@@ -103,6 +103,31 @@ func TestProjectDigestRejectsSymlinkedPolicyInput(t *testing.T) {
 	}
 }
 
+func TestUnsafeWaiverParentProducesFindingWithoutReadingOutsideRoot(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	projectPath := filepath.Join(root, config.DefaultFilename)
+	writeEngineFile(t, projectPath, "version: 1\nproject: demo\nrules: []\n")
+	outside := t.TempDir()
+	if err := os.Mkdir(filepath.Join(outside, "waivers.yaml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, ".hoolicy")); err != nil {
+		t.Fatal(err)
+	}
+	project, err := config.LoadProject(projectPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := New(sdk.NewRegistry()).Check(context.Background(), project, Options{ToolVersion: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) != 1 || report.Findings[0].RuleID != "hoolicy.waivers" || !strings.Contains(report.Findings[0].Message, "unsafe") {
+		t.Fatalf("unexpected unsafe-waiver result: %#v", report.Findings)
+	}
+}
+
 func BenchmarkEngineCheck(b *testing.B) {
 	root := b.TempDir()
 	for index := range 500 {

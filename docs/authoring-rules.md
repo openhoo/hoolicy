@@ -64,11 +64,11 @@ Checks `branchPattern`, `allowedBranches`, `commitPattern`, `mergeRequestTitlePa
 
 ### `manifest.consistency`
 
-Compares one authoritative JSON pointer against target file pointers. Scalar JSON targets can receive hash-bound safe fixes.
+Compares one authoritative JSON pointer against target file pointers. Empty pointer selects document root. Scalar JSON targets can receive hash-bound safe fixes.
 
 ### `sources.allowed`
 
-Parses npm registry entries, NuGet XML sources, Dockerfile `FROM`, and structured `image` or `repository` values. Supports `registries`, `npm`, `nuget`, and `requireDigest`. Credentials in allowlists are rejected.
+Parses npm registry entries, NuGet XML sources, Dockerfile `FROM`, and structured `image` or `repository` values. Supports registry hosts in `registries`, absolute HTTP(S) URLs in `npm` and `nuget`, plus `requireDigest`. Credentials, URL queries, and fragments in allowlists are rejected.
 
 ### `exceptions.lifecycle`
 
