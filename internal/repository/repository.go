@@ -11,10 +11,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-git/go-billy/v5/osfs"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
 	"github.com/openhoo/hoolicy/internal/safepath"
 	"github.com/openhoo/hoolicy/sdk"
 )
@@ -497,7 +501,53 @@ func commitSet(repository *git.Repository, from plumbing.Hash) (map[plumbing.Has
 }
 
 func openGoGit(root string) (*git.Repository, error) {
-	return git.PlainOpenWithOptions(root, &git.PlainOpenOptions{EnableDotGitCommonDir: true})
+	metadata := filepath.Join(root, ".git")
+	info, err := os.Stat(metadata)
+	if err != nil || info.IsDir() {
+		return git.PlainOpenWithOptions(root, &git.PlainOpenOptions{EnableDotGitCommonDir: true})
+	}
+
+	// go-git v5 leaves the linked-worktree commondir file open. Read both
+	// indirection files explicitly so Windows does not retain a locked handle.
+	data, err := os.ReadFile(metadata)
+	if err != nil {
+		return nil, err
+	}
+	const prefix = "gitdir: "
+	line := strings.TrimSpace(strings.SplitN(string(data), "\n", 2)[0])
+	if !strings.HasPrefix(line, prefix) {
+		return nil, fmt.Errorf(".git file has no %q prefix", prefix)
+	}
+	gitDir := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	if gitDir == "" {
+		return nil, fmt.Errorf(".git file has an empty Git directory")
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(root, gitDir)
+	}
+
+	repositoryFilesystem := dotgit.NewRepositoryFilesystem(osfs.New(gitDir), nil)
+	commonData, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	if err == nil && len(commonData) > 0 {
+		commonDir := strings.TrimSpace(strings.SplitN(string(commonData), "\n", 2)[0])
+		if commonDir == "" {
+			return nil, fmt.Errorf("commondir file has an empty Git common directory")
+		}
+		if !filepath.IsAbs(commonDir) {
+			commonDir = filepath.Join(gitDir, commonDir)
+		}
+		if info, err := os.Stat(commonDir); err != nil {
+			return nil, err
+		} else if !info.IsDir() {
+			return nil, fmt.Errorf("Git common directory is not a directory: %s", commonDir)
+		}
+		repositoryFilesystem = dotgit.NewRepositoryFilesystem(osfs.New(gitDir), osfs.New(commonDir))
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+
+	storage := filesystem.NewStorage(repositoryFilesystem, cache.NewObjectLRUDefault())
+	return git.Open(storage, osfs.New(root))
 }
 
 func commitSubject(message string) string {

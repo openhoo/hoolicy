@@ -274,6 +274,19 @@ func TestRepositoryPureGoFallbackSupportsLinkedWorktree(t *testing.T) {
 	if context := repo.Git(); context.Branch != "feature" || context.Commit == "" || context.Dirty {
 		t.Fatalf("unexpected fallback Git context: %#v", context)
 	}
+	metadata, err := os.ReadFile(filepath.Join(linked, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitDir := strings.TrimSpace(strings.TrimPrefix(string(metadata), "gitdir: "))
+	commonDir := filepath.Join(gitDir, "commondir")
+	moved := commonDir + ".moved"
+	if err := os.Rename(commonDir, moved); err != nil {
+		t.Fatalf("linked-worktree metadata handle remains open: %v", err)
+	}
+	if err := os.Rename(moved, commonDir); err != nil {
+		t.Fatalf("restore linked-worktree metadata: %v", err)
+	}
 }
 
 func TestRepositoryRejectsInvalidBaseRevision(t *testing.T) {
