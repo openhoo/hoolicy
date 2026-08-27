@@ -69,7 +69,11 @@ func (ManifestConsistency) Evaluate(_ context.Context, input sdk.EvalContext, ru
 		if pointerErr != nil {
 			return nil, fmt.Errorf("rule %s target %s: %w", rule.ID, target.Path, pointerErr)
 		}
-		if fmt.Sprint(value) == fmt.Sprint(authoritative) {
+		equal, compareErr := manifestValuesEqual(value, authoritative)
+		if compareErr != nil {
+			return nil, fmt.Errorf("rule %s compare %s: %w", rule.ID, target.Path, compareErr)
+		}
+		if equal {
 			continue
 		}
 		result := finding(rule, fmt.Sprintf("%s: %s%s is %v, expected %v", message, target.Path, target.Pointer, value, authoritative), target.Path, target.Pointer, 1, 1)
@@ -79,6 +83,18 @@ func (ManifestConsistency) Evaluate(_ context.Context, input sdk.EvalContext, ru
 		findings = append(findings, result)
 	}
 	return findings, nil
+}
+
+func manifestValuesEqual(left, right any) (bool, error) {
+	leftJSON, err := json.Marshal(left)
+	if err != nil {
+		return false, err
+	}
+	rightJSON, err := json.Marshal(right)
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(leftJSON, rightJSON), nil
 }
 
 func readPointer(file sdk.File, pointer string) (any, error) {

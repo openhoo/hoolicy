@@ -3,10 +3,11 @@ set -euo pipefail
 
 version="${VERSION:?VERSION is required}"
 commit="${COMMIT:-$(git rev-parse HEAD)}"
-build_date="${BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 source_date_epoch="${SOURCE_DATE_EPOCH:-$(git show -s --format=%ct HEAD)}"
+build_date="${BUILD_DATE:-$(date -u --date="@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)}"
+dist_dir="$(pwd)/dist"
 
-if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
   echo "VERSION must be semantic without a v prefix" >&2
   exit 2
 fi
@@ -26,11 +27,12 @@ build_one() {
     -ldflags="-s -w -buildid= -X main.version=${version} -X main.commit=${commit} -X main.date=${build_date}" \
     -o "$stage/hoolicy${suffix}" ./cmd/hoolicy
   cp LICENSE README.md "$stage/"
+  touch --date="@${source_date_epoch}" "$stage/hoolicy${suffix}" "$stage/LICENSE" "$stage/README.md"
   if [[ "$goos" == "windows" ]]; then
-    (cd "$temporary" && zip -X -qr "$OLDPWD/dist/${name}.zip" "$name")
+    (cd "$temporary" && find "$name" -type f -print | LC_ALL=C sort | zip -X -q "$dist_dir/${name}.zip" -@)
   else
     tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@${source_date_epoch}" \
-      -czf "dist/${name}.tar.gz" -C "$temporary" "$name"
+      -czf "$dist_dir/${name}.tar.gz" -C "$temporary" "$name"
   fi
 }
 

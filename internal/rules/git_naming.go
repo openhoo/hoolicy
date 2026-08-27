@@ -26,8 +26,14 @@ func (GitNaming) Validate(rule sdk.Rule) error {
 	if err := decodeSpec(rule, &spec); err != nil {
 		return err
 	}
-	if spec.BranchPattern == "" && spec.CommitPattern == "" && spec.MergeRequestTitlePattern == "" {
+	if spec.BranchPattern == "" && spec.CommitPattern == "" && spec.MergeRequestTitlePattern == "" && spec.MergeRequestTitleMaximum == 0 {
 		return fmt.Errorf("rule %s: git.naming needs at least one pattern", rule.ID)
+	}
+	if spec.MergeRequestTitleMaximum < 0 {
+		return fmt.Errorf("rule %s: mergeRequestTitleMaximum must not be negative", rule.ID)
+	}
+	if len(spec.AllowedBranches) > 0 && spec.BranchPattern == "" {
+		return fmt.Errorf("rule %s: allowedBranches requires branchPattern", rule.ID)
 	}
 	for _, expression := range []string{spec.BranchPattern, spec.CommitPattern, spec.MergeRequestTitlePattern} {
 		if expression == "" {

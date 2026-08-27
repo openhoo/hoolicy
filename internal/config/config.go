@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openhoo/hoolicy/internal/repository"
 	"github.com/openhoo/hoolicy/sdk"
 	"go.yaml.in/yaml/v3"
 )
@@ -29,6 +30,8 @@ var (
 	projectNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 	ruleIDPattern      = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
 	fingerprintPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	commitPattern      = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	digestPattern      = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	semverPattern      = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
 )
 
@@ -207,6 +210,16 @@ func (p *Project) Validate() error {
 		if remote && (pack.Git == "" || pack.Ref == "") {
 			problems = append(problems, prefix+" requires both git and ref")
 		}
+		if pack.Git != "" {
+			if err := validateGitLocation(pack.Git); err != nil {
+				problems = append(problems, prefix+".git: "+err.Error())
+			}
+		}
+		if pack.Ref != "" {
+			if strings.TrimSpace(pack.Ref) != pack.Ref || strings.HasPrefix(pack.Ref, "-") || strings.ContainsAny(pack.Ref, "\x00\r\n") {
+				problems = append(problems, prefix+".ref is unsafe")
+			}
+		}
 		if err := validateRelativePath(pack.Path); local && err != nil {
 			problems = append(problems, prefix+".path: "+err.Error())
 		}
@@ -280,6 +293,9 @@ func LoadPack(path string) (*Pack, error) {
 	}
 	if !semverPattern.MatchString(pack.Release) || strings.TrimSpace(pack.Description) == "" {
 		return nil, fmt.Errorf("%s: semantic release and description are required", manifest)
+	}
+	if len(pack.Rules) == 0 {
+		return nil, fmt.Errorf("%s: at least one rule is required", manifest)
 	}
 	for name, parameter := range pack.Parameters {
 		if !projectNamePattern.MatchString(name) {
@@ -377,6 +393,50 @@ func LoadLock(path string) (*Lock, error) {
 	if lock.Version != CurrentVersion {
 		return nil, fmt.Errorf("%s: version must be %d", path, CurrentVersion)
 	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("%s: exactly one JSON value is required", path)
+		}
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	seen := make(map[string]bool, len(lock.Packs))
+	for index, entry := range lock.Packs {
+		prefix := fmt.Sprintf("%s packs[%d]", path, index)
+		if !projectNamePattern.MatchString(entry.Name) {
+			return nil, fmt.Errorf("%s: invalid name", prefix)
+		}
+		if seen[entry.Name] {
+			return nil, fmt.Errorf("%s: duplicate pack %s", path, entry.Name)
+		}
+		seen[entry.Name] = true
+		if err := validateGitLocation(entry.Git); err != nil {
+			return nil, fmt.Errorf("%s git: %w", prefix, err)
+		}
+		if entry.Ref == "" || strings.TrimSpace(entry.Ref) != entry.Ref || strings.HasPrefix(entry.Ref, "-") || strings.ContainsAny(entry.Ref, "\x00\r\n") {
+			return nil, fmt.Errorf("%s: invalid ref", prefix)
+		}
+		if !commitPattern.MatchString(entry.Commit) {
+			return nil, fmt.Errorf("%s: invalid commit", prefix)
+		}
+		if !digestPattern.MatchString(entry.Digest) {
+			return nil, fmt.Errorf("%s: invalid digest", prefix)
+		}
+		if entry.Vendor == "" {
+			return nil, fmt.Errorf("%s: vendor path is required", prefix)
+		}
+		if err := validateRelativePath(entry.Vendor); err != nil {
+			return nil, fmt.Errorf("%s vendor: %w", prefix, err)
+		}
+		if entry.Subdir != "" {
+			if err := validateRelativePath(entry.Subdir); err != nil {
+				return nil, fmt.Errorf("%s subdir: %w", prefix, err)
+			}
+		}
+		if entry.Release != "" && !semverPattern.MatchString(entry.Release) {
+			return nil, fmt.Errorf("%s: invalid release", prefix)
+		}
+	}
 	return &lock, nil
 }
 
@@ -394,6 +454,14 @@ func SaveProject(path string, project Project) error {
 	project.Root = ""
 	project.Path = ""
 	data, err := yaml.Marshal(project)
+	if err != nil {
+		return err
+	}
+	return atomicWrite(path, data, 0o644)
+}
+
+func SaveWaivers(path string, waivers WaiverFile) error {
+	data, err := yaml.Marshal(waivers)
 	if err != nil {
 		return err
 	}
@@ -579,8 +647,13 @@ func ValidateWaiver(waiver Waiver, now time.Time) error {
 		cleaned := strings.TrimSpace(filepath.ToSlash(path))
 		if cleaned == "" || cleaned == "*" || cleaned == "**" || cleaned == "**/*" || cleaned == "." {
 			problems = append(problems, "global path scopes are forbidden")
+			continue
 		}
 		if err := validateRelativePath(path); err != nil {
+			problems = append(problems, "path "+path+": "+err.Error())
+			continue
+		}
+		if err := validateWaiverPathPattern(path); err != nil {
 			problems = append(problems, "path "+path+": "+err.Error())
 		}
 	}
@@ -613,6 +686,35 @@ func ValidateWaiver(waiver Waiver, now time.Time) error {
 	return nil
 }
 
+func validateWaiverPathPattern(pattern string) error {
+	rootProbes := []string{"README.md", ".hidden", "policy.json"}
+	nestedProbes := []string{"docs/guide.md", "src/main.go", ".github/workflows/ci.yml"}
+	allMatch := func(probes []string) (bool, error) {
+		for _, probe := range probes {
+			matched, err := repository.Matches(probe, []string{pattern})
+			if err != nil {
+				return false, err
+			}
+			if !matched {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+	rootGlobal, err := allMatch(rootProbes)
+	if err != nil {
+		return fmt.Errorf("invalid glob: %w", err)
+	}
+	nestedGlobal, err := allMatch(nestedProbes)
+	if err != nil {
+		return fmt.Errorf("invalid glob: %w", err)
+	}
+	if rootGlobal || nestedGlobal {
+		return errors.New("global path scopes are forbidden")
+	}
+	return nil
+}
+
 func validateRelativePath(path string) error {
 	if path == "" {
 		return nil
@@ -623,6 +725,31 @@ func validateRelativePath(path string) error {
 	clean := filepath.Clean(path)
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return errors.New("path escapes repository root")
+	}
+	return nil
+}
+
+func validateGitLocation(value string) error {
+	if value == "" {
+		return errors.New("location is required")
+	}
+	if strings.TrimSpace(value) != value || strings.HasPrefix(value, "-") || strings.ContainsAny(value, "\x00\r\n") {
+		return errors.New("location is unsafe")
+	}
+	if strings.Contains(value, "://") {
+		parsed, err := url.Parse(value)
+		if err != nil || parsed.Scheme == "" {
+			return errors.New("location is invalid")
+		}
+		if parsed.RawQuery != "" || parsed.Fragment != "" {
+			return errors.New("query strings and fragments are forbidden")
+		}
+		if parsed.User != nil {
+			_, hasPassword := parsed.User.Password()
+			if hasPassword || parsed.Scheme == "http" || parsed.Scheme == "https" {
+				return errors.New("embedded credentials are forbidden")
+			}
+		}
 	}
 	return nil
 }

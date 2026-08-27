@@ -203,10 +203,10 @@ func walkImages(value any, parentKey string, visit func(key, image string)) {
 	case map[string]any:
 		for key, child := range current {
 			lower := strings.ToLower(key)
-			if text, ok := child.(string); ok && lower == "image" && strings.Contains(text, "/") {
+			if text, ok := child.(string); ok && lower == "image" && structuredImageValue(text, parentKey, current) {
 				visit(key, strings.TrimSpace(text))
 			}
-			if text, ok := child.(string); ok && lower == "repository" && imageConfiguration(parentKey, current) && strings.Contains(text, "/") {
+			if text, ok := child.(string); ok && lower == "repository" && imageConfiguration(parentKey, current) {
 				image := strings.TrimSpace(text)
 				if digest, ok := current["digest"].(string); ok && strings.TrimSpace(digest) != "" {
 					image += "@" + strings.TrimPrefix(strings.TrimSpace(digest), "@")
@@ -220,6 +220,27 @@ func walkImages(value any, parentKey string, visit func(key, image string)) {
 			walkImages(child, parentKey, visit)
 		}
 	}
+}
+
+func structuredImageValue(value, parentKey string, object map[string]any) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, " \t\r\n") || strings.HasPrefix(value, ".") || strings.HasPrefix(value, "/") {
+		return false
+	}
+	if strings.Contains(value, "/") || strings.Contains(value, ":") || strings.Contains(value, "@") {
+		return true
+	}
+	switch strings.ToLower(parentKey) {
+	case "container", "containers", "initcontainer", "initcontainers":
+		return true
+	}
+	for key := range object {
+		switch strings.ToLower(key) {
+		case "command", "entrypoint", "imagepullpolicy", "ports", "resources":
+			return true
+		}
+	}
+	return false
 }
 
 func imageConfiguration(parentKey string, object map[string]any) bool {
@@ -240,10 +261,12 @@ func imageProblem(image string, spec sourcesSpec) string {
 	if normalized == "scratch" {
 		return ""
 	}
-	first := strings.SplitN(normalized, "/", 2)[0]
-	registry := first
-	if !strings.ContainsAny(first, ".:") && first != "localhost" {
-		registry = "docker.io"
+	registry := "docker.io"
+	if slash := strings.IndexByte(normalized, '/'); slash >= 0 {
+		first := normalized[:slash]
+		if strings.ContainsAny(first, ".:") || first == "localhost" {
+			registry = first
+		}
 	}
 	if len(spec.Registries) > 0 && !containsFold(spec.Registries, registry) {
 		return fmt.Sprintf("registry %s is not allowed", registry)

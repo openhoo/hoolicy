@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/openhoo/hoolicy/internal/repository"
 	"github.com/openhoo/hoolicy/internal/safepath"
 	"github.com/openhoo/hoolicy/sdk"
 )
@@ -22,10 +22,11 @@ type Plan struct {
 }
 
 type FilePlan struct {
-	Path string
-	Mode os.FileMode
-	Old  []byte
-	New  []byte
+	Path   string
+	Mode   os.FileMode
+	Exists bool
+	Old    []byte
+	New    []byte
 }
 
 type stagedFile struct {
@@ -65,7 +66,11 @@ func Build(root string, findings []sdk.Finding, selected []string) (*Plan, error
 		if err != nil {
 			return nil, err
 		}
-		if dirty(absoluteRoot, clean) {
+		isDirty, statusErr := dirty(absoluteRoot, clean)
+		if statusErr != nil {
+			return nil, statusErr
+		}
+		if isDirty {
 			return nil, fmt.Errorf("refusing to fix dirty target file %s", clean)
 		}
 		info, statErr := os.Lstat(absolute)
@@ -105,7 +110,7 @@ func Build(root string, findings []sdk.Finding, selected []string) (*Plan, error
 			edit := edits[i]
 			updated = append(append(append([]byte(nil), updated[:edit.Start]...), edit.Replacement...), updated[edit.End:]...)
 		}
-		plan.Files = append(plan.Files, FilePlan{Path: clean, Mode: mode, Old: old, New: updated})
+		plan.Files = append(plan.Files, FilePlan{Path: clean, Mode: mode, Exists: statErr == nil, Old: old, New: updated})
 	}
 	return plan, nil
 }
@@ -181,11 +186,10 @@ func (p *Plan) Apply() error {
 			return err
 		}
 		current, readErr := os.ReadFile(target)
-		if readErr == nil {
-			if !bytes.Equal(current, file.Old) {
-				return fmt.Errorf("%s changed after preview", file.Path)
-			}
-		} else if !errors.Is(readErr, os.ErrNotExist) || len(file.Old) > 0 {
+		if file.Exists && (readErr != nil || !bytes.Equal(current, file.Old)) {
+			return fmt.Errorf("%s changed after preview", file.Path)
+		}
+		if !file.Exists && !errors.Is(readErr, os.ErrNotExist) {
 			return fmt.Errorf("%s changed after preview", file.Path)
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -210,13 +214,12 @@ func (p *Plan) Apply() error {
 		if err := temporary.Close(); err != nil {
 			return err
 		}
-		_, statErr := os.Stat(target)
 		backup, err := reserveName(filepath.Dir(target), ".hoolicy-backup-*")
 		if err != nil {
 			_ = os.Remove(temporary.Name())
 			return err
 		}
-		stages = append(stages, stagedFile{target: target, temp: temporary.Name(), backup: backup, existed: statErr == nil})
+		stages = append(stages, stagedFile{target: target, temp: temporary.Name(), backup: backup, existed: file.Exists})
 	}
 	for index, entry := range stages {
 		if entry.existed {
@@ -276,10 +279,12 @@ func sharedContext(left, right []string) (int, int) {
 	return prefix, suffix
 }
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
-func dirty(root, path string) bool {
-	result := exec.Command("git", "-C", root, "status", "--porcelain=v1", "--", path)
-	output, err := result.Output()
-	return err == nil && len(bytes.TrimSpace(output)) > 0
+func dirty(root, path string) (bool, error) {
+	dirty, err := repository.GitPathDirty(root, path)
+	if err != nil {
+		return false, fmt.Errorf("cannot verify Git status for %s: %w", path, err)
+	}
+	return dirty, nil
 }
 func safePath(root, path string) (string, string, error) {
 	clean, absolute, err := safepath.Writable(root, path)

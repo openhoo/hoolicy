@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -119,7 +121,10 @@ func TestInspectGit(t *testing.T) {
 	runGit(t, root, "commit", "-am", "second subject")
 	head := runGit(t, root, "rev-parse", "HEAD")
 
-	context := inspectGit(root, Options{BaseSHA: base})
+	context, err := inspectGit(root, Options{BaseSHA: base})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if context.Branch != "main" || context.Commit != head || context.Dirty {
 		t.Fatalf("unexpected Git context: %#v", context)
 	}
@@ -130,8 +135,162 @@ func TestInspectGit(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "untracked.txt"), []byte("dirty\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if context := inspectGit(root, Options{}); !context.Dirty {
+	context, err = inspectGit(root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !context.Dirty {
 		t.Fatalf("expected dirty Git context: %#v", context)
+	}
+}
+
+func TestRepositoryUsesPureGoGitFallback(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("secret.json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("tracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", ".gitignore", "tracked.txt")
+	runGit(t, root, "commit", "-m", "test: fallback")
+	if err := os.WriteFile(filepath.Join(root, "secret.json"), []byte(`{"token":"hidden"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "visible.txt"), []byte("visible\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "")
+	repo, err := Open(root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := make([]string, 0, len(repo.AllFiles()))
+	for _, file := range repo.AllFiles() {
+		paths = append(paths, file.Path)
+	}
+	if slices.Contains(paths, "secret.json") || !slices.Contains(paths, "tracked.txt") || !slices.Contains(paths, "visible.txt") {
+		t.Fatalf("unexpected fallback files: %#v", paths)
+	}
+	context := repo.Git()
+	if context.Branch != "main" || context.Commit == "" || len(context.CommitSubjects) != 1 || context.CommitSubjects[0].Subject != "test: fallback" || !context.Dirty {
+		t.Fatalf("unexpected fallback Git context: %#v", context)
+	}
+}
+
+func TestRepositoryPureGoFallbackSupportsUnbornRepository(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("secret.json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "secret.json"), []byte(`{"token":"hidden"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "visible.txt"), []byte("visible\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "")
+	repo, err := Open(root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := make([]string, 0, len(repo.AllFiles()))
+	for _, file := range repo.AllFiles() {
+		paths = append(paths, file.Path)
+	}
+	if slices.Contains(paths, "secret.json") || !slices.Contains(paths, ".gitignore") || !slices.Contains(paths, "visible.txt") {
+		t.Fatalf("unexpected fallback files: %#v", paths)
+	}
+	context := repo.Git()
+	if context.Branch != "main" || context.Commit != "" || !context.Dirty {
+		t.Fatalf("unexpected fallback Git context: %#v", context)
+	}
+}
+
+func TestRepositoryPureGoFallbackSupportsUnreadableIndex(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce Unix index permission bits")
+	}
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("secret.json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("tracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", ".gitignore", "tracked.txt")
+	runGit(t, root, "commit", "-m", "test: private index")
+	if err := os.WriteFile(filepath.Join(root, "secret.json"), []byte(`{"token":"hidden"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "visible.txt"), []byte("visible\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(root, ".git", "index"), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "")
+	repo, err := Open(root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := make([]string, 0, len(repo.AllFiles()))
+	for _, file := range repo.AllFiles() {
+		paths = append(paths, file.Path)
+	}
+	if slices.Contains(paths, "secret.json") || !slices.Contains(paths, "tracked.txt") || !slices.Contains(paths, "visible.txt") {
+		t.Fatalf("unexpected fallback files: %#v", paths)
+	}
+	context := repo.Git()
+	if context.Commit == "" || !context.Dirty || context.Properties["gitIndexReadable"] != false {
+		t.Fatalf("unexpected conservative Git context: %#v", context)
+	}
+}
+
+func TestRepositoryPureGoFallbackSupportsLinkedWorktree(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("tracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-m", "test: linked worktree")
+	linked := filepath.Join(t.TempDir(), "linked")
+	runGit(t, root, "worktree", "add", "-b", "feature", linked)
+	t.Setenv("PATH", "")
+	repo, err := Open(linked, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context := repo.Git(); context.Branch != "feature" || context.Commit == "" || context.Dirty {
+		t.Fatalf("unexpected fallback Git context: %#v", context)
+	}
+}
+
+func TestRepositoryRejectsInvalidBaseRevision(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("tracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-m", "test: base")
+	if _, err := Open(root, Options{BaseSHA: "not-a-revision"}); err == nil || !strings.Contains(err.Error(), "inspect Git repository") {
+		t.Fatalf("expected invalid base error, got %v", err)
+	}
+	if _, err := Open(root, Options{BaseSHA: "--all"}); err == nil || !strings.Contains(err.Error(), "unsafe base revision") {
+		t.Fatalf("expected option-like base rejection, got %v", err)
 	}
 }
 

@@ -32,6 +32,9 @@ func (GherkinRequirements) Validate(rule sdk.Rule) error {
 	if spec.Language == "" {
 		spec.Language = "en"
 	}
+	if spec.MinimumScenarios < 0 {
+		return fmt.Errorf("rule %s: minimumScenarios must not be negative", rule.ID)
+	}
 	if len(spec.RequiredTags) == 0 && len(spec.EachScenarioAnyOf) == 0 && spec.MinimumScenarios == 0 {
 		return fmt.Errorf("rule %s: gherkin.requirements needs a tag or scenario requirement", rule.ID)
 	}

@@ -61,11 +61,15 @@ func Resolve(project *config.Project) ([]sdk.Rule, error) {
 			if !commitPattern.MatchString(locked.Commit) {
 				return nil, fmt.Errorf("pack %s lock has invalid commit", reference.Name)
 			}
-			path = locked.Vendor
-			if path == "" {
-				path = filepath.ToSlash(filepath.Join(".hoolicy", "vendor", reference.Name))
+			expectedVendor := filepath.ToSlash(filepath.Join(".hoolicy", "vendor", reference.Name))
+			if locked.Vendor != expectedVendor {
+				return nil, fmt.Errorf("pack %s lock has unexpected vendor path %s", reference.Name, locked.Vendor)
 			}
-			absolute := filepath.Join(project.Root, filepath.FromSlash(path))
+			path = locked.Vendor
+			_, absolute, err := safepath.Existing(project.Root, path)
+			if err != nil {
+				return nil, fmt.Errorf("pack %s: %w", reference.Name, err)
+			}
 			digest, err := Digest(absolute)
 			if err != nil {
 				return nil, fmt.Errorf("pack %s: %w", reference.Name, err)
@@ -181,7 +185,7 @@ func Sync(project *config.Project, name string) (config.LockedPack, error) {
 	commands := [][]string{
 		{"init", "--quiet", repository},
 		{"-C", repository, "remote", "add", "origin", reference.Git},
-		{"-C", repository, "fetch", "--quiet", "--depth", "1", "origin", reference.Ref},
+		{"-C", repository, "fetch", "--quiet", "--depth", "1", "origin", "--", reference.Ref},
 		{"-C", repository, "checkout", "--quiet", "--detach", "FETCH_HEAD"},
 	}
 	for _, args := range commands {
@@ -202,7 +206,10 @@ func Sync(project *config.Project, name string) (config.LockedPack, error) {
 	}
 	source := repository
 	if reference.Subdir != "" {
-		source = filepath.Join(repository, filepath.FromSlash(reference.Subdir))
+		_, source, err = safepath.Existing(repository, reference.Subdir)
+		if err != nil {
+			return config.LockedPack{}, fmt.Errorf("pack %s subdir: %w", reference.Name, err)
+		}
 	}
 	pack, err := config.LoadPack(source)
 	if err != nil {
@@ -211,16 +218,24 @@ func Sync(project *config.Project, name string) (config.LockedPack, error) {
 	if pack.Name != reference.Name {
 		return config.LockedPack{}, fmt.Errorf("pack name %s does not match requested %s", pack.Name, reference.Name)
 	}
-	staged := filepath.Join(temporary, "vendor")
+	vendorRelative := filepath.ToSlash(filepath.Join(".hoolicy", "vendor", reference.Name))
+	_, vendor, err := safepath.Writable(project.Root, vendorRelative)
+	if err != nil {
+		return config.LockedPack{}, err
+	}
+	vendorParent := filepath.Dir(vendor)
+	if err := os.MkdirAll(vendorParent, 0o755); err != nil {
+		return config.LockedPack{}, err
+	}
+	staged, err := os.MkdirTemp(vendorParent, "."+reference.Name+"-stage-*")
+	if err != nil {
+		return config.LockedPack{}, err
+	}
+	defer os.RemoveAll(staged)
 	if err := copyTree(source, staged); err != nil {
 		return config.LockedPack{}, err
 	}
 	digest, err := Digest(staged)
-	if err != nil {
-		return config.LockedPack{}, err
-	}
-	vendorRelative := filepath.ToSlash(filepath.Join(".hoolicy", "vendor", reference.Name))
-	_, vendor, err := safepath.Writable(project.Root, vendorRelative)
 	if err != nil {
 		return config.LockedPack{}, err
 	}
@@ -281,22 +296,30 @@ func copyTree(source, target string) error {
 		if !entry.Type().IsRegular() {
 			return fmt.Errorf("non-regular file is forbidden in pack: %s", relative)
 		}
-		input, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer input.Close()
-		output, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err != nil {
-			return err
-		}
-		_, copyErr := io.Copy(output, input)
-		closeErr := output.Close()
-		if copyErr != nil {
-			return copyErr
-		}
-		return closeErr
+		return copyFile(path, destination)
 	})
+}
+
+func copyFile(source, target string) error {
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		_ = input.Close()
+		return err
+	}
+	_, copyErr := io.Copy(output, input)
+	inputCloseErr := input.Close()
+	outputCloseErr := output.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if inputCloseErr != nil {
+		return inputCloseErr
+	}
+	return outputCloseErr
 }
 
 func replaceDirectory(source, target string) error {
@@ -304,20 +327,34 @@ func replaceDirectory(source, target string) error {
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
 	}
-	backup := target + ".hoolicy-backup"
-	os.RemoveAll(backup)
-	if _, err := os.Stat(target); err == nil {
+	backup := ""
+	if _, err := os.Lstat(target); err == nil {
+		reserved, reserveErr := os.MkdirTemp(parent, "."+filepath.Base(target)+"-backup-*")
+		if reserveErr != nil {
+			return reserveErr
+		}
+		if removeErr := os.Remove(reserved); removeErr != nil {
+			return removeErr
+		}
+		backup = reserved
 		if err := os.Rename(target, backup); err != nil {
 			return err
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	if err := os.Rename(source, target); err != nil {
-		if _, backupErr := os.Stat(backup); backupErr == nil {
-			_ = os.Rename(backup, target)
+		if backup != "" {
+			if restoreErr := os.Rename(backup, target); restoreErr != nil {
+				return fmt.Errorf("install pack: %w; restore previous vendor from %s: %v", err, backup, restoreErr)
+			}
 		}
 		return err
 	}
-	return os.RemoveAll(backup)
+	if backup != "" {
+		return os.RemoveAll(backup)
+	}
+	return nil
 }
 
 func sanitizeGitOutput(value string) string {

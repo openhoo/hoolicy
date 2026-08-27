@@ -82,6 +82,27 @@ waivers:
 	}
 }
 
+func TestProjectDigestRejectsSymlinkedPolicyInput(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	projectPath := filepath.Join(root, config.DefaultFilename)
+	writeEngineFile(t, projectPath, "version: 1\nproject: demo\nrules: []\n")
+	project, err := config.LoadProject(projectPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(t.TempDir(), "secret")
+	writeEngineFile(t, victim, "do not read\n")
+	if err := os.Symlink(victim, filepath.Join(root, config.DefaultLockfile)); err != nil {
+		t.Fatal(err)
+	}
+	registry := sdk.NewRegistry()
+	checker := New(registry)
+	if _, err := checker.Check(context.Background(), project, Options{ToolVersion: "test"}); err == nil || !strings.Contains(err.Error(), "symbolic links are forbidden") {
+		t.Fatalf("expected symlinked digest input rejection, got %v", err)
+	}
+}
+
 func BenchmarkEngineCheck(b *testing.B) {
 	root := b.TempDir()
 	for index := range 500 {

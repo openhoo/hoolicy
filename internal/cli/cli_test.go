@@ -82,6 +82,104 @@ func TestInitCreatesUsefulStarter(t *testing.T) {
 	}
 }
 
+func TestInitPreservesExistingWaiverFile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	waiverPath := filepath.Join(root, ".hoolicy", "waivers.yaml")
+	writeCLIFile(t, waiverPath, "keep me\n")
+	app, _, stderr := testApplication(t)
+	if code := app.run(context.Background(), []string{"init", "--directory", root, "--project", "demo"}); code != 2 || !strings.Contains(stderr.String(), "already exists") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	data, err := os.ReadFile(waiverPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "keep me\n" {
+		t.Fatalf("existing waiver file changed: %q", data)
+	}
+	if _, err := os.Stat(filepath.Join(root, "hoolicy.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("configuration should not be created, got %v", err)
+	}
+}
+
+func TestInitRejectsSymlinkedWaiverDirectory(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, ".hoolicy")); err != nil {
+		t.Fatal(err)
+	}
+	app, _, stderr := testApplication(t)
+	if code := app.run(context.Background(), []string{"init", "--directory", root, "--project", "demo"}); code != 2 || !strings.Contains(stderr.String(), "unsafe waiver path") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "hoolicy.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("configuration should not be created, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "waivers.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("outside waiver should not be created, got %v", err)
+	}
+}
+
+func TestCheckRejectsFormatBeforeTouchingOutput(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, "hoolicy.yaml")
+	outputPath := filepath.Join(root, "report.txt")
+	writeCLIFile(t, configPath, "version: 1\nproject: demo\nrules: []\n")
+	writeCLIFile(t, outputPath, "keep me\n")
+	app, _, stderr := testApplication(t)
+	if code := app.run(context.Background(), []string{"check", "--config", configPath, "--format", "invalid", "--output", outputPath}); code != 2 || !strings.Contains(stderr.String(), "unknown report format") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "keep me\n" {
+		t.Fatalf("output was modified: %q", data)
+	}
+}
+
+func TestCheckOutputDoesNotFollowSymlink(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, "hoolicy.yaml")
+	outputPath := filepath.Join(root, "report.json")
+	victimPath := filepath.Join(t.TempDir(), "victim.txt")
+	writeCLIFile(t, configPath, "version: 1\nproject: demo\nrules: []\n")
+	writeCLIFile(t, victimPath, "keep me\n")
+	if err := os.Symlink(victimPath, outputPath); err != nil {
+		t.Fatal(err)
+	}
+	app, _, stderr := testApplication(t)
+	if code := app.run(context.Background(), []string{"check", "--config", configPath, "--format", "json", "--output", outputPath}); code != 0 {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	victim, err := os.ReadFile(victimPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(victim) != "keep me\n" {
+		t.Fatalf("symlink target changed: %q", victim)
+	}
+	info, err := os.Lstat(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("report path is still a symlink")
+	}
+	reportData, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(reportData), `"summary"`) {
+		t.Fatalf("unexpected report: %s", reportData)
+	}
+}
+
 func testApplication(t *testing.T) (application, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 	registry := sdk.NewRegistry()
@@ -98,6 +196,9 @@ func testApplication(t *testing.T) (application, *bytes.Buffer, *bytes.Buffer) {
 
 func writeCLIFile(t *testing.T, path, body string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

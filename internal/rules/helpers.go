@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
+	"github.com/openhoo/hoolicy/internal/repository"
 	"github.com/openhoo/hoolicy/sdk"
 	"go.yaml.in/yaml/v3"
 )
@@ -32,13 +35,28 @@ func requireFiles(rule sdk.Rule) error {
 	if len(rule.Files) == 0 {
 		return fmt.Errorf("rule %s requires at least one file pattern", rule.ID)
 	}
+	if _, err := repository.Matches("", rule.Files); err != nil {
+		return fmt.Errorf("rule %s files: %w", rule.ID, err)
+	}
+	if _, err := repository.Matches("", rule.Exclude); err != nil {
+		return fmt.Errorf("rule %s exclude: %w", rule.ID, err)
+	}
 	return nil
+}
+
+func safeRelativeRulePath(path string) bool {
+	if strings.TrimSpace(path) == "" || filepath.IsAbs(path) {
+		return false
+	}
+	clean := filepath.Clean(filepath.FromSlash(path))
+	return clean != "." && clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
 }
 
 func finding(rule sdk.Rule, message, path, key string, line, column int) sdk.Finding {
 	message = strings.TrimSpace(message)
-	if len(message) > 500 {
-		message = message[:497] + "..."
+	if utf8.RuneCountInString(message) > 500 {
+		runes := []rune(message)
+		message = string(runes[:497]) + "..."
 	}
 	return sdk.Finding{
 		RuleID: rule.ID, Title: rule.Title, Message: message,
@@ -63,7 +81,7 @@ func lineColumn(data []byte, offset int) (int, int) {
 			lastLine = i
 		}
 	}
-	return line, offset - lastLine
+	return line, utf8.RuneCount(data[lastLine+1:offset]) + 1
 }
 
 func compilePatterns(patterns []string) ([]*regexp.Regexp, error) {

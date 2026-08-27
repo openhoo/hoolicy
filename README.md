@@ -14,8 +14,10 @@ Install a release binary, use the container, or build with Go 1.26+:
 
 ```sh
 go install github.com/openhoo/hoolicy/cmd/hoolicy@v0.1.2
-# or: docker run --rm -v "$PWD:/work" -w /work ghcr.io/openhoo/hoolicy:v0.1.2 check
+# or: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work:ro" -w /work ghcr.io/openhoo/hoolicy:v0.1.2 check
 ```
+
+For rootless Podman, add `--userns=keep-id`. Mapping the caller UID lets the non-root image read private repository files without weakening their host permissions.
 
 Create a useful starter policy:
 
@@ -90,6 +92,7 @@ Run `hoolicy pack update repository` once. It resolves the Git ref, vendors the 
 ## Guardrails for guardrails
 
 - No runtime plugins, shell commands, network calls, or foreign code from YAML.
+- Checks retain Git-aware file discovery and metadata through a read-only built-in fallback when the `git` executable is unavailable.
 - CEL has static checking and a configurable cost cap, hard-limited to 1,000,000.
 - Waivers require owner, HTTPS ticket, meaningful reason, narrow scope, creation date, and expiry within 90 days.
 - Safe fixes are hash-bound, refuse dirty targets and symlinks, show a diff first, and require `--apply`.

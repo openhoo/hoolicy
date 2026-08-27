@@ -49,6 +49,9 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 	if tests.Version != 1 {
 		return Result{Errors: []string{"policy test version must be 1"}}
 	}
+	if len(tests.Cases) == 0 {
+		return Result{Errors: []string{"policy tests require at least one case"}}
+	}
 	coverage := map[string]map[string]bool{}
 	result := Result{Cases: len(tests.Cases)}
 	knownRules := make(map[string]bool, len(pack.Rules))
@@ -126,6 +129,9 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 		if err != nil {
 			return false, err
 		}
+		if reservedFixturePath(clean) {
+			return false, fmt.Errorf("fixture path %s is reserved for the test harness", filepath.ToSlash(clean))
+		}
 		absolute := filepath.Join(root, clean)
 		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
 			return false, err
@@ -134,7 +140,7 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 			return false, err
 		}
 	}
-	project := config.Project{Version: 1, Project: "fixture", FailOn: sdk.SeverityError, Rules: []sdk.Rule{rule}, Root: root, Path: filepath.Join(root, "hoolicy.yaml")}
+	project := config.Project{Version: 1, Project: "fixture", FailOn: sdk.SeverityInfo, Rules: []sdk.Rule{rule}, Root: root, Path: filepath.Join(root, "hoolicy.yaml")}
 	if err := config.SaveProject(project.Path, project); err != nil {
 		return false, err
 	}
@@ -154,7 +160,15 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 	if err != nil {
 		return false, err
 	}
-	failed := report.Summary.Blocking > 0
+	failed := false
+	for _, item := range report.Findings {
+		if item.RuleID != rule.ID {
+			return false, fmt.Errorf("unexpected harness finding %s: %s", item.RuleID, item.Message)
+		}
+		if !item.Waived && item.Severity.Rank() >= loaded.FailOn.Rank() {
+			failed = true
+		}
+	}
 	passed := (testCase.Outcome == "fail" && failed) || (testCase.Outcome == "pass" && !failed)
 	if !passed {
 		messages := make([]string, 0, len(report.Findings))
@@ -183,7 +197,7 @@ func fallback(value, defaultValue string) string {
 	return value
 }
 func safeFixturePath(path string) (string, error) {
-	if filepath.IsAbs(path) {
+	if strings.TrimSpace(path) == "" || filepath.IsAbs(path) {
 		return "", fmt.Errorf("fixture path must be relative")
 	}
 	clean := filepath.Clean(path)
@@ -191,4 +205,9 @@ func safeFixturePath(path string) (string, error) {
 		return "", fmt.Errorf("fixture path escapes root")
 	}
 	return clean, nil
+}
+
+func reservedFixturePath(path string) bool {
+	path = filepath.ToSlash(path)
+	return path == config.DefaultFilename || path == config.DefaultLockfile || path == config.DefaultWaivers || strings.HasPrefix(path, ".hoolicy/vendor/")
 }

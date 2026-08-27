@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openhoo/hoolicy/internal/repository"
 	"github.com/openhoo/hoolicy/sdk"
@@ -45,6 +46,32 @@ func TestGenericRuleKinds(t *testing.T) {
 	}
 	if len(findings) != 1 || findings[0].Location.Line != 2 {
 		t.Fatalf("unexpected text findings: %#v", findings)
+	}
+}
+
+func TestRuleValidationRejectsDisabledNumericConstraints(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		kind sdk.RuleKind
+		rule sdk.Rule
+	}{
+		{name: "negative file minimum", kind: Files{}, rule: baseRule("demo.files", "files", []string{"*.txt"}, map[string]any{"mode": "count", "minimum": -1})},
+		{name: "inverted file range", kind: Files{}, rule: baseRule("demo.files", "files", []string{"*.txt"}, map[string]any{"mode": "count", "minimum": 3, "maximum": 2})},
+		{name: "ignored file maximum", kind: Files{}, rule: baseRule("demo.files", "files", []string{"*.txt"}, map[string]any{"mode": "require", "maximum": 2})},
+		{name: "invalid file glob", kind: Files{}, rule: baseRule("demo.files", "files", []string{"[broken"}, map[string]any{"mode": "require"})},
+		{name: "unrelated create path", kind: Files{}, rule: baseRule("demo.files", "files", []string{"README.md"}, map[string]any{"mode": "require", "create": map[string]any{"path": "SECURITY.md", "content": "unsafe"}})},
+		{name: "traversing create path", kind: Files{}, rule: baseRule("demo.files", "files", []string{"**/*"}, map[string]any{"mode": "require", "create": map[string]any{"path": "../outside", "content": "unsafe"}})},
+		{name: "negative title maximum", kind: GitNaming{}, rule: baseRule("demo.git", "git.naming", nil, map[string]any{"mergeRequestTitleMaximum": -1})},
+		{name: "orphan branch allowlist", kind: GitNaming{}, rule: baseRule("demo.git", "git.naming", nil, map[string]any{"commitPattern": ".+", "allowedBranches": []any{"main"}})},
+		{name: "negative scenarios", kind: GherkinRequirements{}, rule: baseRule("demo.gherkin", "gherkin.requirements", []string{"*.feature"}, map[string]any{"minimumScenarios": -1})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.kind.Validate(test.rule); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
 	}
 }
 
@@ -152,6 +179,42 @@ func TestCELAndManifestConsistency(t *testing.T) {
 	}
 }
 
+func TestManifestConsistencyPreservesValueTypes(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeRuleFile(t, root, "source.json", `{"version": 1}`)
+	writeRuleFile(t, root, "target.json", `{"version": "1"}`)
+	repo, err := repository.Open(root, repository.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := baseRule("demo.manifest", "manifest.consistency", nil, map[string]any{
+		"authoritative": map[string]any{"path": "source.json", "pointer": "/version"},
+		"targets":       []any{map[string]any{"path": "target.json", "pointer": "/version"}},
+		"message":       "Versions differ",
+	})
+	findings, err := (ManifestConsistency{}).Evaluate(context.Background(), sdk.EvalContext{Repository: repo}, rule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].Fix == nil || string(findings[0].Fix.Edits[0].Replacement) != "1" {
+		t.Fatalf("typed mismatch was not reported correctly: %#v", findings)
+	}
+	writeRuleFile(t, root, "source.json", `{"version": 9223372036854775808}`)
+	writeRuleFile(t, root, "target.json", `{"version": "9223372036854775808"}`)
+	repo, err = repository.Open(root, repository.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings, err = (ManifestConsistency{}).Evaluate(context.Background(), sdk.EvalContext{Repository: repo}, rule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].Fix == nil || string(findings[0].Fix.Edits[0].Replacement) != "9223372036854775808" {
+		t.Fatalf("large typed mismatch was not reported correctly: %#v", findings)
+	}
+}
+
 func BenchmarkCELValidateAndEvaluate(b *testing.B) {
 	root := b.TempDir()
 	writeRuleFile(b, root, "source.json", "{\"version\": 2, \"enabled\": true}\n")
@@ -249,6 +312,28 @@ func TestStructuredImagesRequireImageContext(t *testing.T) {
 	}
 	if problem := imageProblem("scratch", sourcesSpec{RequireDigest: true}); problem != "" {
 		t.Fatalf("scratch must not require a digest: %q", problem)
+	}
+	value = map[string]any{"spec": map[string]any{"containers": []any{map[string]any{"name": "web", "image": "nginx:latest"}}}}
+	images = nil
+	walkImages(value, "", func(_ string, image string) { images = append(images, image) })
+	if len(images) != 1 || images[0] != "nginx:latest" {
+		t.Fatalf("short Docker Hub image was missed: %#v", images)
+	}
+	if problem := imageProblem(images[0], sourcesSpec{Registries: []string{"ghcr.io"}, RequireDigest: true}); !strings.Contains(problem, "docker.io") {
+		t.Fatalf("expected short image registry finding, got %q", problem)
+	}
+}
+
+func TestFindingTextUsesUnicodeCharacters(t *testing.T) {
+	t.Parallel()
+	rule := baseRule("demo.text", "text", nil, nil)
+	message := strings.Repeat("界", 501)
+	item := finding(rule, message, "README.md", "unicode", 1, 1)
+	if got := len([]rune(item.Message)); got != 500 || !strings.HasSuffix(item.Message, "...") || !utf8.ValidString(item.Message) {
+		t.Fatalf("unexpected truncated message: runes=%d valid=%v", got, utf8.ValidString(item.Message))
+	}
+	if line, column := lineColumn([]byte("a\né界x"), len([]byte("a\né界"))); line != 2 || column != 3 {
+		t.Fatalf("lineColumn = %d:%d, want 2:3", line, column)
 	}
 }
 

@@ -66,6 +66,56 @@ func TestFixGuardsDirtyChangedAndSymlinkTargets(t *testing.T) {
 	}
 }
 
+func TestBuildUsesPureGoGitStatusFallback(t *testing.T) {
+	root := cleanGitRepository(t, map[string]string{"tracked.txt": "old\n"})
+	t.Setenv("PATH", "")
+	edit := sdk.Edit{Path: "tracked.txt", ExpectedSHA256: digest([]byte("old\n")), Start: 0, End: 3, Replacement: []byte("new")}
+	finding := sdk.Finding{RuleID: "demo.edit", Fix: &sdk.Fix{Edits: []sdk.Edit{edit}}}
+	if _, err := Build(root, []sdk.Finding{finding}, nil); err != nil {
+		t.Fatalf("clean fallback target rejected: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(root, []sdk.Finding{finding}, nil); err == nil || !strings.Contains(err.Error(), "dirty target") {
+		t.Fatalf("expected fallback dirty-target rejection, got %v", err)
+	}
+}
+
+func TestApplyBindsEmptyFileExistence(t *testing.T) {
+	t.Parallel()
+	root := cleanGitRepository(t, map[string]string{"anchor.txt": "anchor\n"})
+	create := sdk.Finding{RuleID: "demo.create", Fix: &sdk.Fix{Edits: []sdk.Edit{{
+		Path: "new.txt", ExpectedSHA256: "missing", Start: 0, End: 0, Replacement: []byte("created\n"),
+	}}}}
+	createPlan, err := Build(root, []sdk.Finding{create}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPath := filepath.Join(root, "new.txt")
+	if err := os.WriteFile(newPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := createPlan.Apply(); err == nil || !strings.Contains(err.Error(), "changed after preview") {
+		t.Fatalf("expected newly appeared empty file rejection, got %v", err)
+	}
+
+	existingRoot := cleanGitRepository(t, map[string]string{"empty.txt": ""})
+	update := sdk.Finding{RuleID: "demo.update", Fix: &sdk.Fix{Edits: []sdk.Edit{{
+		Path: "empty.txt", ExpectedSHA256: digest(nil), Start: 0, End: 0, Replacement: []byte("updated\n"),
+	}}}}
+	updatePlan, err := Build(existingRoot, []sdk.Finding{update}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(existingRoot, "empty.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := updatePlan.Apply(); err == nil || !strings.Contains(err.Error(), "changed after preview") {
+		t.Fatalf("expected deleted empty file rejection, got %v", err)
+	}
+}
+
 func cleanGitRepository(t *testing.T, files map[string]string) string {
 	t.Helper()
 	root := t.TempDir()

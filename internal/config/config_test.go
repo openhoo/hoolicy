@@ -79,6 +79,52 @@ rules:
 	}
 }
 
+func TestLoadPackRequiresRules(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "pack.yaml"), "version: 1\nname: empty\nrelease: 1.0.0\ndescription: Empty pack.\nrules: []\n")
+	if _, err := LoadPack(root); err == nil || !strings.Contains(err.Error(), "at least one rule") {
+		t.Fatalf("expected empty-pack rejection, got %v", err)
+	}
+}
+
+func TestLoadLockIsStrictAndValidatesEntries(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, DefaultLockfile)
+	writeTestFile(t, path, `{"version":1,"packs":[]} {"trailing":true}`)
+	if _, err := LoadLock(path); err == nil || !strings.Contains(err.Error(), "exactly one JSON value") {
+		t.Fatalf("expected trailing JSON rejection, got %v", err)
+	}
+	writeTestFile(t, path, `{"version":1,"packs":[{"name":"demo","git":"https://token@example.com/repo.git","ref":"main","commit":"0123456789abcdef0123456789abcdef01234567","digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","vendor":".hoolicy/vendor/demo"}]}`)
+	if _, err := LoadLock(path); err == nil || !strings.Contains(err.Error(), "embedded credentials") {
+		t.Fatalf("expected credential rejection, got %v", err)
+	}
+}
+
+func TestProjectRejectsUnsafeRemotePackInputs(t *testing.T) {
+	t.Parallel()
+	base := Project{Version: 1, Project: "demo", FailOn: "error", Packs: []PackRef{{Name: "pack", Git: "git@github.com:example/policy.git", Ref: "main"}}}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("valid SSH location rejected: %v", err)
+	}
+	credential := base
+	credential.Packs = []PackRef{{Name: "pack", Git: "https://token@example.com/policy.git", Ref: "main"}}
+	if err := credential.Validate(); err == nil || !strings.Contains(err.Error(), "embedded credentials") {
+		t.Fatalf("expected credential rejection, got %v", err)
+	}
+	query := base
+	query.Packs = []PackRef{{Name: "pack", Git: "https://example.com/policy.git?token=secret", Ref: "main"}}
+	if err := query.Validate(); err == nil || !strings.Contains(err.Error(), "query strings") {
+		t.Fatalf("expected query-string rejection, got %v", err)
+	}
+	option := base
+	option.Packs = []PackRef{{Name: "pack", Git: "https://example.com/policy.git", Ref: "--upload-pack=evil"}}
+	if err := option.Validate(); err == nil || !strings.Contains(err.Error(), ".ref is unsafe") {
+		t.Fatalf("expected option-like ref rejection, got %v", err)
+	}
+}
+
 func TestValidateWaiver(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
@@ -93,10 +139,12 @@ func TestValidateWaiver(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := map[string]func(*Waiver){
-		"fingerprint": func(value *Waiver) { value.Fingerprints = []string{"ABC"} },
-		"global path": func(value *Waiver) { value.Fingerprints = nil; value.Paths = []string{"**/*"} },
-		"ticket":      func(value *Waiver) { value.Ticket = "SEC-1" },
-		"lifetime":    func(value *Waiver) { value.Expires = Date{Time: now.AddDate(0, 0, 91)} },
+		"fingerprint":            func(value *Waiver) { value.Fingerprints = []string{"ABC"} },
+		"global path":            func(value *Waiver) { value.Fingerprints = nil; value.Paths = []string{"**/*"} },
+		"obfuscated global path": func(value *Waiver) { value.Fingerprints = nil; value.Paths = []string{"**/**"} },
+		"invalid path glob":      func(value *Waiver) { value.Fingerprints = nil; value.Paths = []string{"[broken"} },
+		"ticket":                 func(value *Waiver) { value.Ticket = "SEC-1" },
+		"lifetime":               func(value *Waiver) { value.Expires = Date{Time: now.AddDate(0, 0, 91)} },
 		"expired": func(value *Waiver) {
 			value.Created = Date{Time: now.AddDate(0, 0, -40)}
 			value.Expires = Date{Time: now.AddDate(0, 0, -1)}

@@ -22,6 +22,8 @@ Remote packs are the only command path that uses the network. `hoolicy pack upda
 
 Repository reads and fixes reject absolute paths, traversal, symlinks, and non-regular files. Git-ignored content and `.hoolicy/vendor` are excluded from normal repository matching. Direct rule reads remain within the repository boundary.
 
+The system `git` executable is the fast path for file discovery, status, and commit metadata. Minimal images use a read-only built-in Git fallback for repository-local tracked, untracked, ignore, branch, commit, linked-worktree, and dirty-state inputs. If a bind-mounted Git index is unreadable, the fallback derives tracked paths from `HEAD`, adds non-ignored worktree files, and marks the repository dirty conservatively. If Git metadata exists but neither path can interpret it safely, evaluation fails closed instead of walking ignored content or silently skipping Git rules.
+
 ## Evaluation model
 
 1. Locate one `hoolicy.yaml`, stopping at the Git root.

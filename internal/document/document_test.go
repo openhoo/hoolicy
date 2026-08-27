@@ -40,6 +40,18 @@ func TestParseFormatsAndRejectAmbiguity(t *testing.T) {
 	}
 }
 
+func TestXMLRejectsTrailingRootElement(t *testing.T) {
+	t.Parallel()
+	file := sdk.File{Path: "invalid.xml", Data: []byte("<first/><second/>")}
+	if _, err := Parse(file, "xml"); err == nil {
+		t.Fatal("expected trailing XML rejection")
+	}
+	file = sdk.File{Path: "valid.xml", Data: []byte("<first/><?processed ok?>")}
+	if _, err := Parse(file, "xml"); err != nil {
+		t.Fatalf("valid trailing processing instruction rejected: %v", err)
+	}
+}
+
 func FuzzParseJSON(f *testing.F) {
 	f.Add([]byte(`{"ok": true}`))
 	f.Add([]byte(`[]`))

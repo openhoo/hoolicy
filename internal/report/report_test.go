@@ -55,3 +55,18 @@ func TestJUnitHandlesMissingFingerprint(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTextReportSanitizesControlCharacters(t *testing.T) {
+	t.Parallel()
+	rule := sdk.Rule{ID: "demo.rule", Title: "Demo", Remediation: "fix\nnow\x1b[2J", Severity: sdk.SeverityError}
+	finding := sdk.Finding{Message: "failed\nFORGED ERROR\x1b[31m", Location: sdk.Location{Path: "bad\npath", Line: 1, Column: 1}}
+	finding.Finalize(rule)
+	input := &engine.Report{Project: "demo", Findings: []sdk.Finding{finding}, Summary: engine.Summary{Rules: 1, Blocking: 1}}
+	var output bytes.Buffer
+	if err := Write(&output, "text", input, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "\x1b") || strings.Contains(output.String(), "failed\nFORGED") || strings.Contains(output.String(), "bad\npath") {
+		t.Fatalf("control characters reached text report: %q", output.String())
+	}
+}

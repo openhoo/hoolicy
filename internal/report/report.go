@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/openhoo/hoolicy/internal/engine"
 	"github.com/openhoo/hoolicy/sdk"
@@ -29,6 +30,15 @@ func Write(writer io.Writer, format string, report *engine.Report, color bool) e
 	}
 }
 
+func ValidFormat(format string) bool {
+	switch strings.ToLower(format) {
+	case "", "text", "json", "sarif", "junit":
+		return true
+	default:
+		return false
+	}
+}
+
 func writeJSON(writer io.Writer, report *engine.Report) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
@@ -45,21 +55,33 @@ func writeText(writer io.Writer, report *engine.Report, color bool) error {
 		if color {
 			label = colorLabel(label, item)
 		}
-		location := item.Location.Path
+		location := singleLine(item.Location.Path)
 		if location != "" && item.Location.Line > 0 {
 			location += fmt.Sprintf(":%d:%d", item.Location.Line, item.Location.Column)
 		}
 		if location != "" {
 			location += " "
 		}
-		fmt.Fprintf(writer, "%s %s%s %s\n", label, location, item.RuleID, item.Message)
-		fmt.Fprintf(writer, "  Fix: %s\n", item.Remediation)
+		fmt.Fprintf(writer, "%s %s%s %s\n", label, location, item.RuleID, singleLine(item.Message))
+		fmt.Fprintf(writer, "  Fix: %s\n", singleLine(item.Remediation))
 		if item.Waived {
 			fmt.Fprintf(writer, "  Waiver: %s\n", item.WaiverID)
 		}
 	}
 	fmt.Fprintf(writer, "\n%d rules, %d findings, %d waived, %d blocking\n", report.Summary.Rules, len(report.Findings), report.Summary.Waived, report.Summary.Blocking)
 	return nil
+}
+
+func singleLine(value string) string {
+	return strings.TrimSpace(strings.Map(func(character rune) rune {
+		if character == '\n' || character == '\r' || character == '\t' {
+			return ' '
+		}
+		if unicode.IsControl(character) {
+			return -1
+		}
+		return character
+	}, value))
 }
 
 func colorLabel(label string, item sdk.Finding) string {

@@ -136,6 +136,25 @@ func parseXML(file sdk.File) ([]Document, error) {
 	if err := decoder.Decode(&root); err != nil {
 		return nil, fmt.Errorf("%s: %w", file.Path, err)
 	}
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", file.Path, err)
+		}
+		if text, ok := token.(xml.CharData); ok && strings.TrimSpace(string(text)) == "" {
+			continue
+		}
+		if _, ok := token.(xml.Comment); ok {
+			continue
+		}
+		if _, ok := token.(xml.ProcInst); ok {
+			continue
+		}
+		return nil, fmt.Errorf("%s: trailing XML content", file.Path)
+	}
 	return []Document{{Path: file.Path, Line: 1, Column: 1, Data: xmlValue(root)}}, nil
 }
 
@@ -221,13 +240,20 @@ func normalize(value any) any {
 		}
 		return result
 	case json.Number:
-		if integer, err := strconv.ParseInt(string(current), 10, 64); err == nil {
+		text := string(current)
+		if integer, err := strconv.ParseInt(text, 10, 64); err == nil {
 			return integer
 		}
-		if number, err := strconv.ParseFloat(string(current), 64); err == nil {
+		if !strings.ContainsAny(text, ".eE") {
+			if integer, err := strconv.ParseUint(text, 10, 64); err == nil {
+				return integer
+			}
+			return current
+		}
+		if number, err := strconv.ParseFloat(text, 64); err == nil {
 			return number
 		}
-		return string(current)
+		return current
 	default:
 		return current
 	}

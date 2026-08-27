@@ -227,14 +227,15 @@ func projectDigest(project *config.Project, rules []sdk.Rule) (string, error) {
 		{label: config.DefaultLockfile, path: filepath.Join(project.Root, config.DefaultLockfile)},
 		{label: filepath.ToSlash(project.Waivers), path: filepath.Join(project.Root, filepath.FromSlash(project.Waivers))},
 	} {
-		data, err := os.ReadFile(input.path)
-		if err == nil {
+		data, exists, err := readDigestFile(input.path)
+		if err != nil {
+			return "", err
+		}
+		if exists {
 			hash.Write([]byte(input.label))
 			hash.Write([]byte{0})
 			hash.Write(data)
 			hash.Write([]byte{0})
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", err
 		}
 	}
 	active, err := json.Marshal(rules)
@@ -243,4 +244,19 @@ func projectDigest(project *config.Project, rules []sdk.Rule) (string, error) {
 	}
 	hash.Write(active)
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func readDigestFile(path string) ([]byte, bool, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, false, fmt.Errorf("%s: expected a regular file, symbolic links are forbidden", path)
+	}
+	data, err := os.ReadFile(path)
+	return data, true, err
 }

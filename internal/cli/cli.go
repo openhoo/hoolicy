@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,6 +20,7 @@ import (
 	"github.com/openhoo/hoolicy/internal/policytest"
 	"github.com/openhoo/hoolicy/internal/report"
 	"github.com/openhoo/hoolicy/internal/rules"
+	"github.com/openhoo/hoolicy/internal/safepath"
 	"github.com/openhoo/hoolicy/sdk"
 )
 
@@ -91,7 +94,7 @@ Usage:
   hoolicy <command> [options]
 
 Commands:
-  init       Create a strict starter configuration
+  init       Create a standard, strict, or empty starter configuration
   validate   Validate configuration, packs, and rule expressions
   check      Evaluate all policies offline
   fix        Preview or apply engine-approved safe fixes
@@ -139,8 +142,13 @@ func (a application) init(args []string) int {
 		*projectName = strings.NewReplacer(" ", "-", "_", "-").Replace(*projectName)
 	}
 	path := filepath.Join(root, config.DefaultFilename)
-	if _, err := os.Stat(path); err == nil {
-		return a.fail(fmt.Errorf("%s already exists", path))
+	waiverPath := filepath.Join(root, filepath.FromSlash(config.DefaultWaivers))
+	for _, candidate := range []string{path, waiverPath} {
+		if _, err := os.Lstat(candidate); err == nil {
+			return a.fail(fmt.Errorf("%s already exists", candidate))
+		} else if !os.IsNotExist(err) {
+			return a.fail(err)
+		}
 	}
 	starter, err := starterRules(*profile)
 	if err != nil {
@@ -153,14 +161,17 @@ func (a application) init(args []string) int {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return a.fail(err)
 	}
+	_, waiverPath, err = safepath.Writable(root, config.DefaultWaivers)
+	if err != nil {
+		return a.fail(fmt.Errorf("unsafe waiver path: %w", err))
+	}
 	if err := config.SaveProject(path, project); err != nil {
 		return a.fail(err)
 	}
-	waiverPath := filepath.Join(root, filepath.FromSlash(config.DefaultWaivers))
-	if err := os.MkdirAll(filepath.Dir(waiverPath), 0o755); err != nil {
-		return a.fail(err)
-	}
-	if err := os.WriteFile(waiverPath, []byte("version: 1\nwaivers: []\n"), 0o644); err != nil {
+	if err := config.SaveWaivers(waiverPath, config.WaiverFile{Version: config.CurrentVersion, Waivers: []config.Waiver{}}); err != nil {
+		if rollbackErr := os.Remove(path); rollbackErr != nil && !errors.Is(rollbackErr, os.ErrNotExist) {
+			return a.fail(fmt.Errorf("create waiver file: %w; remove incomplete configuration %s: %v", err, path, rollbackErr))
+		}
 		return a.fail(err)
 	}
 	fmt.Fprintf(a.stdout, "Created %s and %s with %d %s rules. Run 'hoolicy check'.\n", path, waiverPath, len(starter), *profile)
@@ -198,6 +209,9 @@ func (a application) check(ctx context.Context, args []string) int {
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
+	if !report.ValidFormat(*format) {
+		return a.fail(fmt.Errorf("unknown report format %q", *format))
+	}
 	project, err := loadProject(*configPath)
 	if err != nil {
 		return a.fail(err)
@@ -217,17 +231,15 @@ func (a application) check(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	writer := a.stdout
-	var file *os.File
 	if *output != "" {
-		file, err = os.Create(*output)
-		if err != nil {
+		var encoded bytes.Buffer
+		if err := report.Write(&encoded, *format, result, false); err != nil {
 			return a.fail(err)
 		}
-		defer file.Close()
-		writer = file
-	}
-	if err := report.Write(writer, *format, result, colorEnabled(a.stdout)); err != nil {
+		if err := writeReportFile(*output, encoded.Bytes()); err != nil {
+			return a.fail(err)
+		}
+	} else if err := report.Write(a.stdout, *format, result, colorEnabled(a.stdout)); err != nil {
 		return a.fail(err)
 	}
 	if result.Summary.Blocking > 0 {
@@ -516,6 +528,35 @@ func colorEnabled(writer io.Writer) bool {
 	}
 	info, err := file.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func writeReportFile(path string, data []byte) error {
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(directory, ".hoolicy-report-*")
+	if err != nil {
+		return err
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName)
+	if err := temporary.Chmod(0o644); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryName, path)
 }
 
 func starterRules(profile string) ([]sdk.Rule, error) {
