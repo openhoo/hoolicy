@@ -143,7 +143,10 @@ jobs:
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ needs.release.outputs.tag }}" dist/* --clobber
+        run: |
+          for artifact in dist/*; do
+            timeout 3m gh release upload "${{ needs.release.outputs.tag }}" "$artifact" --clobber
+          done
 
   container:
     name: Release container
