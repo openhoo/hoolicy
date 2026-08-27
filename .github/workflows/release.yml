@@ -40,12 +40,19 @@ jobs:
         with:
           go-version: '1.26.x'
           cache: true
-      - name: Release
-        id: release
-        uses: openhoo/hooversion/actions/release@2f977d9c91d98d800cac6557fa170cf1a7fccd39 # v1.0.1
+      - name: Set up Hooversion
+        uses: openhoo/hooversion/actions/setup@2f977d9c91d98d800cac6557fa170cf1a7fccd39 # v1.0.1
         with:
           version: ${{ env.HOOVERSION_VERSION }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Configure release git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Release
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: hooversion release
 
   binaries:
     name: Release binaries

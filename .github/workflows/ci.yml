@@ -21,10 +21,21 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Lint commits
-        uses: openhoo/hooversion/actions/lint@2f977d9c91d98d800cac6557fa170cf1a7fccd39 # v1.0.1
+      - name: Set up Hooversion
+        uses: openhoo/hooversion/actions/setup@2f977d9c91d98d800cac6557fa170cf1a7fccd39 # v1.0.1
         with:
           version: ${{ env.HOOVERSION_VERSION }}
+      - name: Lint commits
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == 'pull_request' ]]; then
+            hooversion lint --from "$PR_BASE_SHA" --to "$PR_HEAD_SHA"
+          else
+            hooversion lint --last
+          fi
 
   test:
     name: Go ${{ matrix.os }}
