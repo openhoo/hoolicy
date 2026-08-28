@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 (2026-08-28)
+
+### Bug Fixes
+
+- **hoolicy:** harden archive extraction boundary (9b35d63)
+
 ## 0.2.0 (2026-08-28)
 
 ### Features
