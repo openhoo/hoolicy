@@ -55,7 +55,7 @@ func TestExtractRejectsTraversalAndLinks(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		kind byte
-	}{{"../escape", tar.TypeReg}, {"C:/escape", tar.TypeReg}, {`C:\escape`, tar.TypeReg}, {"link", tar.TypeSymlink}} {
+	}{{"../escape", tar.TypeReg}, {"dir/../../escape", tar.TypeReg}, {"/escape", tar.TypeReg}, {"C:/escape", tar.TypeReg}, {`C:\escape`, tar.TypeReg}, {"link", tar.TypeSymlink}} {
 		var data bytes.Buffer
 		gz := gzip.NewWriter(&data)
 		tw := tar.NewWriter(gz)

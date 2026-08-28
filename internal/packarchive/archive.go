@@ -143,6 +143,10 @@ func Extract(data []byte, target string) (string, error) {
 	if len(data) > MaxArchiveSize {
 		return "", fmt.Errorf("pack archive exceeds %d bytes", MaxArchiveSize)
 	}
+	target, err := filepath.Abs(target)
+	if err != nil {
+		return "", err
+	}
 	targetInfo, err := os.Lstat(target)
 	if err != nil {
 		return "", err
@@ -196,9 +200,16 @@ func Extract(data []byte, target string) (string, error) {
 		if total > MaxTotalSize {
 			return "", fmt.Errorf("pack content exceeds %d bytes", MaxTotalSize)
 		}
-		_, destination, err := safepath.Writable(target, name)
+		destination := filepath.Join(target, filepath.FromSlash(name))
+		if !strings.HasPrefix(destination, filepath.Clean(target)+string(os.PathSeparator)) {
+			return "", fmt.Errorf("archive entry escapes extraction target: %s", name)
+		}
+		_, checkedDestination, err := safepath.Writable(target, name)
 		if err != nil {
 			return "", err
+		}
+		if checkedDestination != destination {
+			return "", fmt.Errorf("archive entry resolves ambiguously: %s", name)
 		}
 		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 			return "", err
