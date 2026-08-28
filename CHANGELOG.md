@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0 (2026-08-28)
+
+### Features
+
+- **hoolicy:** implement roadmap policy capabilities (1bde0c9)
+
+### Bug Fixes
+
+- harden policy evaluation and release paths (6eae209)
+- harden policy validation (f22fcae)
+- close linked-worktree metadata handles [skip ci] (ceef9db)
+- rebuild releases created before version manifest [skip ci] (d56395e)
+- bound release asset replacement [skip ci] (933fb9e)
+- anchor release version markers (081c2b0)
+- **hoolicy:** enforce portable repository paths (7c80946)
+
+### Other Changes
+
+- record published footprint measurements (a1e1eb0)
+- remove legacy references and add release recovery [skip ci] (8fc0327)
+
 ## 0.1.2 (2026-08-27)
 
 ### Performance
