@@ -69,9 +69,12 @@ func (kind CEL) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Rule
 	documents := make([]any, 0)
 	for _, file := range files {
 		fileValues = append(fileValues, map[string]any{"path": file.Path, "size": int64(len(file.Data)), "sha256": file.SHA256()})
-		parsed, parseErr := document.Parse(file, spec.Format)
+		parsed, hit, parseErr := document.ParseCached(file, spec.Format)
 		if parseErr != nil {
 			return nil, parseErr
+		}
+		if hit && input.Metrics != nil {
+			input.Metrics.ParseCacheHits++
 		}
 		for _, item := range parsed {
 			documents = append(documents, map[string]any{
@@ -87,9 +90,12 @@ func (kind CEL) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Rule
 		"files": fileValues, "documents": documents, "items": documents,
 		"params": input.Parameters, "now": input.Now,
 	}
-	result, _, err := program.Eval(variables)
+	result, details, err := program.Eval(variables)
 	if err != nil {
 		return nil, fmt.Errorf("rule %s: CEL evaluation: %w", rule.ID, err)
+	}
+	if input.Metrics != nil && details != nil && details.ActualCost() != nil {
+		input.Metrics.CELCost = *details.ActualCost()
 	}
 	if boolean, ok := result.Value().(bool); ok {
 		if boolean {

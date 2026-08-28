@@ -2,6 +2,12 @@ version: 1
 name: product-quality
 release: 0.1.0
 description: Translation parity and semantic Gherkin acceptance-criteria policies.
+maturity: stable
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: Catalog and Gherkin semantic keys remain stable; snapshots expose behavior changes.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.1.3-0 <0.1.3 || >=0.2.0 <2.0.0'
 parameters:
   language_manifest:
     type: string

@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/report.schema.json",
+  "title": "Hoolicy deterministic JSON report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reportVersion", "tool", "project", "generatedAt", "configDigest", "policyDigest", "git", "failOn", "findings", "waivers", "summary", "metrics"],
+  "properties": {
+    "reportVersion": { "const": 2 },
+    "tool": { "$ref": "#/$defs/tool" },
+    "project": { "type": "string" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "configDigest": { "$ref": "#/$defs/sha256" },
+    "policyDigest": { "$ref": "#/$defs/sha256" },
+    "git": { "$ref": "#/$defs/git" },
+    "failOn": { "$ref": "#/$defs/severity" },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "waivers": { "type": "array", "items": { "$ref": "waivers.schema.json#/$defs/waiver" } },
+    "changes": { "type": "array", "items": { "$ref": "#/$defs/change" } },
+    "baseline": { "$ref": "#/$defs/baseline" },
+    "comparison": { "$ref": "#/$defs/comparison" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "metrics": { "$ref": "#/$defs/metrics" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "severity": { "enum": ["info", "warning", "error"] },
+    "tool": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version"],
+      "properties": { "name": { "const": "hoolicy" }, "version": { "type": "string" } }
+    },
+    "control": {
+      "type": "object", "additionalProperties": false, "required": ["framework", "id"],
+      "properties": { "framework": { "type": "string" }, "id": { "type": "string" } }
+    },
+    "location": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "line": { "type": "integer", "minimum": 0 },
+        "column": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "edit": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "expectedSha256", "start", "end", "description"],
+      "properties": {
+        "path": { "type": "string" },
+        "expectedSha256": { "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "const": "missing" }] },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "description": { "type": "string" }
+      }
+    },
+    "fix": {
+      "type": "object", "additionalProperties": false, "required": ["description", "edits"],
+      "properties": {
+        "description": { "type": "string" },
+        "edits": { "type": "array", "items": { "$ref": "#/$defs/edit" } }
+      }
+    },
+    "commit": {
+      "type": "object", "additionalProperties": false, "required": ["sha", "subject"],
+      "properties": { "sha": { "type": "string" }, "subject": { "type": "string" } }
+    },
+    "git": {
+      "type": "object", "additionalProperties": false,
+      "required": ["branch", "commit", "commits", "mergeRequestTitle", "dirty"],
+      "properties": {
+        "branch": { "type": "string" },
+        "commit": { "type": "string" },
+        "commits": { "type": "array", "items": { "$ref": "#/$defs/commit" } },
+        "mergeRequestTitle": { "type": "string" },
+        "dirty": { "type": "boolean" },
+        "properties": { "type": "object" }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["ruleId", "title", "message", "remediation", "severity", "fingerprint", "policyDigest", "findingDigest", "state"],
+      "properties": {
+        "ruleId": { "type": "string" }, "title": { "type": "string" }, "message": { "type": "string" },
+        "remediation": { "type": "string" }, "severity": { "$ref": "#/$defs/severity" }, "location": { "$ref": "#/$defs/location" },
+        "workspace": { "type": "string" }, "owner": { "type": "string" }, "key": { "type": "string" },
+        "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "policyDigest": { "$ref": "#/$defs/sha256" },
+        "findingDigest": { "$ref": "#/$defs/sha256" }, "state": { "enum": ["new", "existing", "waived"] },
+        "stateSource": { "type": "string" }, "controls": { "type": "array", "items": { "$ref": "#/$defs/control" } }, "pack": { "type": "string" },
+        "waived": { "type": "boolean" }, "waiverId": { "type": "string" }, "fix": { "$ref": "#/$defs/fix" }, "properties": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "change": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "source", "fingerprint", "ruleId", "severity", "policyDigest", "findingDigest"],
+      "properties": {
+        "state": { "enum": ["new", "existing", "fixed", "stale"] },
+        "source": { "type": "string" },
+        "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "ruleId": { "type": "string" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "policyDigest": { "$ref": "#/$defs/sha256" },
+        "findingDigest": { "$ref": "#/$defs/sha256" },
+        "reason": { "type": "string" }
+      }
+    },
+    "baseline": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "createdAt", "policyDigest", "policyChanged"],
+      "properties": {
+        "path": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "policyDigest": { "$ref": "#/$defs/sha256" },
+        "policyChanged": { "type": "boolean" }
+      }
+    },
+    "comparison": {
+      "type": "object", "additionalProperties": false,
+      "required": ["baseRevision", "baseCommit"],
+      "properties": { "baseRevision": { "type": "string" }, "baseCommit": { "type": "string" } }
+    },
+    "summary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rules", "errors", "warnings", "info", "waived", "new", "existing", "fixed", "stale", "blocking"],
+      "properties": {
+        "rules": { "$ref": "#/$defs/count" }, "errors": { "$ref": "#/$defs/count" },
+        "warnings": { "$ref": "#/$defs/count" }, "info": { "$ref": "#/$defs/count" },
+        "waived": { "$ref": "#/$defs/count" }, "new": { "$ref": "#/$defs/count" },
+        "existing": { "$ref": "#/$defs/count" }, "fixed": { "$ref": "#/$defs/count" },
+        "stale": { "$ref": "#/$defs/count" }, "blocking": { "$ref": "#/$defs/count" }
+      }
+    },
+    "count": { "type": "integer", "minimum": 0 },
+    "ruleMetric": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ruleId", "inputs", "findings", "durationMilliseconds", "inputCacheHits", "parseCacheHits"],
+      "properties": {
+        "ruleId": { "type": "string" }, "workspace": { "type": "string" },
+        "inputs": { "$ref": "#/$defs/count" }, "findings": { "$ref": "#/$defs/count" },
+        "durationMilliseconds": { "$ref": "#/$defs/count" }, "inputCacheHits": { "$ref": "#/$defs/count" }, "parseCacheHits": { "$ref": "#/$defs/count" },
+        "celCost": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "metrics": {
+      "type": "object", "additionalProperties": false,
+      "required": ["files", "bytes", "durationMilliseconds", "inputCacheHits", "parseCacheHits", "rules"],
+      "properties": {
+        "files": { "$ref": "#/$defs/count" }, "bytes": { "$ref": "#/$defs/count" },
+        "durationMilliseconds": { "$ref": "#/$defs/count" }, "inputCacheHits": { "$ref": "#/$defs/count" }, "parseCacheHits": { "$ref": "#/$defs/count" },
+        "rules": { "type": "array", "items": { "$ref": "#/$defs/ruleMetric" } }
+      }
+    }
+  }
+}

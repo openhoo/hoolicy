@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/baseline.schema.json",
+  "title": "Hoolicy finding baseline",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "project", "createdAt", "toolVersion", "policyDigest", "entries"],
+  "properties": {
+    "version": { "const": 1 },
+    "project": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "toolVersion": { "type": "string", "minLength": 1 },
+    "revision": { "type": "string" },
+    "policyDigest": { "$ref": "#/$defs/digest" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fingerprint", "ruleId", "severity", "policyDigest", "findingDigest", "createdAt"],
+        "properties": {
+          "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "ruleId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$" },
+          "severity": { "enum": ["info", "warning", "error"] },
+          "policyDigest": { "$ref": "#/$defs/digest" },
+          "findingDigest": { "$ref": "#/$defs/digest" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

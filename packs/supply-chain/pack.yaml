@@ -2,6 +2,12 @@ version: 1
 name: supply-chain
 release: 0.1.0
 description: Artifact source allowlists and expiring security exception policies.
+maturity: stable
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: Documented npm, NuGet, Docker, YAML, and JSON source semantics remain stable.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.1.3-0 <0.1.3 || >=0.2.0 <2.0.0'
 parameters:
   registries:
     type: string_list

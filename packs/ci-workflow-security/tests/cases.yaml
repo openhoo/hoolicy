@@ -1,0 +1,147 @@
+version: 1
+cases:
+  - name: pinned least-privilege GitHub workflow passes
+    rule: ci-workflow-security.github
+    outcome: pass
+    files:
+      .github/workflows/ci.yml: |
+        name: CI
+        on: pull_request
+        permissions:
+          contents: read
+        jobs:
+          test:
+            timeout-minutes: 10
+            steps:
+              - uses: actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              - uses: ./local-action
+  - name: unsafe GitHub workflow fails
+    rule: ci-workflow-security.github
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        on: pull_request_target
+        permissions:
+          contents: write
+        jobs:
+          release:
+            steps:
+              - uses: vendor/action@main
+              - run: echo "${{ github.event.pull_request.title }}"
+    expect:
+      - ruleId: ci-workflow-security.github
+        path: .github/workflows/ci.yml
+  - name: approved GitHub write permission is not a false positive
+    rule: ci-workflow-security.github
+    outcome: pass
+    parameters:
+      allowed_write_permissions: [id-token]
+      require_job_timeout: false
+    files:
+      .github/workflows/release.yml: |
+        on: push
+        permissions:
+          contents: read
+          id-token: write
+        jobs:
+          release:
+            steps:
+              - uses: ./release
+  - name: safe pull request target and reusable job are not false positives
+    rule: ci-workflow-security.github
+    outcome: pass
+    files:
+      .github/workflows/triage.yml: |
+        on: pull_request_target
+        permissions:
+          contents: read
+        jobs:
+          triage:
+            uses: ./.github/workflows/reusable.yml
+  - name: pull request target checkout of fork code fails
+    rule: ci-workflow-security.github
+    outcome: fail
+    parameters:
+      require_job_timeout: false
+    files:
+      .github/workflows/unsafe-checkout.yml: |
+        on: pull_request_target
+        permissions:
+          contents: read
+        jobs:
+          test:
+            steps:
+              - uses: actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+    expect:
+      - ruleId: ci-workflow-security.github
+        messageContains: untrusted pull-request code
+  - name: malformed GitHub workflow fails closed
+    rule: ci-workflow-security.github
+    outcome: error
+    files:
+      .github/workflows/ci.yml: "jobs: [broken\n"
+    errorContains: .github/workflows/ci.yml
+  - name: structurally invalid GitHub permissions and jobs fail
+    rule: ci-workflow-security.github
+    outcome: fail
+    parameters:
+      require_job_timeout: false
+    files:
+      .github/workflows/ci.yml: |
+        on: push
+        permissions: [write]
+        jobs:
+          broken: not-an-object
+    expect:
+      - ruleId: ci-workflow-security.github
+        messageContains: permission
+  - name: pinned local GitLab workflow passes
+    rule: ci-workflow-security.gitlab
+    outcome: pass
+    files:
+      .gitlab-ci.yml: |
+        include:
+          - local: /ci/common.yml
+        test:
+          timeout: 10m
+          script: [go test ./...]
+  - name: mutable GitLab workflow fails
+    rule: ci-workflow-security.gitlab
+    outcome: fail
+    files:
+      .gitlab-ci.yml: |
+        include:
+          - remote: https://example.com/ci.yml
+        release:
+          script:
+            - echo "$CI_MERGE_REQUEST_TITLE"
+    expect:
+      - ruleId: ci-workflow-security.gitlab
+        path: .gitlab-ci.yml
+  - name: hidden GitLab template is not a job false positive
+    rule: ci-workflow-security.gitlab
+    outcome: pass
+    parameters:
+      require_job_timeout: false
+    files:
+      .gitlab-ci.yml: |
+        .template:
+          script: [echo reusable]
+        stages: [test]
+  - name: GitLab job inherits explicit default timeout
+    rule: ci-workflow-security.gitlab
+    outcome: pass
+    files:
+      .gitlab-ci.yml: |
+        default:
+          timeout: 15m
+        test:
+          script: [go test ./...]
+  - name: malformed GitLab workflow fails closed
+    rule: ci-workflow-security.gitlab
+    outcome: error
+    files:
+      .gitlab-ci.yml: "include: [broken\n"
+    errorContains: .gitlab-ci.yml

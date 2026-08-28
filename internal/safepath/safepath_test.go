@@ -25,3 +25,16 @@ func TestWritableRejectsSymlinkComponents(t *testing.T) {
 		t.Fatalf("unexpected resolution: %q %q", clean, absolute)
 	}
 }
+
+func TestPortablePathsRejectWindowsAndBackslashForms(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for _, path := range []string{"C:/outside", `C:\outside`, `..\outside`, "/outside"} {
+		if _, _, err := Writable(root, path); err == nil {
+			t.Fatalf("Writable accepted unsafe path %q", path)
+		}
+		if _, _, err := Existing(root, path); err == nil {
+			t.Fatalf("Existing accepted unsafe path %q", path)
+		}
+	}
+}

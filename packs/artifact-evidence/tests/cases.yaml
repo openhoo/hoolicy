@@ -1,0 +1,43 @@
+version: 1
+parameters:
+  artifact_path: evidence/bom.json
+  artifact_type: cyclonedx
+  artifact_sha256: sha256:d749b4c9fe11dbc0cabfd97a966029761f77c9a237d2d0800fa9a41e272fe076
+  subject_digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  required_producer: syft
+  maximum_age: 2h
+  minimum_items: 1
+  maximum_failures: 0
+cases:
+  - name: subject-bound fresh CycloneDX evidence passes
+    rule: artifact-evidence.verified
+    outcome: pass
+    now: 2026-01-01T01:00:00Z
+    files:
+      evidence/bom.json: |
+        {"bomFormat":"CycloneDX","specVersion":"1.6","metadata":{"timestamp":"2026-01-01T00:00:00Z","tools":[{"name":"syft"}],"component":{"hashes":[{"alg":"SHA-256","content":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}},"components":[{"name":"demo"}]}
+  - name: changed artifact digest fails
+    rule: artifact-evidence.verified
+    outcome: fail
+    now: 2026-01-01T01:00:00Z
+    files:
+      evidence/bom.json: |
+        {"bomFormat":"CycloneDX","metadata":{"timestamp":"2026-01-01T00:00:00Z","producer":"syft","subject":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"components":[]}
+    expect:
+      - ruleId: artifact-evidence.verified
+        messageContains: digest mismatch
+  - name: missing artifact fails closed
+    rule: artifact-evidence.verified
+    outcome: fail
+    now: 2026-01-01T01:00:00Z
+    files: {}
+    expect:
+      - ruleId: artifact-evidence.verified
+        messageContains: missing
+  - name: nested exact producer does not cause false positive
+    rule: artifact-evidence.verified
+    outcome: pass
+    now: 2026-01-01T00:30:00Z
+    files:
+      evidence/bom.json: |
+        {"bomFormat":"CycloneDX","specVersion":"1.6","metadata":{"timestamp":"2026-01-01T00:00:00Z","tools":[{"name":"syft"}],"component":{"hashes":[{"alg":"SHA-256","content":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}},"components":[{"name":"demo"}]}

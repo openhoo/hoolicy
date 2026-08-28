@@ -19,6 +19,10 @@ cases:
     files:
       Dockerfile: |
         FROM docker.io/library/alpine:latest
+    expect:
+      - path: Dockerfile
+        messageContains: approved
+        waived: false
   - name: narrow current exception passes
     rule: supply-chain.exception-lifecycle
     outcome: pass
@@ -43,3 +47,19 @@ cases:
             ticket: https://issues.example.com/SEC-1
             created_at: 2025-01-01
             expired_at: 2025-03-01
+    expect:
+      - path: .trivyignore.yaml
+        messageContains: expired
+        waived: false
+  - name: malformed structured source input fails closed
+    rule: supply-chain.approved-sources
+    outcome: error
+    files:
+      images.json: '{invalid'
+    errorContains: images.json
+  - name: malformed exception input fails closed
+    rule: supply-chain.exception-lifecycle
+    outcome: error
+    files:
+      .trivyignore.yaml: '[invalid'
+    errorContains: .trivyignore.yaml

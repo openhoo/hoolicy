@@ -60,16 +60,31 @@ hoolicy fix        Preview safe fixes; --apply writes reviewed changes
 hoolicy list       List active rules and their source
 hoolicy explain    Show rationale, remediation, and control mappings
 hoolicy test       Run pass and fail fixtures for policy packs
+hoolicy baseline   Preview or apply reviewed finding baselines
+hoolicy doctor     Diagnose policy, Git, lock, and CI inputs
+hoolicy report     Compare JSON policy reports by fingerprints and digests
+hoolicy evidence   Create or verify decision evidence and attestations
+hoolicy waiver     Preview or apply an exact finding-bound waiver
+hoolicy inventory  Emit workspace policy and ownership inventory
+hoolicy serve      Run the optional loopback, GET-only reuse service
+hoolicy migrate    Preview or apply supported format migrations
 hoolicy pack       Add, update, or verify vendored packs
 ```
 
-Reports: human text, JSON, SARIF 2.1.0, and JUnit XML. Exit codes: `0` passed, `1` policy finding met `failOn`, `2` configuration or execution error.
+Reports: human text, JSON, SARIF 2.1.0, JUnit XML, GitHub step summaries, and GitLab Code Quality. Exit codes: `0` passed, `1` a new policy finding met `failOn`, `2` configuration or execution error.
+
+Existing repositories can adopt policy without hiding debt. `hoolicy baseline create` previews an exact, digest-bound baseline; `--apply` writes it. Full checks continue to report existing findings while blocking only new or materially changed findings. See [baseline adoption and CI](docs/adoption.md).
 
 ## Standard packs
 
 - `packs/repository`: Git branch, commit, and merge-request naming.
 - `packs/supply-chain`: approved npm, NuGet, and OCI sources plus expiring security exceptions.
 - `packs/product-quality`: translation-key parity and semantic Gherkin coverage.
+- `packs/ci-workflow-security`: structured GitHub Actions and GitLab CI trust boundaries.
+- `packs/artifact-evidence`: pinned SARIF, SBOM, test, and provenance evidence.
+- `packs/dependency-governance`: lock, source, local-reference, and license governance.
+- `packs/deployment-invariants`: parameterized Kubernetes, Compose, and Terraform plan invariants.
+- `packs/api-contract-hygiene`: experimental OpenAPI consumption-evidence comparison.
 
 Use this repository as a versioned remote pack source:
 
@@ -98,11 +113,11 @@ Run `hoolicy pack update repository` once. It resolves the Git ref, vendors the 
 - Safe fixes are hash-bound, refuse dirty targets and symlinks, show a diff first, and require `--apply`.
 - Pack tests require at least one passing and one failing fixture for every published rule.
 
-Start with [rule authoring](docs/authoring-rules.md), [policy packs](docs/policy-packs.md), [architecture and threat model](docs/architecture.md), or [performance and footprint](docs/performance.md). Planned work and explicit non-goals live in the [roadmap](ROADMAP.md). A generic repository-policy example lives in [examples/repository-policy](examples/repository-policy).
+Start with [rule authoring](docs/authoring-rules.md), [policy packs](docs/policy-packs.md), [decision evidence](docs/evidence.md), [monorepo workspaces](docs/workspaces.md), [architecture and threat model](docs/architecture.md), [compatibility](docs/compatibility.md), or [recovery](docs/recovery.md). Product intent and non-goals live in the [roadmap](ROADMAP.md); repository implementation and remaining external gates are tracked separately in [roadmap status](docs/roadmap-status.md). A generic repository-policy example lives in [examples/repository-policy](examples/repository-policy).
 
 ## Project status
 
-`v0.1.x` is usable and intentionally conservative. Configuration version `1` is strict; the compile-time Go SDK may evolve before `v1.0.0`.
+Latest published release remains the version in `VERSION`. Current development source contains the roadmap implementation through the proposed v1 contracts, but it is not a v1 release until independent security review, remote CI, tagged publication, and artifact verification complete. Configuration version `1` is strict; the compile-time Go SDK may still evolve before `v1.0.0`.
 
 Commits use Conventional Commits and are checked by Hooversion. After CI passes on `main`, `feat` commits publish a minor release, `fix` and `perf` commits publish a patch release, and breaking changes publish a major release. Hooversion updates `VERSION` and `CHANGELOG.md`, creates the tag and GitHub release, then the release workflow attaches signed binaries, an SPDX SBOM, provenance, and a signed multi-platform GHCR image.
 

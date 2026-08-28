@@ -66,6 +66,29 @@ func TestFixGuardsDirtyChangedAndSymlinkTargets(t *testing.T) {
 	}
 }
 
+func TestApplyRejectsParentReplacedBySymlinkAfterPreview(t *testing.T) {
+	t.Parallel()
+	root := cleanGitRepository(t, map[string]string{"nested/tracked.txt": "old\n"})
+	edit := sdk.Edit{Path: "nested/tracked.txt", ExpectedSHA256: digest([]byte("old\n")), Start: 0, End: 3, Replacement: []byte("new")}
+	plan, err := Build(root, []sdk.Finding{{RuleID: "demo.edit", Fix: &sdk.Fix{Edits: []sdk.Edit{edit}}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.RemoveAll(filepath.Join(root, "nested")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "nested")); err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Apply(); err == nil || !strings.Contains(err.Error(), "unsafe fix path") {
+		t.Fatalf("expected post-preview symlink rejection, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "tracked.txt")); !os.IsNotExist(err) {
+		t.Fatalf("outside target changed: %v", err)
+	}
+}
+
 func TestBuildUsesPureGoGitStatusFallback(t *testing.T) {
 	root := cleanGitRepository(t, map[string]string{"tracked.txt": "old\n"})
 	t.Setenv("PATH", "")

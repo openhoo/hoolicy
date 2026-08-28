@@ -1,0 +1,45 @@
+version: 1
+name: ci-workflow-security
+release: 0.1.0
+description: Structured GitHub Actions and GitLab CI trust-boundary policies.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: GitHub and GitLab rules are separate; inherited GitLab timeouts and reusable GitHub jobs are modeled, while privileged pull-request findings require an untrusted checkout or interpolation. Finding keys bind provider object paths. Graduation awaits reviewed measurements on multiple unrelated repositories.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.1.3-0 <0.1.3 || >=0.2.0 <2.0.0'
+parameters:
+  allowed_write_permissions:
+    type: string_list
+    description: GitHub token permissions allowed to use write access.
+    default: [id-token]
+  require_job_timeout:
+    type: bool
+    description: Require an explicit timeout for every CI job.
+    default: true
+rules:
+  - id: ci-workflow-security.github
+    title: GitHub Actions workflows preserve trust boundaries
+    description: Rejects mutable actions, broad permissions, privileged fork triggers, unsafe event interpolation, and missing job timeouts.
+    rationale: Workflow code and event data cross a privileged software-delivery boundary.
+    remediation: Pin actions by full commit SHA, declare least privilege, isolate fork data, pass values through safe environment handling, and add timeouts.
+    severity: error
+    kind: ci.workflow-security
+    files: [.github/workflows/*.yml, .github/workflows/*.yaml]
+    controls: [{framework: SLSA, id: build-l2}]
+    spec:
+      provider: github
+      allowedWritePermissions: '{{ allowed_write_permissions }}'
+      requireJobTimeout: '{{ require_job_timeout }}'
+  - id: ci-workflow-security.gitlab
+    title: GitLab CI workflows preserve trust boundaries
+    description: Rejects mutable remote includes, untrusted merge-request interpolation, and missing job timeouts.
+    rationale: Included pipeline code and merge-request values can affect privileged jobs.
+    remediation: Pin project includes by full commit SHA, avoid remote URL includes, safely pass untrusted values, and add job timeouts.
+    severity: error
+    kind: ci.workflow-security
+    files: [.gitlab-ci.yml, .gitlab-ci.yaml]
+    controls: [{framework: SLSA, id: build-l2}]
+    spec:
+      provider: gitlab
+      requireJobTimeout: '{{ require_job_timeout }}'

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/v1/decision-attestation.schema.json",
+  "title": "Hoolicy in-toto decision statement",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["_type", "subject", "predicateType", "predicate"],
+  "properties": {
+    "_type": { "const": "https://in-toto.io/Statement/v1" },
+    "subject": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/subject" } },
+    "predicateType": { "const": "https://openhoo.dev/hoolicy/decision/v1" },
+    "predicate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["project", "revision", "policyDigest", "evidenceDigest", "decision"],
+      "properties": {
+        "project": { "type": "string" }, "revision": { "type": "string" },
+        "policyDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "evidenceDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "decision": { "$ref": "report.schema.json#/$defs/summary" }
+      }
+    }
+  },
+  "$defs": {
+    "subject": {
+      "type": "object", "additionalProperties": false, "required": ["name", "digest"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "digest": {
+          "type": "object", "minProperties": 1,
+          "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

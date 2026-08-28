@@ -67,9 +67,12 @@ func (ExceptionsLifecycle) Evaluate(_ context.Context, input sdk.EvalContext, ru
 	}
 	var findings []sdk.Finding
 	for _, file := range files {
-		documents, parseErr := document.Parse(file, spec.Format)
+		documents, hit, parseErr := document.ParseCached(file, spec.Format)
 		if parseErr != nil {
 			return nil, parseErr
+		}
+		if hit && input.Metrics != nil {
+			input.Metrics.ParseCacheHits++
 		}
 		for _, item := range documents {
 			collection, found := lookupDotted(item.Data, spec.Collection)

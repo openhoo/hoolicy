@@ -18,6 +18,19 @@ func TestFindingFingerprintIsStable(t *testing.T) {
 	}
 }
 
+func TestStableContractGoldenDigests(t *testing.T) {
+	t.Parallel()
+	rule := Rule{ID: "demo.contract", Title: "Stable contract", Description: "Cross-platform policy digest fixture.", Rationale: "Consumers need stable policy identity.", Remediation: "Keep the fixture explicit.", Severity: SeverityError, Kind: "files", Files: []string{"README.md"}, Dependencies: []string{"README.md"}, Controls: []Control{{Framework: "demo", ID: "C-1"}}, Spec: map[string]any{"message": "README missing", "mode": "require"}}
+	if got, want := RuleDigest(rule), "sha256:6634f3133e0bb1da39d9a224634defe248ddb7edb80e5b0c125933ae4f4cb5fc"; got != want {
+		t.Fatalf("rule digest changed: got %s want %s", got, want)
+	}
+	finding := Finding{Workspace: "api", Owner: "@api-team", Location: Location{Path: "README.md", Line: 1, Column: 1}, Key: "missing", Message: "README missing"}
+	finding.Finalize(rule)
+	if got, want := finding.Fingerprint, "d9ac508700dd0c5e91f3d574364e9aaf4372784e3f081db3f597a9d92def9410"; got != want {
+		t.Fatalf("fingerprint changed: got %s want %s", got, want)
+	}
+}
+
 func TestFindingFinalizeBindsConfiguredRuleMetadata(t *testing.T) {
 	t.Parallel()
 	rule := Rule{ID: "demo.rule", Title: "Configured title", Remediation: "Configured fix", Severity: SeverityError, Pack: "demo", Controls: []Control{{Framework: "SOC2", ID: "CC8.1"}}}

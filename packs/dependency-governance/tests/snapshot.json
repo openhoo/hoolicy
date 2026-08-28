@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "pack": "dependency-governance",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "approved local workspace edge is not a false positive",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "local Go replacement fails",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "dependency-governance.manifests",
+          "severity": "error",
+          "path": "go.mod",
+          "line": 3,
+          "column": 1,
+          "message": "Dependency manifest lacks an authoritative lock, uses unresolved source drift, or declares an unapproved license: example.com/shared uses unresolved local replace ../shared",
+          "key": "replace:example.com/shared",
+          "fingerprint": "b040d893a7ada9b90c208d61937796c7cbba1be9a6f69d1f090dc12c06001125",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "locked npm manifest with approved license passes",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "malformed dependency manifest fails closed",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule dependency-governance.manifests: package.json: invalid character 'b' looking for beginning of object key string"
+    },
+    {
+      "name": "narrow fixture exclusion is explicit",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "npm drift local reference and license fail",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "dependency-governance.manifests",
+          "severity": "error",
+          "path": "package.json",
+          "line": 1,
+          "column": 1,
+          "message": "Dependency manifest lacks an authoritative lock, uses unresolved source drift, or declares an unapproved license: shared uses unresolved local reference workspace:*",
+          "key": "dependencies:shared:local",
+          "fingerprint": "740d7a4f66352f89d568019e16df32d129b37d104df8a6001345ad63ad185fc2",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "dependency-governance.manifests",
+          "severity": "error",
+          "path": "package.json",
+          "line": 1,
+          "column": 1,
+          "message": "Dependency manifest lacks an authoritative lock, uses unresolved source drift, or declares an unapproved license: package manager lock is missing",
+          "key": "lock:missing",
+          "fingerprint": "d3a0e4863e3f63157293d2cc9820e3c5b39e29700813c33b4d80cc311427cb79",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "dependency-governance.manifests",
+          "severity": "error",
+          "path": "package.json",
+          "line": 1,
+          "column": 1,
+          "message": "Dependency manifest lacks an authoritative lock, uses unresolved source drift, or declares an unapproved license: tool uses mutable source git+https://example.com/tool.git#main",
+          "key": "dependencies:tool:source",
+          "fingerprint": "f95e7826983ce6ce5f13e66a50b7937055babf6d6dcf783ef0b43a28a6acb0ee",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "dependency-governance.manifests",
+          "severity": "error",
+          "path": "package.json",
+          "line": 1,
+          "column": 1,
+          "message": "Dependency manifest lacks an authoritative lock, uses unresolved source drift, or declares an unapproved license: license expression GPL-3.0-only is not approved",
+          "key": "license:GPL-3.0-only",
+          "fingerprint": "fd78d428521be6337d568b86cfc4e957e292024aae1f94960498e9c0b4244557",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pinned Cargo Git dependency passes",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "resolved Cargo workspace path and root lock pass",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "resolved npm workspace edge and root lock pass",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "unapproved Cargo license fails",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "dependency-governance.manifests",
+          "severity": "error",
+          "path": "Cargo.toml",
+          "line": 1,
+          "column": 1,
+          "message": "Dependency manifest lacks an authoritative lock, uses unresolved source drift, or declares an unapproved license: license expression GPL-3.0-only is not approved",
+          "key": "license:GPL-3.0-only",
+          "fingerprint": "08df0ec75147b943f65654b9c4ca032b515f76d35b822d437fb0c522f8d45849",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "unrelated npm lock does not satisfy declared pnpm manager",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "dependency-governance.manifests",
+          "severity": "error",
+          "path": "package.json",
+          "line": 1,
+          "column": 1,
+          "message": "Dependency manifest lacks an authoritative lock, uses unresolved source drift, or declares an unapproved license: authoritative pnpm lock is missing",
+          "key": "lock:missing",
+          "fingerprint": "d3a0e4863e3f63157293d2cc9820e3c5b39e29700813c33b4d80cc311427cb79",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    }
+  ]
+}

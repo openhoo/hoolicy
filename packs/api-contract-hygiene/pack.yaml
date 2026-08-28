@@ -1,0 +1,47 @@
+version: 1
+name: api-contract-hygiene
+release: 0.1.0
+description: OpenAPI operation comparison with pinned generated-client or declared-consumption evidence.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: OpenAPI 3.x operation comparison is stable; producer evidence format and language integrations remain experimental.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.1.3-0 <0.1.3 || >=0.2.0 <2.0.0'
+parameters:
+  contract_path:
+    type: string
+    required: true
+    description: Repository-relative OpenAPI 3.x JSON or YAML contract.
+  consumption_path:
+    type: string
+    required: true
+    description: Repository-relative JSON consumption evidence.
+  required_producer:
+    type: string
+    required: true
+    description: Exact generator or analyzer identity recorded in evidence.
+  require_all_operations:
+    type: bool
+    description: Require consumption evidence for every contract operation.
+    default: true
+  allow_undeclared_evidence:
+    type: bool
+    description: Allow evidence entries absent from the current contract during staged migration.
+    default: false
+rules:
+  - id: api-contract-hygiene.consumption
+    title: OpenAPI contract and consumption evidence agree
+    description: Binds declared operation consumption to the exact OpenAPI contract digest and producer.
+    rationale: Contract changes can silently strand generated clients or retain calls to removed operations.
+    remediation: Regenerate client evidence for the exact contract and review missing or undeclared operation use.
+    severity: warning
+    kind: api.contract
+    dependencies: ['{{ contract_path }}', '{{ consumption_path }}']
+    controls: [{framework: delivery, id: api-contract}]
+    spec:
+      contractPath: '{{ contract_path }}'
+      consumptionPath: '{{ consumption_path }}'
+      requiredProducer: '{{ required_producer }}'
+      requireAllOperations: '{{ require_all_operations }}'
+      allowUndeclaredEvidence: '{{ allow_undeclared_evidence }}'

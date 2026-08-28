@@ -18,11 +18,49 @@
         "properties": {
           "name": { "type": "string", "minLength": 1 },
           "rule": { "type": "string", "minLength": 1 },
-          "outcome": { "enum": ["pass", "fail"] },
+          "outcome": { "enum": ["pass", "fail", "error"] },
           "files": { "type": "object", "additionalProperties": { "type": "string" } },
+          "documents": {
+            "type": "object",
+            "additionalProperties": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+          },
           "branch": { "type": "string" },
+          "commit": { "type": "string" },
+          "commits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["sha", "subject"],
+              "properties": { "sha": { "type": "string" }, "subject": { "type": "string" } }
+            }
+          },
+          "dirty": { "type": "boolean" },
+          "gitProperties": { "type": "object" },
           "mergeRequestTitle": { "type": "string" },
-          "parameters": { "type": "object" }
+          "now": { "type": "string", "format": "date-time" },
+          "parameters": { "type": "object" },
+          "waivers": { "type": "array", "items": { "$ref": "waivers.schema.json#/$defs/waiver" } },
+          "waiveFindings": { "type": "boolean" },
+          "findingCount": { "type": "integer", "minimum": 0 },
+          "errorContains": { "type": "string" },
+          "expect": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ruleId": { "type": "string" },
+                "path": { "type": "string" },
+                "line": { "type": "integer", "minimum": 1 },
+                "column": { "type": "integer", "minimum": 1 },
+                "messageContains": { "type": "string" },
+                "key": { "type": "string" },
+                "waived": { "type": "boolean" },
+                "hasFix": { "type": "boolean" }
+              }
+            }
+          }
         }
       }
     }

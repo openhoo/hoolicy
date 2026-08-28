@@ -1,0 +1,173 @@
+version: 1
+parameters:
+  approved_registries: [registry.example.com]
+cases:
+  - name: bounded non-root Kubernetes workload passes
+    rule: deployment-invariants.kubernetes
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app}
+        spec:
+          template:
+            spec:
+              securityContext: {runAsNonRoot: true}
+              containers:
+                - name: app
+                  image: registry.example.com/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                  resources:
+                    limits: {cpu: 500m, memory: 256Mi}
+  - name: mutable unconstrained Kubernetes workload fails
+    rule: deployment-invariants.kubernetes
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        spec:
+          template:
+            spec:
+              containers: [{name: app, image: docker.io/demo/app:latest}]
+    expect:
+      - ruleId: deployment-invariants.kubernetes
+        path: deploy/app.yaml
+  - name: explicitly allowed Helm image template is not a false positive
+    rule: deployment-invariants.kubernetes
+    outcome: pass
+    parameters:
+      allow_templated_images: true
+      require_resource_limits: false
+      require_non_root: false
+    files:
+      deploy/template.yaml: |
+        apiVersion: v1
+        kind: Pod
+        spec:
+          containers: [{name: app, image: '${IMAGE}'}]
+  - name: malformed Kubernetes YAML fails closed
+    rule: deployment-invariants.kubernetes
+    outcome: error
+    files:
+      deploy/app.yaml: 'kind: [broken'
+    errorContains: deploy/app.yaml
+  - name: container cannot override pod non-root policy
+    rule: deployment-invariants.kubernetes
+    outcome: fail
+    parameters:
+      require_resource_limits: false
+    files:
+      deploy/app.yaml: |
+        apiVersion: v1
+        kind: Pod
+        spec:
+          securityContext: {runAsNonRoot: true}
+          containers:
+            - name: app
+              image: registry.example.com/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              securityContext: {runAsNonRoot: false}
+    expect:
+      - ruleId: deployment-invariants.kubernetes
+        messageContains: runAsNonRoot
+  - name: bounded Compose service passes
+    rule: deployment-invariants.compose
+    outcome: pass
+    files:
+      compose.yaml: |
+        services:
+          app:
+            image: registry.example.com/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+            user: '1000'
+            read_only: true
+            deploy:
+              resources:
+                limits: {cpus: '0.5', memory: 256M}
+  - name: root mutable Compose service fails
+    rule: deployment-invariants.compose
+    outcome: fail
+    files:
+      compose.yaml: |
+        services:
+          app: {image: demo/app:latest, user: root}
+    expect:
+      - ruleId: deployment-invariants.compose
+        path: compose.yaml
+  - name: nested Compose service remains in scope
+    rule: deployment-invariants.compose
+    outcome: fail
+    files:
+      environments/dev/docker-compose.yml: |
+        services:
+          app: {image: demo/app:latest, user: root}
+    expect:
+      - ruleId: deployment-invariants.compose
+        path: environments/dev/docker-compose.yml
+  - name: narrow development deployment exclusion is explicit
+    rule: deployment-invariants.compose
+    outcome: pass
+    parameters:
+      excluded_files: [environments/dev/**]
+    files:
+      environments/dev/docker-compose.yml: |
+        services:
+          app: {image: demo/app:latest, user: root}
+  - name: parameterized Compose exception is explicit
+    rule: deployment-invariants.compose
+    outcome: pass
+    parameters:
+      require_resource_limits: false
+      require_non_root: false
+    files:
+      compose.yaml: |
+        services:
+          app:
+            image: registry.example.com/app@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  - name: malformed Compose YAML fails closed
+    rule: deployment-invariants.compose
+    outcome: error
+    files:
+      compose.yaml: 'services: [broken'
+    errorContains: compose.yaml
+  - name: numeric root user with group fails Compose policy
+    rule: deployment-invariants.compose
+    outcome: fail
+    parameters:
+      require_resource_limits: false
+    files:
+      compose.yaml: |
+        services:
+          app:
+            image: registry.example.com/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+            user: '0:1000'
+            read_only: true
+    expect:
+      - ruleId: deployment-invariants.compose
+        messageContains: non-root
+  - name: immutable Terraform plan image passes
+    rule: deployment-invariants.terraform-plan
+    outcome: pass
+    files:
+      terraform-plan.json: |
+        {"format_version":"1.2","resource_changes":[{"address":"demo.app","change":{"after":{"image":"registry.example.com/app@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}}}]}
+  - name: mutable Terraform plan image fails
+    rule: deployment-invariants.terraform-plan
+    outcome: fail
+    files:
+      terraform-plan.json: |
+        {"format_version":"1.2","resource_changes":[{"address":"demo.app","change":{"after":{"container_image":"registry.example.com/app:latest"}}}]}
+    expect:
+      - ruleId: deployment-invariants.terraform-plan
+        path: terraform-plan.json
+  - name: plan without image field is not a false positive
+    rule: deployment-invariants.terraform-plan
+    outcome: pass
+    files:
+      terraform-plan.json: |
+        {"format_version":"1.2","resource_changes":[{"address":"demo.bucket","change":{"after":{"name":"demo"}}}]}
+  - name: malformed Terraform plan fails closed
+    rule: deployment-invariants.terraform-plan
+    outcome: error
+    files:
+      terraform-plan.json: '{broken'
+    errorContains: terraform-plan.json

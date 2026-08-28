@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "pack": "ci-workflow-security",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "approved GitHub write permission is not a false positive",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "malformed GitHub workflow fails closed",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule ci-workflow-security.github: .github/workflows/ci.yml: yaml: line 1: did not find expected ',' or ']'"
+    },
+    {
+      "name": "pinned least-privilege GitHub workflow passes",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "pull request target checkout of fork code fails",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "ci-workflow-security.github",
+          "severity": "error",
+          "path": ".github/workflows/unsafe-checkout.yml",
+          "line": 1,
+          "column": 1,
+          "message": "pull_request_target checks out untrusted pull-request code",
+          "key": "job:test:step:0:privileged-checkout",
+          "fingerprint": "d3edb7fae9a75f151c7ab7f2f7db3ae5aa1e29c49bdee0e3c98d9e68f30744bc",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "safe pull request target and reusable job are not false positives",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "structurally invalid GitHub permissions and jobs fail",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "ci-workflow-security.github",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job broken must be an object",
+          "key": "job:broken:invalid",
+          "fingerprint": "6cc09b44e611aa7d4c9d87dc11007e56c86142eb0cddbf696882e8a254f5c899",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "ci-workflow-security.github",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "token permissions must be read-all, write-all, or an object",
+          "key": "permissions:token permissions must be read-all, write-all, or an object",
+          "fingerprint": "78496b9df32fad8e5a53743cfd88b9c823fe0d5d37da08627fe831a35eb33a4a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "unsafe GitHub workflow fails",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "ci-workflow-security.github",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job release has no timeout-minutes",
+          "key": "job:release:timeout",
+          "fingerprint": "0b2da1e7d5474312848c22bed3723906ddf2f0055570cb231440a9e1522ae09a",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "ci-workflow-security.github",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Run script interpolates untrusted GitHub event data directly",
+          "key": "job:release:step:1:interpolation",
+          "fingerprint": "3171c9a6f52d45bbc4a72a975c1951afda928df47da6f3c00aba85d81b8c9655",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "ci-workflow-security.github",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "contents write permission is not approved",
+          "key": "permissions:contents write permission is not approved",
+          "fingerprint": "83790531b53d1fdce548ba508d1768afad1f930701ea79b44e7b05f174c08c3c",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "ci-workflow-security.github",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Action vendor/action@main is not pinned to an immutable commit or digest",
+          "key": "job:release:step:0:uses",
+          "fingerprint": "a977794292f26cdcf529363da0adc89e15c79f7d8ef5bb4e42a7abb0d59566d1",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "GitLab job inherits explicit default timeout",
+      "ruleId": "ci-workflow-security.gitlab",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "hidden GitLab template is not a job false positive",
+      "ruleId": "ci-workflow-security.gitlab",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "malformed GitLab workflow fails closed",
+      "ruleId": "ci-workflow-security.gitlab",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule ci-workflow-security.gitlab: .gitlab-ci.yml: yaml: line 1: did not find expected ',' or ']'"
+    },
+    {
+      "name": "mutable GitLab workflow fails",
+      "ruleId": "ci-workflow-security.gitlab",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "ci-workflow-security.gitlab",
+          "severity": "error",
+          "path": ".gitlab-ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Remote GitLab include is mutable",
+          "key": "include:0",
+          "fingerprint": "46d149b88b20dd44824cb8562b26d852952d075b71ae3b990ea0edf82f3c0b1a",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "ci-workflow-security.gitlab",
+          "severity": "error",
+          "path": ".gitlab-ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job release script consumes untrusted merge-request variable $CI_MERGE_REQUEST_TITLE",
+          "key": "job:release:interpolation:$CI_MERGE_REQUEST_TITLE",
+          "fingerprint": "6804c70751f01d55e91dcb32da7dede20cca26f86d5d084163f403a673d64b8d",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "ci-workflow-security.gitlab",
+          "severity": "error",
+          "path": ".gitlab-ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job release has no timeout",
+          "key": "job:release:timeout",
+          "fingerprint": "96460719f609d36ce86e7a8d9bb3b5915ed0ced0a1eeb418fd6f09b01301080a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pinned local GitLab workflow passes",
+      "ruleId": "ci-workflow-security.gitlab",
+      "outcome": "pass",
+      "findings": []
+    }
+  ]
+}

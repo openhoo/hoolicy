@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/v1/evidence-policy.schema.json",
+  "title": "Hoolicy external evidence policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "external": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "path", "sha256", "subjectDigest"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["sarif", "cyclonedx", "spdx", "junit", "provenance"] },
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/digest" },
+          "subjectDigest": { "$ref": "#/$defs/digest" },
+          "requiredProducer": { "type": "string", "minLength": 1 },
+          "maximumAge": { "type": "string", "minLength": 2 },
+          "minimumItems": { "type": "integer", "minimum": 0 },
+          "maximumFailures": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } }
+}

@@ -21,7 +21,7 @@ func Writable(root, path string) (string, string, error) {
 }
 
 func resolve(root, path string, allowMissing bool) (string, string, error) {
-	if filepath.IsAbs(path) {
+	if filepath.IsAbs(path) || strings.HasPrefix(path, "/") || strings.Contains(path, "\\") || hasWindowsVolume(path) {
 		return "", "", fmt.Errorf("absolute path is forbidden: %s", path)
 	}
 	clean := filepath.Clean(filepath.FromSlash(path))
@@ -61,4 +61,8 @@ func resolve(root, path string, allowMissing bool) (string, string, error) {
 		}
 	}
 	return filepath.ToSlash(clean), current, nil
+}
+
+func hasWindowsVolume(path string) bool {
+	return len(path) >= 2 && path[1] == ':' && (path[0] >= 'A' && path[0] <= 'Z' || path[0] >= 'a' && path[0] <= 'z')
 }

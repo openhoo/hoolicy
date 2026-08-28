@@ -34,4 +34,6 @@ type RuleKind interface {
 
 `Validate` must reject incomplete or ambiguous specs. `Evaluate` must be deterministic for the supplied repository snapshot and context. Do not perform network calls or mutate the repository. Populate message, location, properties, optional fix, and a stable semantic `Key`. Hoolicy binds rule ID, title, severity, remediation, controls, pack, and fingerprint to the validated configured rule after evaluation.
 
-The SDK is source-compatible only on a best-effort basis during `v0.x`. Pin the Hoolicy module version for custom builds.
+The complete [custom-rule example](../examples/custom-rule/main.go) is compiled by `go test ./...` on every supported CI platform.
+
+Before `v1.0.0`, pin the Hoolicy module version. From `v1`, SDK symbols follow the compatibility and deprecation policy in [compatibility.md](compatibility.md).

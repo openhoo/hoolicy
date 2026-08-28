@@ -1,0 +1,61 @@
+version: 1
+name: artifact-evidence
+release: 0.1.0
+description: Pinned specialist evidence matched to exact build subjects and policy thresholds.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: Supported adapters follow Hoolicy evidence bundle v1; producer matching is exact and thresholds fail closed. Graduation awaits measured results on multiple unrelated repositories.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.1.3-0 <0.1.3 || >=0.2.0 <2.0.0'
+parameters:
+  artifact_path:
+    type: string
+    required: true
+    description: Repository-relative path to exactly one specialist output.
+  artifact_type:
+    type: string
+    required: true
+    description: sarif, cyclonedx, spdx, junit, or provenance.
+  artifact_sha256:
+    type: string
+    required: true
+    description: Exact SHA-256 digest prefixed with sha256.
+  subject_digest:
+    type: string
+    required: true
+    description: Exact SHA-256 digest of the built subject.
+  required_producer:
+    type: string
+    required: true
+    description: Exact producer identity expected in the artifact.
+  maximum_age:
+    type: string
+    description: Positive Go duration freshness limit.
+    default: 24h
+  minimum_items:
+    type: number
+    description: Minimum expected result or component count.
+    default: 1
+  maximum_failures:
+    type: number
+    description: Maximum allowed failing results.
+    default: 0
+rules:
+  - id: artifact-evidence.verified
+    title: Specialist evidence is pinned and subject-bound
+    description: Verifies schema, exact artifact digest, built subject, producer, freshness, and thresholds without running the producer.
+    rationale: File presence or CI color does not prove a scanner examined the released subject.
+    remediation: Regenerate the specialist artifact for the exact subject and update its reviewed digest; do not weaken thresholds to hide failure.
+    severity: error
+    kind: artifact.evidence
+    files: ['{{ artifact_path }}']
+    controls: [{framework: SLSA, id: provenance-available}]
+    spec:
+      type: '{{ artifact_type }}'
+      sha256: '{{ artifact_sha256 }}'
+      subjectDigest: '{{ subject_digest }}'
+      requiredProducer: '{{ required_producer }}'
+      maximumAge: '{{ maximum_age }}'
+      minimumItems: '{{ minimum_items }}'
+      maximumFailures: '{{ maximum_failures }}'

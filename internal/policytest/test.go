@@ -2,6 +2,7 @@ package policytest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,19 +22,122 @@ type File struct {
 }
 
 type Case struct {
-	Name       string            `yaml:"name"`
-	Rule       string            `yaml:"rule"`
-	Outcome    string            `yaml:"outcome"`
-	Files      map[string]string `yaml:"files,omitempty"`
-	Branch     string            `yaml:"branch,omitempty"`
-	MRTitle    string            `yaml:"mergeRequestTitle,omitempty"`
-	Parameters map[string]any    `yaml:"parameters,omitempty"`
+	Name          string              `yaml:"name"`
+	Rule          string              `yaml:"rule"`
+	Outcome       string              `yaml:"outcome"`
+	Files         map[string]string   `yaml:"files,omitempty"`
+	Documents     map[string][]string `yaml:"documents,omitempty"`
+	Branch        string              `yaml:"branch,omitempty"`
+	Commit        string              `yaml:"commit,omitempty"`
+	Commits       []sdk.Commit        `yaml:"commits,omitempty"`
+	Dirty         bool                `yaml:"dirty,omitempty"`
+	GitProperties map[string]any      `yaml:"gitProperties,omitempty"`
+	MRTitle       string              `yaml:"mergeRequestTitle,omitempty"`
+	Now           string              `yaml:"now,omitempty"`
+	Parameters    map[string]any      `yaml:"parameters,omitempty"`
+	Waivers       []config.Waiver     `yaml:"waivers,omitempty"`
+	WaiveFindings bool                `yaml:"waiveFindings,omitempty"`
+	Expect        []ExpectedFinding   `yaml:"expect,omitempty"`
+	FindingCount  *int                `yaml:"findingCount,omitempty"`
+	ErrorContains string              `yaml:"errorContains,omitempty"`
+}
+
+type ExpectedFinding struct {
+	RuleID          string `yaml:"ruleId,omitempty"`
+	Path            string `yaml:"path,omitempty"`
+	Line            int    `yaml:"line,omitempty"`
+	Column          int    `yaml:"column,omitempty"`
+	MessageContains string `yaml:"messageContains,omitempty"`
+	Key             string `yaml:"key,omitempty"`
+	Waived          *bool  `yaml:"waived,omitempty"`
+	HasFix          *bool  `yaml:"hasFix,omitempty"`
 }
 
 type Result struct {
 	Cases  int
 	Passed int
 	Errors []string
+}
+
+type Snapshot struct {
+	Version int            `json:"version"`
+	Pack    string         `json:"pack"`
+	Release string         `json:"release"`
+	Cases   []SnapshotCase `json:"cases"`
+}
+
+type SnapshotCase struct {
+	Name     string            `json:"name"`
+	RuleID   string            `json:"ruleId"`
+	Outcome  string            `json:"outcome"`
+	Findings []SnapshotFinding `json:"findings"`
+	Error    string            `json:"error,omitempty"`
+}
+
+type SnapshotFinding struct {
+	RuleID      string       `json:"ruleId"`
+	Severity    sdk.Severity `json:"severity"`
+	Path        string       `json:"path,omitempty"`
+	Line        int          `json:"line,omitempty"`
+	Column      int          `json:"column,omitempty"`
+	Message     string       `json:"message"`
+	Key         string       `json:"key,omitempty"`
+	Fingerprint string       `json:"fingerprint"`
+	Waived      bool         `json:"waived"`
+	HasFix      bool         `json:"hasFix"`
+}
+
+func BuildSnapshot(ctx context.Context, packPath string, registry *sdk.Registry) (*Snapshot, error) {
+	pack, err := config.LoadPack(packPath)
+	if err != nil {
+		return nil, err
+	}
+	var tests File
+	if err := config.LoadYAMLStrict(filepath.Join(packPath, "tests", "cases.yaml"), &tests); err != nil {
+		return nil, err
+	}
+	snapshot := &Snapshot{Version: 1, Pack: pack.Name, Release: pack.Release, Cases: make([]SnapshotCase, 0, len(tests.Cases))}
+	for _, testCase := range tests.Cases {
+		rules, err := pack.Instantiate(merge(tests.Parameters, testCase.Parameters))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", testCase.Name, err)
+		}
+		var selected *sdk.Rule
+		for index := range rules {
+			if rules[index].ID == testCase.Rule {
+				selected = &rules[index]
+				break
+			}
+		}
+		if selected == nil {
+			return nil, fmt.Errorf("%s: unknown rule %s", testCase.Name, testCase.Rule)
+		}
+		result, runErr := runCase(ctx, *selected, testCase, registry)
+		caseSnapshot := SnapshotCase{Name: testCase.Name, RuleID: testCase.Rule, Outcome: testCase.Outcome, Findings: make([]SnapshotFinding, 0)}
+		if runErr != nil {
+			caseSnapshot.Error = runErr.Error()
+		} else {
+			for _, finding := range result.Findings {
+				caseSnapshot.Findings = append(caseSnapshot.Findings, SnapshotFinding{RuleID: finding.RuleID, Severity: finding.Severity, Path: finding.Location.Path, Line: finding.Location.Line, Column: finding.Location.Column, Message: finding.Message, Key: finding.Key, Fingerprint: finding.Fingerprint, Waived: finding.Waived, HasFix: finding.Fix != nil})
+			}
+		}
+		snapshot.Cases = append(snapshot.Cases, caseSnapshot)
+	}
+	sort.Slice(snapshot.Cases, func(i, j int) bool {
+		if snapshot.Cases[i].RuleID != snapshot.Cases[j].RuleID {
+			return snapshot.Cases[i].RuleID < snapshot.Cases[j].RuleID
+		}
+		return snapshot.Cases[i].Name < snapshot.Cases[j].Name
+	})
+	return snapshot, nil
+}
+
+func SnapshotJSON(snapshot *Snapshot) ([]byte, error) {
+	data, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
 }
 
 func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
@@ -64,8 +168,8 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 			result.Errors = append(result.Errors, err.Error())
 			break
 		}
-		if testCase.Name == "" || testCase.Rule == "" || (testCase.Outcome != "pass" && testCase.Outcome != "fail") {
-			result.Errors = append(result.Errors, "test cases require name, rule, and pass/fail outcome")
+		if testCase.Name == "" || testCase.Rule == "" || (testCase.Outcome != "pass" && testCase.Outcome != "fail" && testCase.Outcome != "error") {
+			result.Errors = append(result.Errors, "test cases require name, rule, and pass/fail/error outcome")
 			continue
 		}
 		if caseNames[testCase.Name] {
@@ -80,7 +184,9 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 		if coverage[testCase.Rule] == nil {
 			coverage[testCase.Rule] = map[string]bool{}
 		}
-		coverage[testCase.Rule][testCase.Outcome] = true
+		if testCase.Outcome != "error" {
+			coverage[testCase.Rule][testCase.Outcome] = true
+		}
 		parameters := merge(tests.Parameters, testCase.Parameters)
 		rules, instantiateErr := pack.Instantiate(parameters)
 		if instantiateErr != nil {
@@ -98,13 +204,25 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 			result.Errors = append(result.Errors, testCase.Name+": unknown rule "+testCase.Rule)
 			continue
 		}
-		passed, runErr := runCase(ctx, *selected, testCase, registry)
+		report, runErr := runCase(ctx, *selected, testCase, registry)
+		if testCase.Outcome == "error" {
+			if runErr == nil {
+				result.Errors = append(result.Errors, testCase.Name+": expected evaluation error")
+				continue
+			}
+			if testCase.ErrorContains != "" && !strings.Contains(runErr.Error(), testCase.ErrorContains) {
+				result.Errors = append(result.Errors, testCase.Name+": error does not contain "+testCase.ErrorContains+": "+runErr.Error())
+				continue
+			}
+			result.Passed++
+			continue
+		}
 		if runErr != nil {
 			result.Errors = append(result.Errors, testCase.Name+": "+runErr.Error())
 			continue
 		}
-		if !passed {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: expected %s outcome", testCase.Name, testCase.Outcome))
+		if assertionErr := assertFindings(*selected, testCase, report); assertionErr != nil {
+			result.Errors = append(result.Errors, testCase.Name+": "+assertionErr.Error())
 			continue
 		}
 		result.Passed++
@@ -118,54 +236,128 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 	return result
 }
 
-func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Registry) (bool, error) {
+func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Registry) (*engine.Report, error) {
 	root, err := os.MkdirTemp("", "hoolicy-policy-test-*")
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer os.RemoveAll(root)
 	for path, content := range testCase.Files {
 		clean, err := safeFixturePath(path)
 		if err != nil {
-			return false, err
+			return nil, err
 		}
 		if reservedFixturePath(clean) {
-			return false, fmt.Errorf("fixture path %s is reserved for the test harness", filepath.ToSlash(clean))
+			return nil, fmt.Errorf("fixture path %s is reserved for the test harness", filepath.ToSlash(clean))
 		}
 		absolute := filepath.Join(root, clean)
 		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
-			return false, err
+			return nil, err
 		}
 		if err := os.WriteFile(absolute, []byte(content), 0o644); err != nil {
-			return false, err
+			return nil, err
+		}
+	}
+	for path, documents := range testCase.Documents {
+		if _, exists := testCase.Files[path]; exists {
+			return nil, fmt.Errorf("fixture path %s is present in both files and documents", path)
+		}
+		clean, err := safeFixturePath(path)
+		if err != nil {
+			return nil, err
+		}
+		if reservedFixturePath(clean) {
+			return nil, fmt.Errorf("fixture path %s is reserved for the test harness", filepath.ToSlash(clean))
+		}
+		absolute := filepath.Join(root, clean)
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+			return nil, err
+		}
+		content := strings.Join(documents, "\n---\n")
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		if err := os.WriteFile(absolute, []byte(content), 0o644); err != nil {
+			return nil, err
 		}
 	}
 	project := config.Project{Version: 1, Project: "fixture", FailOn: sdk.SeverityInfo, Rules: []sdk.Rule{rule}, Root: root, Path: filepath.Join(root, "hoolicy.yaml")}
 	if err := config.SaveProject(project.Path, project); err != nil {
-		return false, err
+		return nil, err
+	}
+	if len(testCase.Waivers) > 0 {
+		waiverPath := filepath.Join(root, config.DefaultWaivers)
+		if err := os.MkdirAll(filepath.Dir(waiverPath), 0o755); err != nil {
+			return nil, err
+		}
+		if err := config.SaveWaivers(waiverPath, config.WaiverFile{Version: config.CurrentVersion, Waivers: testCase.Waivers}); err != nil {
+			return nil, err
+		}
 	}
 	loaded, err := config.LoadProject(project.Path)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	const fixtureCommit = "0000000000000000000000000000000000000001"
+	commit := fallback(testCase.Commit, fixtureCommit)
+	commits := testCase.Commits
+	if len(commits) == 0 {
+		commits = []sdk.Commit{{SHA: commit, Subject: "test: fixture"}}
+	}
 	gitContext := sdk.GitContext{
-		Branch: fallback(testCase.Branch, "main"), Commit: fixtureCommit,
-		CommitSubjects:    []sdk.Commit{{SHA: fixtureCommit, Subject: "test: fixture"}},
-		MergeRequestTitle: testCase.MRTitle, Properties: make(map[string]any),
+		Branch: fallback(testCase.Branch, "main"), Commit: commit, Dirty: testCase.Dirty,
+		CommitSubjects: commits, MergeRequestTitle: testCase.MRTitle, Properties: testCase.GitProperties,
+	}
+	if gitContext.Properties == nil {
+		gitContext.Properties = make(map[string]any)
+	}
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if testCase.Now != "" {
+		parsed, err := time.Parse(time.RFC3339, testCase.Now)
+		if err != nil {
+			return nil, fmt.Errorf("now must be RFC3339: %w", err)
+		}
+		now = parsed
 	}
 	report, err := engine.New(registry).Check(ctx, loaded, engine.Options{
-		Now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), ToolVersion: "test", GitContext: &gitContext,
+		Now: now, ToolVersion: "test", GitContext: &gitContext,
 	})
 	if err != nil {
-		return false, err
+		return nil, err
 	}
+	if testCase.WaiveFindings {
+		fingerprints := make([]string, 0, len(report.Findings))
+		for _, finding := range report.Findings {
+			if finding.RuleID == rule.ID {
+				fingerprints = append(fingerprints, finding.Fingerprint)
+			}
+		}
+		if len(fingerprints) == 0 {
+			return nil, fmt.Errorf("waiveFindings requires at least one rule finding")
+		}
+		waiver := config.Waiver{ID: "fixture.waiver", Rule: rule.ID, Fingerprints: fingerprints, Reason: "Policy fixture verifies explicit waiver behavior.", Owner: "policy-test@example.com", Ticket: "https://issues.example.com/POLICY-1", Created: config.Date{Time: now.Add(-24 * time.Hour)}, Expires: config.Date{Time: now.Add(30 * 24 * time.Hour)}}
+		waiverPath := filepath.Join(root, config.DefaultWaivers)
+		if err := os.MkdirAll(filepath.Dir(waiverPath), 0o755); err != nil {
+			return nil, err
+		}
+		if err := config.SaveWaivers(waiverPath, config.WaiverFile{Version: config.CurrentVersion, Waivers: append(testCase.Waivers, waiver)}); err != nil {
+			return nil, err
+		}
+		report, err = engine.New(registry).Check(ctx, loaded, engine.Options{Now: now, ToolVersion: "test", GitContext: &gitContext})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return report, nil
+}
+
+func assertFindings(rule sdk.Rule, testCase Case, report *engine.Report) error {
 	failed := false
 	for _, item := range report.Findings {
 		if item.RuleID != rule.ID {
-			return false, fmt.Errorf("unexpected harness finding %s: %s", item.RuleID, item.Message)
+			return fmt.Errorf("unexpected harness finding %s: %s", item.RuleID, item.Message)
 		}
-		if !item.Waived && item.Severity.Rank() >= loaded.FailOn.Rank() {
+		if !item.Waived && item.Severity.Rank() >= report.FailOn.Rank() {
 			failed = true
 		}
 	}
@@ -175,9 +367,41 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 		for _, item := range report.Findings {
 			messages = append(messages, item.RuleID+": "+item.Message)
 		}
-		return false, fmt.Errorf("expected %s outcome; findings: %s", testCase.Outcome, strings.Join(messages, " | "))
+		return fmt.Errorf("expected %s outcome; findings: %s", testCase.Outcome, strings.Join(messages, " | "))
 	}
-	return true, nil
+	if testCase.FindingCount != nil && len(report.Findings) != *testCase.FindingCount {
+		return fmt.Errorf("findingCount is %d, got %d", *testCase.FindingCount, len(report.Findings))
+	}
+	used := make(map[int]bool)
+	for _, expected := range testCase.Expect {
+		matched := -1
+		for index, finding := range report.Findings {
+			if used[index] || !matchesExpected(rule.ID, expected, finding) {
+				continue
+			}
+			matched = index
+			break
+		}
+		if matched < 0 {
+			return fmt.Errorf("expected finding was not produced: %#v", expected)
+		}
+		used[matched] = true
+	}
+	return nil
+}
+
+func matchesExpected(defaultRule string, expected ExpectedFinding, finding sdk.Finding) bool {
+	ruleID := fallback(expected.RuleID, defaultRule)
+	if finding.RuleID != ruleID || expected.Path != "" && finding.Location.Path != expected.Path || expected.Line > 0 && finding.Location.Line != expected.Line || expected.Column > 0 && finding.Location.Column != expected.Column || expected.Key != "" && finding.Key != expected.Key || expected.MessageContains != "" && !strings.Contains(finding.Message, expected.MessageContains) {
+		return false
+	}
+	if expected.Waived != nil && finding.Waived != *expected.Waived {
+		return false
+	}
+	if expected.HasFix != nil && (finding.Fix != nil) != *expected.HasFix {
+		return false
+	}
+	return true
 }
 
 func merge(left, right map[string]any) map[string]any {

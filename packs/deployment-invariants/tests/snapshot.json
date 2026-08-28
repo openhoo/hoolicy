@@ -1,0 +1,256 @@
+{
+  "version": 1,
+  "pack": "deployment-invariants",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "bounded Compose service passes",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "malformed Compose YAML fails closed",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule deployment-invariants.compose: compose.yaml: yaml: line 1: did not find expected ',' or ']'"
+    },
+    {
+      "name": "narrow development deployment exclusion is explicit",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "nested Compose service remains in scope",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "environments/dev/docker-compose.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs a non-root user and read_only filesystem",
+          "key": "service:app:security",
+          "fingerprint": "146196fe4b920e6f767a76370d20a8a30adbd97e72b955d2c2fef36bf832425b",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "environments/dev/docker-compose.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: registry docker.io is not allowed",
+          "key": "service:app:image",
+          "fingerprint": "1d4ff89b9976d2087e2bb490343f048b0cd3eaf935deba2baf1f7af8ee9450fd",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "environments/dev/docker-compose.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs CPU and memory limits",
+          "key": "service:app:limits",
+          "fingerprint": "30ae309482b8e2fb352623d6bee19521dc91ba7b769e88a45934571eb3c7fa20",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "numeric root user with group fails Compose policy",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs a non-root user and read_only filesystem",
+          "key": "service:app:security",
+          "fingerprint": "01ac9c2a66c089ac38e7f0cce71d8aa06f4a3ae4c20744d721da184c04f9abca",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "parameterized Compose exception is explicit",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "root mutable Compose service fails",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs a non-root user and read_only filesystem",
+          "key": "service:app:security",
+          "fingerprint": "01ac9c2a66c089ac38e7f0cce71d8aa06f4a3ae4c20744d721da184c04f9abca",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs CPU and memory limits",
+          "key": "service:app:limits",
+          "fingerprint": "4a032ccdc152ed0c038d28f8384f66ca39c02e297288afbf79052fa510ad7450",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: registry docker.io is not allowed",
+          "key": "service:app:image",
+          "fingerprint": "ec5cb06129ff5498a56249968b2763b44f426d26abb2c293b3e9cf738247bc19",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "bounded non-root Kubernetes workload passes",
+      "ruleId": "deployment-invariants.kubernetes",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "container cannot override pod non-root policy",
+      "ruleId": "deployment-invariants.kubernetes",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.kubernetes",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: container app must set runAsNonRoot",
+          "key": "containers:app:non-root",
+          "fingerprint": "1d1e25041b78236a7ef1bb9eb44cf7006d2113629d0e27bb93a74461bc61c816",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "explicitly allowed Helm image template is not a false positive",
+      "ruleId": "deployment-invariants.kubernetes",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "malformed Kubernetes YAML fails closed",
+      "ruleId": "deployment-invariants.kubernetes",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule deployment-invariants.kubernetes: deploy/app.yaml: yaml: line 1: did not find expected ',' or ']'"
+    },
+    {
+      "name": "mutable unconstrained Kubernetes workload fails",
+      "ruleId": "deployment-invariants.kubernetes",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.kubernetes",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: container app must set runAsNonRoot",
+          "key": "containers:app:non-root",
+          "fingerprint": "1d1e25041b78236a7ef1bb9eb44cf7006d2113629d0e27bb93a74461bc61c816",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.kubernetes",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: registry docker.io is not allowed",
+          "key": "containers:app:image",
+          "fingerprint": "600e106a070ed48e86bcf0e71f2b9d90390065b1d3d3f01c0f77de6235b95b6f",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.kubernetes",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: container app needs CPU and memory limits",
+          "key": "containers:app:limits",
+          "fingerprint": "7e40371abe6b23c74a4b28f08a0372ec85701a2c3d178ebeb5c923a7117809e1",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "immutable Terraform plan image passes",
+      "ruleId": "deployment-invariants.terraform-plan",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "malformed Terraform plan fails closed",
+      "ruleId": "deployment-invariants.terraform-plan",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule deployment-invariants.terraform-plan: terraform-plan.json: invalid character 'b' looking for beginning of object key string"
+    },
+    {
+      "name": "mutable Terraform plan image fails",
+      "ruleId": "deployment-invariants.terraform-plan",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.terraform-plan",
+          "severity": "error",
+          "path": "terraform-plan.json",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: image registry.example.com/app:latest is not pinned by sha256 digest",
+          "key": "resource:demo.app:container_image",
+          "fingerprint": "837ec5bb80cf02e80981e2a16955d191f60389c4d116c32db4c499495d30a0a6",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "plan without image field is not a false positive",
+      "ruleId": "deployment-invariants.terraform-plan",
+      "outcome": "pass",
+      "findings": []
+    }
+  ]
+}

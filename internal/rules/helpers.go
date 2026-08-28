@@ -45,11 +45,15 @@ func requireFiles(rule sdk.Rule) error {
 }
 
 func safeRelativeRulePath(path string) bool {
-	if strings.TrimSpace(path) == "" || strings.TrimSpace(path) != path || strings.ContainsAny(path, "\\\x00") || filepath.IsAbs(path) {
+	if strings.TrimSpace(path) == "" || strings.TrimSpace(path) != path || strings.ContainsAny(path, "\\\x00") || filepath.IsAbs(path) || windowsVolume(path) {
 		return false
 	}
 	clean := filepath.Clean(filepath.FromSlash(path))
 	return clean != "." && clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
+}
+
+func windowsVolume(path string) bool {
+	return len(path) >= 2 && path[1] == ':' && (path[0] >= 'A' && path[0] <= 'Z' || path[0] >= 'a' && path[0] <= 'z')
 }
 
 func validateJSONPointer(pointer string) error {

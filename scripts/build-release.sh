@@ -5,14 +5,37 @@ version="${VERSION:?VERSION is required}"
 commit="${COMMIT:-$(git rev-parse HEAD)}"
 source_date_epoch="${SOURCE_DATE_EPOCH:-$(git show -s --format=%ct HEAD)}"
 build_date="${BUILD_DATE:-$(date -u --date="@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)}"
-dist_dir="$(pwd)/dist"
+dist_dir="${DIST_DIR:-$(pwd)/dist}"
 
 if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
   echo "VERSION must be semantic without a v prefix" >&2
   exit 2
 fi
+if [[ ! "$commit" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
+  echo "COMMIT must be a full Git object ID" >&2
+  exit 2
+fi
+if [[ -f VERSION && "$(tr -d '[:space:]' < VERSION)" != "$version" ]]; then
+  echo "VERSION does not match the repository VERSION file" >&2
+  exit 2
+fi
+if [[ "${HOOLICY_REPRODUCIBILITY_CHECK:-}" != "1" ]]; then
+  head_commit="$(git rev-parse HEAD)"
+  if [[ "$commit" != "$head_commit" ]]; then
+    echo "COMMIT does not match HEAD" >&2
+    exit 2
+  fi
+  if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+    echo "release builds require a clean worktree" >&2
+    exit 2
+  fi
+  if [[ "$(git describe --tags --exact-match --match "v${version}" HEAD 2>/dev/null || true)" != "v${version}" ]]; then
+    echo "HEAD must have exact release tag v${version}" >&2
+    exit 2
+  fi
+fi
 
-mkdir -p dist
+mkdir -p "$dist_dir"
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
 

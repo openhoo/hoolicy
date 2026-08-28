@@ -13,6 +13,7 @@ func TestParseFormatsAndRejectAmbiguity(t *testing.T) {
 		want             int
 	}{
 		{name: "json", path: "a.json", data: `{"count": 2}`, want: 1},
+		{name: "json UTF-8 BOM", path: "bom.json", data: "\ufeff{\"count\": 2}", want: 1},
 		{name: "yaml documents", path: "a.yaml", data: "a: 1\n---\nb: 2\n", want: 2},
 		{name: "toml", path: "a.toml", data: "name = \"demo\"\n", want: 1},
 		{name: "xml", path: "a.xml", data: "<root><item id=\"1\"/></root>", want: 1},

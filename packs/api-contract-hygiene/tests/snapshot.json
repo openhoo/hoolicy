@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "pack": "api-contract-hygiene",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "exact complete API consumption evidence passes",
+      "ruleId": "api-contract-hygiene.consumption",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "explicitly staged partial migration is not a false positive",
+      "ruleId": "api-contract-hygiene.consumption",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "malformed OpenAPI fails closed",
+      "ruleId": "api-contract-hygiene.consumption",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule api-contract-hygiene.consumption: api/openapi.json: invalid character 'b' looking for beginning of object key string"
+    },
+    {
+      "name": "stale incomplete API evidence fails",
+      "ruleId": "api-contract-hygiene.consumption",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "api-contract-hygiene.consumption",
+          "severity": "warning",
+          "path": "api/openapi.json",
+          "line": 1,
+          "column": 1,
+          "message": "OpenAPI operation and declared generated-client consumption evidence disagree: operation has no consumption evidence GET /pets/{id}",
+          "key": "unconsumed:GET /pets/{id}",
+          "fingerprint": "8452e7c8d30d2f1f911d896aad78de8cae631e930d1f85c3bde80b0a836c5f2c",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "api-contract-hygiene.consumption",
+          "severity": "warning",
+          "path": "evidence/api-consumption.json",
+          "line": 1,
+          "column": 1,
+          "message": "OpenAPI operation and declared generated-client consumption evidence disagree: evidence references undeclared operation POST /removed",
+          "key": "undeclared:POST /removed",
+          "fingerprint": "46eb7f92a07cb79af75863677d68648ba08e4dfb67bad02aa23619c0edf78fa4",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "api-contract-hygiene.consumption",
+          "severity": "warning",
+          "path": "evidence/api-consumption.json",
+          "line": 1,
+          "column": 1,
+          "message": "OpenAPI operation and declared generated-client consumption evidence disagree: producer unknown is not typescript-client-usage/v1",
+          "key": "producer",
+          "fingerprint": "b060e340e3b53396f3c3e0acf98f5dc9aeafe434cbe6df0056a1daf8250df6e9",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "api-contract-hygiene.consumption",
+          "severity": "warning",
+          "path": "evidence/api-consumption.json",
+          "line": 1,
+          "column": 1,
+          "message": "OpenAPI operation and declared generated-client consumption evidence disagree: contract digest does not match",
+          "key": "contract-digest",
+          "fingerprint": "bbdcf750e8e17e640e1d148d8829a593c0a882f15a2181c0edc03a15ed10c069",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    }
+  ]
+}

@@ -2,6 +2,12 @@ version: 1
 name: repository
 release: 0.1.0
 description: Portable Git naming and repository consistency policies.
+maturity: stable
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: Rule IDs and finding keys remain stable; snapshot review exposes behavior and severity changes.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.1.3-0 <0.1.3 || >=0.2.0 <2.0.0'
 parameters:
   branch_pattern:
     type: string

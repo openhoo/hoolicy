@@ -2,6 +2,9 @@ package repository
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	git "github.com/go-git/go-git/v5"
@@ -36,6 +40,106 @@ type Repository struct {
 	git    sdk.GitContext
 }
 
+const matchCacheLimit = 512
+
+var sharedMatchCache = struct {
+	sync.Mutex
+	entries map[string][]string
+	order   []string
+}{entries: make(map[string][]string)}
+
+type cachedRepository struct {
+	base           sdk.Repository
+	policyDigest   string
+	snapshotDigest string
+	mutex          sync.Mutex
+	hits           int
+}
+
+// Cached adds a bounded, process-local rule-input cache to an immutable
+// repository snapshot. Both content and policy digest participate in the key,
+// so changed source or policy cannot reuse stale inputs.
+func Cached(base sdk.Repository, policyDigest string) sdk.Repository {
+	records := make([]struct {
+		Path   string `json:"path"`
+		Mode   uint32 `json:"mode"`
+		SHA256 string `json:"sha256"`
+	}, 0, len(base.AllFiles()))
+	for _, file := range base.AllFiles() {
+		records = append(records, struct {
+			Path   string `json:"path"`
+			Mode   uint32 `json:"mode"`
+			SHA256 string `json:"sha256"`
+		}{Path: file.Path, Mode: uint32(file.Mode), SHA256: file.SHA256()})
+	}
+	data, _ := json.Marshal(records)
+	hash := sha256.Sum256(data)
+	return &cachedRepository{base: base, policyDigest: policyDigest, snapshotDigest: hex.EncodeToString(hash[:])}
+}
+
+func (r *cachedRepository) Root() string                       { return r.base.Root() }
+func (r *cachedRepository) AllFiles() []sdk.File               { return r.base.AllFiles() }
+func (r *cachedRepository) Git() sdk.GitContext                { return r.base.Git() }
+func (r *cachedRepository) Read(path string) (sdk.File, error) { return r.base.Read(path) }
+
+func (r *cachedRepository) Match(include, exclude []string) ([]sdk.File, error) {
+	keyData, _ := json.Marshal(struct {
+		Policy   string   `json:"policy"`
+		Snapshot string   `json:"snapshot"`
+		Include  []string `json:"include"`
+		Exclude  []string `json:"exclude"`
+	}{r.policyDigest, r.snapshotDigest, include, exclude})
+	keyHash := sha256.Sum256(keyData)
+	key := hex.EncodeToString(keyHash[:])
+
+	sharedMatchCache.Lock()
+	paths, found := sharedMatchCache.entries[key]
+	paths = append([]string(nil), paths...)
+	sharedMatchCache.Unlock()
+	if found {
+		files := make([]sdk.File, 0, len(paths))
+		for _, path := range paths {
+			file, err := r.base.Read(path)
+			if err != nil {
+				return nil, err
+			}
+			files = append(files, file)
+		}
+		r.mutex.Lock()
+		r.hits++
+		r.mutex.Unlock()
+		return files, nil
+	}
+
+	files, err := r.base.Match(include, exclude)
+	if err != nil {
+		return nil, err
+	}
+	paths = make([]string, len(files))
+	for index, file := range files {
+		paths[index] = file.Path
+	}
+	sharedMatchCache.Lock()
+	if _, exists := sharedMatchCache.entries[key]; !exists {
+		if len(sharedMatchCache.order) == matchCacheLimit {
+			delete(sharedMatchCache.entries, sharedMatchCache.order[0])
+			sharedMatchCache.order = append(sharedMatchCache.order[:0], sharedMatchCache.order[1:]...)
+		}
+		sharedMatchCache.entries[key] = append([]string(nil), paths...)
+		sharedMatchCache.order = append(sharedMatchCache.order, key)
+	}
+	sharedMatchCache.Unlock()
+	return files, nil
+}
+
+// InputCacheHits exposes observational cache metrics without extending the SDK
+// repository contract.
+func (r *cachedRepository) InputCacheHits() int {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	return r.hits
+}
+
 func Open(root string, options Options) (*Repository, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
@@ -60,6 +164,76 @@ func Open(root string, options Options) (*Repository, error) {
 		repository.git = gitContext
 	}
 	return repository, nil
+}
+
+// OpenRevision creates a read-only full-repository snapshot from one Git
+// revision. It does not check out files and therefore cannot mutate caller
+// state. Policy still comes from the current, already validated configuration.
+func OpenRevision(root, revision string, options Options) (*Repository, error) {
+	if revision == "" || strings.TrimSpace(revision) != revision || strings.HasPrefix(revision, "-") || strings.ContainsAny(revision, "\x00\r\n") {
+		return nil, fmt.Errorf("unsafe revision %q", revision)
+	}
+	absolute, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	gitRoot, found := findGitRoot(absolute)
+	if !found {
+		return nil, git.ErrRepositoryNotExists
+	}
+	scope, err := filepath.Rel(gitRoot, absolute)
+	if err != nil {
+		return nil, err
+	}
+	scope = filepath.ToSlash(scope)
+	repository, err := openGoGit(gitRoot)
+	if err != nil {
+		return nil, err
+	}
+	hash, err := repository.ResolveRevision(plumbing.Revision(revision))
+	if err != nil {
+		return nil, fmt.Errorf("resolve revision: %w (fetch the base history; shallow clones must include the base revision)", err)
+	}
+	commit, err := repository.CommitObject(*hash)
+	if err != nil {
+		return nil, err
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, err
+	}
+	var files []sdk.File
+	iterator := tree.Files()
+	defer iterator.Close()
+	if err := iterator.ForEach(func(file *object.File) error {
+		path, included := scopedGitPath(filepath.ToSlash(file.Name), scope)
+		if !included || path == ".git" || strings.HasPrefix(path, ".git/") || strings.HasPrefix(path, ".hoolicy/vendor/") {
+			return nil
+		}
+		mode, err := file.Mode.ToOSFileMode()
+		if err != nil || !mode.IsRegular() {
+			return nil
+		}
+		contents, err := file.Contents()
+		if err != nil {
+			return err
+		}
+		files = append(files, sdk.File{Path: path, Mode: mode, Data: []byte(contents)})
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	byPath := make(map[string]sdk.File, len(files))
+	for _, file := range files {
+		byPath[file.Path] = file
+	}
+	gitContext := sdk.GitContext{
+		Commit: hash.String(), MergeRequestTitle: options.MergeRequestTitle,
+		CommitSubjects: []sdk.Commit{{SHA: hash.String(), Subject: commitSubject(commit.Message)}},
+		Properties:     map[string]any{"snapshotRevision": revision},
+	}
+	return &Repository{root: absolute, files: files, byPath: byPath, git: gitContext}, nil
 }
 
 func (r *Repository) Root() string { return r.root }
@@ -104,6 +278,20 @@ func (r *Repository) Read(path string) (sdk.File, error) {
 		return sdk.File{}, fmt.Errorf("%s: file is not part of the repository snapshot", clean)
 	}
 	return file, nil
+}
+
+// Subset returns an immutable repository view limited to explicit path globs.
+// Paths stay rooted at the original repository so fingerprints remain stable.
+func Subset(base sdk.Repository, patterns []string) (*Repository, error) {
+	files, err := base.Match(patterns, nil)
+	if err != nil {
+		return nil, err
+	}
+	byPath := make(map[string]sdk.File, len(files))
+	for _, file := range files {
+		byPath[file.Path] = file
+	}
+	return &Repository{root: base.Root(), files: files, byPath: byPath, git: base.Git()}, nil
 }
 
 func discoverFiles(root string) ([]sdk.File, error) {
@@ -183,6 +371,27 @@ func gitFileList(root string) ([]string, error) {
 			paths = append(paths, filepath.ToSlash(string(entry)))
 		}
 	}
+	return paths, nil
+}
+
+// IgnoredFiles returns existing Git-ignored files for doctor diagnostics. It
+// never adds them to the policy snapshot.
+func IgnoredFiles(root string) ([]string, error) {
+	if _, found := findGitRoot(root); !found {
+		return nil, nil
+	}
+	command := exec.Command("git", "-C", root, "ls-files", "-z", "--others", "--ignored", "--exclude-standard")
+	output, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("enumerate ignored files: %w", err)
+	}
+	var paths []string
+	for _, entry := range bytes.Split(output, []byte{0}) {
+		if len(entry) > 0 {
+			paths = append(paths, filepath.ToSlash(string(entry)))
+		}
+	}
+	sort.Strings(paths)
 	return paths, nil
 }
 

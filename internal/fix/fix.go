@@ -30,8 +30,9 @@ type FilePlan struct {
 }
 
 type stagedFile struct {
-	target, temp, backup string
-	existed              bool
+	path, target, temp, backup string
+	existed                    bool
+	old                        []byte
 }
 
 func Build(root string, findings []sdk.Finding, selected []string) (*Plan, error) {
@@ -195,6 +196,13 @@ func (p *Plan) Apply() error {
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
+		_, verifiedTarget, err := safePath(p.Root, file.Path)
+		if err != nil || verifiedTarget != target {
+			if err == nil {
+				err = fmt.Errorf("fix target changed after directory creation: %s", file.Path)
+			}
+			return err
+		}
 		temporary, err := os.CreateTemp(filepath.Dir(target), ".hoolicy-fix-*")
 		if err != nil {
 			return err
@@ -219,9 +227,20 @@ func (p *Plan) Apply() error {
 			_ = os.Remove(temporary.Name())
 			return err
 		}
-		stages = append(stages, stagedFile{target: target, temp: temporary.Name(), backup: backup, existed: file.Exists})
+		stages = append(stages, stagedFile{path: file.Path, target: target, temp: temporary.Name(), backup: backup, existed: file.Exists, old: append([]byte(nil), file.Old...)})
 	}
 	for index, entry := range stages {
+		_, verifiedTarget, err := safePath(p.Root, entry.path)
+		if err != nil || verifiedTarget != entry.target {
+			if err == nil {
+				err = fmt.Errorf("fix target changed before apply: %s", entry.path)
+			}
+			return rollback(stages[:index], err)
+		}
+		current, readErr := os.ReadFile(entry.target)
+		if entry.existed && (readErr != nil || !bytes.Equal(current, entry.old)) || !entry.existed && !errors.Is(readErr, os.ErrNotExist) {
+			return rollback(stages[:index], fmt.Errorf("%s changed after staging", entry.path))
+		}
 		if entry.existed {
 			if err := os.Rename(entry.target, entry.backup); err != nil {
 				return rollback(stages[:index], err)

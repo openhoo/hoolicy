@@ -29,6 +29,7 @@ The runtime image remains one layer. Local comparison on 2026-08-27 measured Hoo
 ## What changed
 
 - Include and exclude globs compile once per repository match instead of once per pattern, per file.
+- A bounded process-local input cache binds matched paths to repository content plus policy digest; parsed-document caches remain content-addressed. Cache hits are observational report metrics and never alter findings.
 - Match result storage allocates once at repository scale.
 - Repository reads reuse the safe snapshot already loaded during discovery.
 - Git branch, revision, and dirty state come from one porcelain-v2 status call. A check now uses three Git processes including file discovery, down from five.
@@ -42,7 +43,7 @@ The runtime image remains one layer. Local comparison on 2026-08-27 measured Hoo
 ```sh
 go test ./internal/repository -run '^$' -bench BenchmarkRepositoryMatch -benchmem -count=5
 go test ./internal/rules -run '^$' -bench BenchmarkCELValidateAndEvaluate -benchmem -count=5
-go test ./internal/engine -run '^$' -bench BenchmarkEngineCheck -benchmem -count=5
+go test ./internal/engine -run '^$' -bench 'BenchmarkEngine(SmallRepository|Check|LargeMonorepo|AdversarialLimit)$' -benchmem -count=5
 podman build -t hoolicy:benchmark .
 podman image inspect hoolicy:benchmark --format '{{.Size}}'
 ```

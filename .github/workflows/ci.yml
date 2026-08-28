@@ -79,14 +79,24 @@ jobs:
           git diff --exit-code
       - run: go vet ./...
       - run: go test -race ./...
+      - name: Stable-contract and performance gates
+        run: |
+          go test ./sdk -run TestStableContractGoldenDigests -count=1
+          go test ./internal/engine -run '^$' -bench 'BenchmarkEngine(SmallRepository|Check|LargeMonorepo|AdversarialLimit)$' -benchtime=1x
       - name: Build and dogfood
         run: |
           mkdir -p dist
           go build -trimpath -o dist/hoolicy ./cmd/hoolicy
           dist/hoolicy validate
-          dist/hoolicy test packs/repository packs/supply-chain packs/product-quality
+          for pack in packs/*; do
+            dist/hoolicy pack verify "$pack"
+            dist/hoolicy pack snapshot "$pack"
+            dist/hoolicy lint "$pack"
+          done
           dist/hoolicy check
       - name: Validate JSON schemas
-        run: jq empty schemas/*.json
+        run: jq empty schemas/*.json schemas/v1/*.json
+      - name: Reproducible cross-platform archives
+        run: scripts/verify-reproducible.sh
       - name: Build container
         run: docker build --tag hoolicy:ci .

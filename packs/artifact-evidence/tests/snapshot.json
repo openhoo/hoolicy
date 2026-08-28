@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "pack": "artifact-evidence",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "changed artifact digest fails",
+      "ruleId": "artifact-evidence.verified",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "artifact-evidence.verified",
+          "severity": "error",
+          "path": "evidence/bom.json",
+          "line": 1,
+          "column": 1,
+          "message": "Pinned external evidence is missing, stale, unrelated, malformed, or outside threshold: digest mismatch: expected sha256:d749b4c9fe11dbc0cabfd97a966029761f77c9a237d2d0800fa9a41e272fe076, got sha256:c8797bb4e64f8fc624f8d12f2651909b2f1c7da59ade1f7390a96193d40937b6",
+          "key": "verification",
+          "fingerprint": "89f2a8eadadccce67ed0f10a76850e349096d5ea349d8c1dcff175caee5ceefa",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "missing artifact fails closed",
+      "ruleId": "artifact-evidence.verified",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "artifact-evidence.verified",
+          "severity": "error",
+          "path": "evidence/bom.json",
+          "line": 1,
+          "column": 1,
+          "message": "Pinned external evidence is missing, stale, unrelated, malformed, or outside threshold: artifact is missing",
+          "key": "missing",
+          "fingerprint": "7334faed643c6870aa68c1a16cc65e2ff0115a9eb4aa9ab369d9a91235904759",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "nested exact producer does not cause false positive",
+      "ruleId": "artifact-evidence.verified",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "subject-bound fresh CycloneDX evidence passes",
+      "ruleId": "artifact-evidence.verified",
+      "outcome": "pass",
+      "findings": []
+    }
+  ]
+}

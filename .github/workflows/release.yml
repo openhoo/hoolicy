@@ -108,7 +108,11 @@ jobs:
         run: |
           go test -race ./...
           go vet ./...
-          go run ./cmd/hoolicy test packs/repository packs/supply-chain packs/product-quality
+          for pack in packs/*; do
+            go run ./cmd/hoolicy pack verify "$pack"
+            go run ./cmd/hoolicy pack snapshot "$pack"
+            go run ./cmd/hoolicy lint "$pack"
+          done
           go run ./cmd/hoolicy check
       - name: Build archives
         env:

@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "pack": "product-quality",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "happy and failure scenarios pass",
+      "ruleId": "product-quality.gherkin-coverage",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "happy-path-only feature fails",
+      "ruleId": "product-quality.gherkin-coverage",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "product-quality.gherkin-coverage",
+          "severity": "error",
+          "path": "features/example.feature",
+          "line": 1,
+          "column": 1,
+          "message": "Acceptance feature lacks required scenario coverage: found 1 scenarios, expected at least 2",
+          "key": "scenario-count",
+          "fingerprint": "8c2510919596b279c2b265330d32a32949354d84cabc87d1b3a69f1eab351475",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "product-quality.gherkin-coverage",
+          "severity": "error",
+          "path": "features/example.feature",
+          "line": 1,
+          "column": 1,
+          "message": "Acceptance feature lacks required scenario coverage: required scenario tag @failure is missing",
+          "key": "tag:@failure",
+          "fingerprint": "e4e9c9e380f41481802caa5d82ca072b7e6535001d18c686f86840ce9351c198",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "malformed Gherkin fails closed",
+      "ruleId": "product-quality.gherkin-coverage",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule product-quality.gherkin-coverage: features/example.feature: Parser errors:\n(6:0): unexpected end of file, expected: #DocStringSeparator, #Other"
+    },
+    {
+      "name": "complete catalogs pass",
+      "ruleId": "product-quality.translation-parity",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "empty translated key fails",
+      "ruleId": "product-quality.translation-parity",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "product-quality.translation-parity",
+          "severity": "error",
+          "path": "locales/en/translation.json",
+          "line": 1,
+          "column": 1,
+          "message": "Public translation catalogs are incomplete: title is missing or empty in en",
+          "key": "en:title",
+          "fingerprint": "5f945a2a0ed04c83a3042f5bfba503d57fe303c9d5ed7b92d27c5afb706cf455",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "malformed translation catalog fails closed",
+      "ruleId": "product-quality.translation-parity",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule product-quality.translation-parity: locales/en/translation.json: invalid character 'i' looking for beginning of object key string"
+    }
+  ]
+}

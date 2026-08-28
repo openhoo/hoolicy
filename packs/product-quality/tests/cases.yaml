@@ -21,6 +21,11 @@ cases:
       config/languages.json: '{"languages":["de","en"]}'
       locales/de/translation.json: '{"title":"Hallo"}'
       locales/en/translation.json: '{"title":""}'
+    expect:
+      - path: locales/en/translation.json
+        key: en:title
+        messageContains: empty
+        waived: false
   - name: happy and failure scenarios pass
     rule: product-quality.gherkin-coverage
     outcome: pass
@@ -46,3 +51,26 @@ cases:
           Scenario: Valid policy
             Given a valid policy
             Then it passes
+    expect:
+      - path: features/example.feature
+        messageContains: missing
+        waived: false
+  - name: malformed translation catalog fails closed
+    rule: product-quality.translation-parity
+    outcome: error
+    files:
+      config/languages.json: '{"languages":["de","en"]}'
+      locales/de/translation.json: '{"title":"Hallo"}'
+      locales/en/translation.json: '{invalid'
+    errorContains: locales/en/translation.json
+  - name: malformed Gherkin fails closed
+    rule: product-quality.gherkin-coverage
+    outcome: error
+    files:
+      features/example.feature: |
+        Feature: Broken
+          Scenario: Unterminated doc string
+            Given invalid input
+              """
+              never closed
+    errorContains: features/example.feature

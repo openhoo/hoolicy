@@ -1,0 +1,15 @@
+version: 1
+project: v0-1-compatibility
+failOn: error
+rules:
+  - id: legacy.required-readme
+    title: Repository contains a README
+    description: Requires the historical v0.1 project format to remain readable.
+    rationale: Existing adopters must be able to upgrade without rewriting policy first.
+    remediation: Add README.md with reviewed repository guidance.
+    severity: error
+    kind: files
+    files: [README.md]
+    spec:
+      mode: require
+      message: README.md is required

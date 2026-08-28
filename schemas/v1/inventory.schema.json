@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/v1/inventory.schema.json",
+  "title": "Hoolicy policy inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "project", "revision", "generatedAt", "policyDigest", "scopes", "waivers", "budgets"],
+  "properties": {
+    "version": { "const": 1 },
+    "project": { "type": "string" },
+    "revision": { "type": "string" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "policyDigest": { "$ref": "#/$defs/sha256" },
+    "scopes": { "type": "array", "items": { "$ref": "#/$defs/scope" } },
+    "waivers": { "type": "array", "items": { "$ref": "waivers.schema.json#/$defs/waiver" } },
+    "budgets": { "$ref": "hoolicy.schema.json#/properties/budgets" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "control": {
+      "type": "object", "additionalProperties": false, "required": ["framework", "id"],
+      "properties": { "framework": { "type": "string" }, "id": { "type": "string" } }
+    },
+    "rule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "severity", "digest", "controls"],
+      "properties": {
+        "id": { "type": "string" }, "kind": { "type": "string" },
+        "severity": { "enum": ["info", "warning", "error"] }, "digest": { "$ref": "#/$defs/sha256" },
+        "pack": { "type": "string" }, "packVersion": { "type": "string" },
+        "controls": { "type": "array", "items": { "$ref": "#/$defs/control" } }
+      }
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "owner", "paths", "packs", "parameters", "dependsOn", "rules"],
+      "properties": {
+        "name": { "type": "string" }, "owner": { "type": "string" },
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "packs": { "type": "array", "items": { "type": "string" } },
+        "parameters": { "type": "object" },
+        "dependsOn": { "type": "array", "items": { "type": "string" } },
+        "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" } }
+      }
+    }
+  }
+}

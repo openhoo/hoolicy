@@ -18,7 +18,7 @@ hoolicy.yaml + vendored packs + waiver file
 
 Project configuration and packs are untrusted data. Core rule kinds are compiled into the Hoolicy binary. A policy cannot load a shared library, invoke a shell, perform HTTP requests, or register a runtime plugin. CEL receives only normalized repository documents, file metadata, selected Git context, project parameters, and current time.
 
-Remote packs are the only command path that uses the network. `hoolicy pack update` fetches a requested Git ref into temporary storage, rejects symlinks and non-regular files, vendors the pack beneath `.hoolicy/vendor`, and records Git commit plus deterministic SHA-256 tree digest in `hoolicy.lock`. `validate` and `check` only read that vendored copy and verify its digest.
+Explicit pack acquisition and publication are the only network command paths. Git acquisition records commit and deterministic tree digest. OCI acquisition resolves a tag once, verifies the exact digest with local key or identity-plus-issuer trust policy, validates a canonical bounded archive and signed release manifest, then records manifest, pack, and vendor digests. `validate` and `check` only read vendored bytes and verify their lock digest.
 
 Repository reads and fixes reject absolute paths, traversal, symlinks, and non-regular files. Git-ignored content and `.hoolicy/vendor` are excluded from normal repository matching. Direct rule reads remain within the repository boundary.
 
@@ -35,7 +35,7 @@ The system `git` executable is the fast path for file discovery, status, and com
 7. Apply valid waivers; stale waivers become blocking lifecycle findings.
 8. Sort findings and emit the selected report format.
 
-Findings use stable SHA-256 fingerprints over rule ID, normalized path, location, and semantic key. Report `configDigest` covers configuration, lock, waivers, and instantiated active rules without depending on checkout location.
+Findings use stable SHA-256 fingerprints over rule ID, workspace, normalized path, location, and semantic key. Report `configDigest` covers configuration, lock, waivers, evidence policy, and instantiated active rules without depending on checkout location.
 
 ## Failure model
 

@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "pack": "supply-chain",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "approved digest-pinned sources pass",
+      "ruleId": "supply-chain.approved-sources",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "malformed structured source input fails closed",
+      "ruleId": "supply-chain.approved-sources",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule supply-chain.approved-sources: images.json: invalid character 'i' looking for beginning of object key string"
+    },
+    {
+      "name": "public mutable image fails",
+      "ruleId": "supply-chain.approved-sources",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "supply-chain.approved-sources",
+          "severity": "error",
+          "path": "Dockerfile",
+          "line": 1,
+          "column": 1,
+          "message": "Artifact source is outside the approved supply chain: registry docker.io is not allowed",
+          "key": "image:docker.io/library/alpine:latest",
+          "fingerprint": "fff3c66d614255b8cf29cde178a0889a4593e00802398c41a63a82a175f96292",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "expired exception fails",
+      "ruleId": "supply-chain.exception-lifecycle",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "supply-chain.exception-lifecycle",
+          "severity": "error",
+          "path": ".trivyignore.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Security exception violates lifecycle policy: exception is expired",
+          "key": "CVE-2025-0001",
+          "fingerprint": "817b589236490a9f51691f09791348cade480cc15b7198bd641fe32858b15e03",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "malformed exception input fails closed",
+      "ruleId": "supply-chain.exception-lifecycle",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule supply-chain.exception-lifecycle: .trivyignore.yaml: yaml: line 1: did not find expected ',' or ']'"
+    },
+    {
+      "name": "narrow current exception passes",
+      "ruleId": "supply-chain.exception-lifecycle",
+      "outcome": "pass",
+      "findings": []
+    }
+  ]
+}

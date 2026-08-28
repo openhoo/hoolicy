@@ -53,7 +53,7 @@ func (I18nParity) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Ru
 	if err != nil {
 		return nil, err
 	}
-	value, err := readPointer(manifest, spec.CodesPointer)
+	value, err := readPointer(manifest, spec.CodesPointer, input.Metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -75,9 +75,12 @@ func (I18nParity) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Ru
 			findings = append(findings, finding(rule, message+": catalog is missing for "+language, path, language+":<catalog>", 1, 1))
 			continue
 		}
-		documents, parseErr := document.Parse(file, "json")
+		documents, hit, parseErr := document.ParseCached(file, "json")
 		if parseErr != nil {
 			return nil, parseErr
+		}
+		if hit && input.Metrics != nil {
+			input.Metrics.ParseCacheHits++
 		}
 		object, ok := documents[0].Data.(map[string]any)
 		if !ok {

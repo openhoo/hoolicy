@@ -79,9 +79,23 @@ func TestRuleValidationRejectsDisabledNumericConstraints(t *testing.T) {
 	}
 }
 
+func TestSafeRelativeRulePathIsPortable(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{"C:/outside", `C:\outside`, `..\outside`, "/outside", "../outside"} {
+		if safeRelativeRulePath(path) {
+			t.Fatalf("accepted unsafe path %q", path)
+		}
+	}
+	for _, path := range []string{"contracts/openapi.yaml", "docs:generated/report.md"} {
+		if !safeRelativeRulePath(path) {
+			t.Fatalf("rejected portable relative path %q", path)
+		}
+	}
+}
+
 func TestReadPointerSupportsDocumentRoot(t *testing.T) {
 	t.Parallel()
-	value, err := readPointer(sdk.File{Path: "root.json", Data: []byte(`{"version":1}`)}, "")
+	value, err := readPointer(sdk.File{Path: "root.json", Data: []byte(`{"version":1}`)}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

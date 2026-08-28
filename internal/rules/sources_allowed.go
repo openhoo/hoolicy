@@ -87,7 +87,7 @@ func (SourcesAllowed) Evaluate(_ context.Context, input sdk.EvalContext, rule sd
 		case strings.HasPrefix(name, "dockerfile") || strings.HasPrefix(name, "containerfile"):
 			findings = append(findings, checkDockerfileSources(rule, file, spec, message)...)
 		case extension == ".yaml" || extension == ".yml" || extension == ".json":
-			imageFindings, parseErr := checkStructuredImages(rule, file, spec, message)
+			imageFindings, parseErr := checkStructuredImages(rule, file, spec, message, input.Metrics)
 			if parseErr != nil {
 				return nil, parseErr
 			}
@@ -197,13 +197,16 @@ func checkDockerfileSources(rule sdk.Rule, file sdk.File, spec sourcesSpec, mess
 	return findings
 }
 
-func checkStructuredImages(rule sdk.Rule, file sdk.File, spec sourcesSpec, message string) ([]sdk.Finding, error) {
-	documents, err := document.Parse(file, "auto")
+func checkStructuredImages(rule sdk.Rule, file sdk.File, spec sourcesSpec, message string, metrics *sdk.EvaluationMetrics) ([]sdk.Finding, error) {
+	documents, hit, err := document.ParseCached(file, "auto")
 	if err != nil {
 		if json.Valid(file.Data) || strings.HasSuffix(file.Path, ".json") {
 			return nil, err
 		}
 		return nil, err
+	}
+	if hit && metrics != nil {
+		metrics.ParseCacheHits++
 	}
 	var findings []sdk.Finding
 	for _, item := range documents {

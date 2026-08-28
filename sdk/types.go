@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -50,19 +51,20 @@ type Control struct {
 }
 
 type Rule struct {
-	ID          string         `json:"id" yaml:"id"`
-	Title       string         `json:"title" yaml:"title"`
-	Description string         `json:"description" yaml:"description"`
-	Rationale   string         `json:"rationale" yaml:"rationale"`
-	Remediation string         `json:"remediation" yaml:"remediation"`
-	Severity    Severity       `json:"severity" yaml:"severity"`
-	Kind        string         `json:"kind" yaml:"kind"`
-	Files       []string       `json:"files,omitempty" yaml:"files,omitempty"`
-	Exclude     []string       `json:"exclude,omitempty" yaml:"exclude,omitempty"`
-	Controls    []Control      `json:"controls,omitempty" yaml:"controls,omitempty"`
-	Spec        map[string]any `json:"spec,omitempty" yaml:"spec,omitempty"`
-	Pack        string         `json:"pack,omitempty" yaml:"-"`
-	PackVersion string         `json:"packVersion,omitempty" yaml:"-"`
+	ID           string         `json:"id" yaml:"id"`
+	Title        string         `json:"title" yaml:"title"`
+	Description  string         `json:"description" yaml:"description"`
+	Rationale    string         `json:"rationale" yaml:"rationale"`
+	Remediation  string         `json:"remediation" yaml:"remediation"`
+	Severity     Severity       `json:"severity" yaml:"severity"`
+	Kind         string         `json:"kind" yaml:"kind"`
+	Files        []string       `json:"files,omitempty" yaml:"files,omitempty"`
+	Exclude      []string       `json:"exclude,omitempty" yaml:"exclude,omitempty"`
+	Dependencies []string       `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+	Controls     []Control      `json:"controls,omitempty" yaml:"controls,omitempty"`
+	Spec         map[string]any `json:"spec,omitempty" yaml:"spec,omitempty"`
+	Pack         string         `json:"pack,omitempty" yaml:"-"`
+	PackVersion  string         `json:"packVersion,omitempty" yaml:"-"`
 }
 
 type Location struct {
@@ -86,21 +88,35 @@ type Fix struct {
 }
 
 type Finding struct {
-	RuleID      string         `json:"ruleId"`
-	Title       string         `json:"title"`
-	Message     string         `json:"message"`
-	Remediation string         `json:"remediation"`
-	Severity    Severity       `json:"severity"`
-	Location    Location       `json:"location,omitempty"`
-	Key         string         `json:"key,omitempty"`
-	Fingerprint string         `json:"fingerprint"`
-	Controls    []Control      `json:"controls,omitempty"`
-	Pack        string         `json:"pack,omitempty"`
-	Waived      bool           `json:"waived,omitempty"`
-	WaiverID    string         `json:"waiverId,omitempty"`
-	Fix         *Fix           `json:"fix,omitempty"`
-	Properties  map[string]any `json:"properties,omitempty"`
+	RuleID        string         `json:"ruleId"`
+	Title         string         `json:"title"`
+	Message       string         `json:"message"`
+	Remediation   string         `json:"remediation"`
+	Severity      Severity       `json:"severity"`
+	Location      Location       `json:"location,omitempty"`
+	Workspace     string         `json:"workspace,omitempty"`
+	Owner         string         `json:"owner,omitempty"`
+	Key           string         `json:"key,omitempty"`
+	Fingerprint   string         `json:"fingerprint"`
+	PolicyDigest  string         `json:"policyDigest"`
+	FindingDigest string         `json:"findingDigest"`
+	State         FindingState   `json:"state"`
+	StateSource   string         `json:"stateSource,omitempty"`
+	Controls      []Control      `json:"controls,omitempty"`
+	Pack          string         `json:"pack,omitempty"`
+	Waived        bool           `json:"waived,omitempty"`
+	WaiverID      string         `json:"waiverId,omitempty"`
+	Fix           *Fix           `json:"fix,omitempty"`
+	Properties    map[string]any `json:"properties,omitempty"`
 }
+
+type FindingState string
+
+const (
+	FindingNew      FindingState = "new"
+	FindingExisting FindingState = "existing"
+	FindingWaived   FindingState = "waived"
+)
 
 func (f *Finding) Finalize(rule Rule) {
 	f.RuleID = rule.ID
@@ -111,11 +127,40 @@ func (f *Finding) Finalize(rule Rule) {
 	f.Pack = rule.Pack
 	h := sha256.Sum256([]byte(strings.Join([]string{
 		f.RuleID,
+		f.Workspace,
 		filepath.ToSlash(filepath.Clean(f.Location.Path)),
 		fmt.Sprintf("%d:%d", f.Location.Line, f.Location.Column),
 		f.Key,
 	}, "\x00")))
 	f.Fingerprint = hex.EncodeToString(h[:])
+	f.PolicyDigest = RuleDigest(rule)
+	f.FindingDigest = findingDigest(*f)
+	f.State = FindingNew
+}
+
+// RuleDigest identifies the complete policy decision contract for one rule.
+// It deliberately includes severity and remediation so a baseline cannot hide
+// a materially changed rule behind a stable finding fingerprint.
+func RuleDigest(rule Rule) string {
+	data, _ := json.Marshal(rule)
+	hash := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(hash[:])
+}
+
+func findingDigest(finding Finding) string {
+	data, _ := json.Marshal(struct {
+		RuleID      string         `json:"ruleId"`
+		Message     string         `json:"message"`
+		Remediation string         `json:"remediation"`
+		Severity    Severity       `json:"severity"`
+		Location    Location       `json:"location"`
+		Workspace   string         `json:"workspace,omitempty"`
+		Owner       string         `json:"owner,omitempty"`
+		Key         string         `json:"key"`
+		Properties  map[string]any `json:"properties,omitempty"`
+	}{finding.RuleID, finding.Message, finding.Remediation, finding.Severity, finding.Location, finding.Workspace, finding.Owner, finding.Key, finding.Properties})
+	hash := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(hash[:])
 }
 
 type File struct {
@@ -155,6 +200,12 @@ type EvalContext struct {
 	Repository Repository
 	Now        time.Time
 	Parameters map[string]any
+	Metrics    *EvaluationMetrics
+}
+
+type EvaluationMetrics struct {
+	ParseCacheHits int
+	CELCost        uint64
 }
 
 type RuleKind interface {

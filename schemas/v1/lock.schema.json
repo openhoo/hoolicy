@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/v1/lock.schema.json",
+  "title": "Hoolicy pack lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "packs"],
+  "properties": {
+    "version": { "const": 1 },
+    "packs": { "type": "array", "items": { "$ref": "#/$defs/pack" } }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "git", "ref", "commit", "digest", "vendor"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "git": { "type": "string" },
+        "ref": { "type": "string" },
+        "subdir": { "type": "string" },
+        "commit": { "type": "string", "pattern": "^(?:[0-9a-f]{40})?$" },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "vendor": { "type": "string", "minLength": 1 },
+        "release": { "type": "string" },
+        "oci": { "type": "string" },
+        "manifestDigest": { "$ref": "#/$defs/sha256" },
+        "packDigest": { "$ref": "#/$defs/sha256" },
+        "verifiedBy": { "type": "string" }
+      }
+    }
+  }
+}

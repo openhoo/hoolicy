@@ -8,7 +8,7 @@ func TestNewRegistryContainsCoreKinds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(registry.Names()) != 9 {
+	if len(registry.Names()) != 14 {
 		t.Fatalf("unexpected core kinds: %#v", registry.Names())
 	}
 }

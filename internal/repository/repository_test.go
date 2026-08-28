@@ -80,6 +80,48 @@ func TestRepositoryMatchValidatesGlobsWithoutFiles(t *testing.T) {
 	}
 }
 
+func TestRuleInputCacheBindsContentAndPolicyDigest(t *testing.T) {
+	t.Parallel()
+	content := []byte(t.Name())
+	file := sdk.File{Path: "service/input.json", Mode: 0o644, Data: content}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "service"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, file.Path), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := &Repository{root: root, files: []sdk.File{file}, byPath: map[string]sdk.File{file.Path: file}}
+	policy := "sha256:" + strings.Repeat("a", 64) + t.Name()
+
+	first := Cached(base, policy)
+	if _, err := first.Match([]string{"**/*.json"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	second := Cached(base, policy)
+	if _, err := second.Match([]string{"**/*.json"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if measured := second.(interface{ InputCacheHits() int }).InputCacheHits(); measured != 1 {
+		t.Fatalf("same content and policy did not hit cache: %d", measured)
+	}
+
+	changedFile := file
+	changedFile.Data = append(append([]byte(nil), content...), '!')
+	changed := &Repository{root: base.root, files: []sdk.File{changedFile}, byPath: map[string]sdk.File{changedFile.Path: changedFile}}
+	for name, candidate := range map[string]sdk.Repository{
+		"content": Cached(changed, policy),
+		"policy":  Cached(base, policy+"-changed"),
+	} {
+		if _, err := candidate.Match([]string{"**/*.json"}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if measured := candidate.(interface{ InputCacheHits() int }).InputCacheHits(); measured != 0 {
+			t.Fatalf("%s change reused stale cache: %d", name, measured)
+		}
+	}
+}
+
 func TestRepositoryReadUsesOpenedSnapshot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -304,6 +346,42 @@ func TestRepositoryRejectsInvalidBaseRevision(t *testing.T) {
 	}
 	if _, err := Open(root, Options{BaseSHA: "--all"}); err == nil || !strings.Contains(err.Error(), "unsafe base revision") {
 		t.Fatalf("expected option-like base rejection, got %v", err)
+	}
+}
+
+func TestOpenRevisionReadsCompleteHistoricalSnapshot(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("before\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("tracked.txt", filepath.Join(root, "link.txt")); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "tracked.txt", "link.txt")
+	runGit(t, root, "commit", "-m", "test: base snapshot")
+	base := runGit(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("after\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := OpenRevision(root, base, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := repo.AllFiles()
+	if len(files) != 1 || files[0].Path != "tracked.txt" || string(files[0].Data) != "before\n" || files[0].Mode&0o111 == 0 {
+		t.Fatalf("unexpected revision files: %#v", files)
+	}
+	if repo.Git().Commit != base || repo.Git().Dirty {
+		t.Fatalf("unexpected revision Git context: %#v", repo.Git())
+	}
+	if _, err := OpenRevision(root, "--all", Options{}); err == nil || !strings.Contains(err.Error(), "unsafe revision") {
+		t.Fatalf("expected unsafe revision rejection, got %v", err)
 	}
 }
 

@@ -1,0 +1,21 @@
+version: 1
+name: legacy
+release: 0.1.0
+description: Historical v0.1 pack contract without later optional metadata.
+parameters:
+  required_file:
+    type: string
+    required: true
+    description: Repository file required by the legacy policy.
+rules:
+  - id: legacy.required-file
+    title: Required repository file exists
+    description: Reads a pack authored against the v0.1 contract.
+    rationale: Existing packs must remain consumable during an engine upgrade.
+    remediation: Add the configured file with reviewed repository guidance.
+    severity: error
+    kind: files
+    files: ['{{ required_file }}']
+    spec:
+      mode: require
+      message: Required repository file is missing

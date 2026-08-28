@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/v1/catalog-lock.schema.json",
+  "title": "Hoolicy signed catalog acquisition record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "source", "manifestDigest", "catalogDigest", "verifiedBy"],
+  "properties": {
+    "version": { "const": 1 },
+    "source": { "type": "string", "minLength": 1 },
+    "manifestDigest": { "$ref": "#/$defs/digest" },
+    "catalogDigest": { "$ref": "#/$defs/digest" },
+    "verifiedBy": { "type": "string", "minLength": 1 }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } }
+}

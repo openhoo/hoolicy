@@ -9,7 +9,12 @@
     "version": { "const": 1 },
     "waivers": {
       "type": "array",
-      "items": {
+      "items": { "$ref": "#/$defs/waiver" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$" },
+    "waiver": {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "rule", "reason", "owner", "ticket", "created", "expires"],
@@ -21,14 +26,11 @@
           "reason": { "type": "string", "minLength": 20 },
           "owner": { "type": "string", "minLength": 1 },
           "ticket": { "type": "string", "format": "uri", "pattern": "^https://" },
+          "approver": { "type": "string", "minLength": 1 },
           "created": { "type": "string", "format": "date" },
           "expires": { "type": "string", "format": "date" }
         },
         "anyOf": [{ "required": ["fingerprints"] }, { "required": ["paths"] }]
       }
-    }
-  },
-  "$defs": {
-    "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$" }
   }
 }

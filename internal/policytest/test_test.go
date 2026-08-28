@@ -48,14 +48,96 @@ rules:
 cases:
   - {name: present, rule: demo.readme, outcome: pass, files: {README.md: ok}}
   - {name: absent, rule: demo.readme, outcome: fail, files: {}}
+  - name: waived absence passes with precise assertion
+    rule: demo.readme
+    outcome: pass
+    files: {}
+    now: 2026-01-15T00:00:00Z
+    waiveFindings: true
+    findingCount: 1
+    expect:
+      - messageContains: missing
+        waived: true
 `)
 	registry := sdk.NewRegistry()
 	if err := rules.RegisterCore(registry); err != nil {
 		t.Fatal(err)
 	}
 	result := Run(context.Background(), root, registry)
-	if result.Passed != 2 || len(result.Errors) != 0 {
+	if result.Passed != 3 || len(result.Errors) != 0 {
 		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestPreciseFixturesSupportGitClockMultiDocumentAndExpectedErrors(t *testing.T) {
+	root := t.TempDir()
+	writePolicyTestFile(t, filepath.Join(root, "pack.yaml"), `version: 1
+name: demo
+release: 1.0.0
+description: Demo structured pack.
+rules:
+  - id: demo.documents
+    title: Documents are ready
+    description: Checks deterministic fixture context.
+    rationale: Pack behavior must be reproducible.
+    remediation: Supply two enabled documents from a clean branch.
+    severity: error
+    kind: structured.cel
+    files: [values.yaml]
+    spec:
+      expression: documents.size() == 2 && documents.all(d, d.data.enabled == true) && git.branch == 'release/test' && git.dirty == false && now == timestamp('2026-02-03T04:05:06Z')
+      message: fixture context mismatch
+`)
+	writePolicyTestFile(t, filepath.Join(root, "tests", "cases.yaml"), `version: 1
+cases:
+  - name: deterministic multi document context passes
+    rule: demo.documents
+    outcome: pass
+    branch: release/test
+    now: 2026-02-03T04:05:06Z
+    documents:
+      values.yaml:
+        - 'enabled: true'
+        - 'enabled: true'
+    findingCount: 0
+  - name: wrong Git context fails precisely
+    rule: demo.documents
+    outcome: fail
+    branch: feature/test
+    now: 2026-02-03T04:05:06Z
+    documents:
+      values.yaml:
+        - 'enabled: true'
+        - 'enabled: true'
+    findingCount: 1
+    expect:
+      - key: cel
+        messageContains: context mismatch
+        waived: false
+        hasFix: false
+  - name: malformed structured input fails closed
+    rule: demo.documents
+    outcome: error
+    branch: release/test
+    now: 2026-02-03T04:05:06Z
+    files:
+      values.yaml: '[invalid'
+    errorContains: values.yaml
+`)
+	registry := sdk.NewRegistry()
+	if err := rules.RegisterCore(registry); err != nil {
+		t.Fatal(err)
+	}
+	result := Run(context.Background(), root, registry)
+	if result.Passed != 3 || len(result.Errors) != 0 {
+		t.Fatalf("unexpected precise fixture result: %#v", result)
+	}
+	snapshot, err := BuildSnapshot(context.Background(), root, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Cases) != 3 || snapshot.Cases[1].RuleID != "demo.documents" {
+		t.Fatalf("unexpected snapshot: %#v", snapshot)
 	}
 }
 

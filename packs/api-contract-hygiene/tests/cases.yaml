@@ -1,0 +1,43 @@
+version: 1
+parameters:
+  contract_path: api/openapi.json
+  consumption_path: evidence/api-consumption.json
+  required_producer: typescript-client-usage/v1
+cases:
+  - name: exact complete API consumption evidence passes
+    rule: api-contract-hygiene.consumption
+    outcome: pass
+    files:
+      api/openapi.json: |
+        {"openapi":"3.1.0","info":{"title":"Demo","version":"1.0.0"},"paths":{"/pets":{"get":{"operationId":"listPets"}},"/pets/{id}":{"get":{"operationId":"getPet"}}}}
+      evidence/api-consumption.json: |
+        {"version":1,"contractDigest":"sha256:e1bdc5c22b9c5cda02e9c9cfbf982e48d4f985dd07396934ac46feaf2189f3b7","producer":"typescript-client-usage/v1","operations":["GET /pets","GET /pets/{id}"]}
+  - name: stale incomplete API evidence fails
+    rule: api-contract-hygiene.consumption
+    outcome: fail
+    files:
+      api/openapi.json: |
+        {"openapi":"3.1.0","info":{"title":"Demo","version":"1.0.0"},"paths":{"/pets":{"get":{"operationId":"listPets"}},"/pets/{id}":{"get":{"operationId":"getPet"}}}}
+      evidence/api-consumption.json: |
+        {"version":1,"contractDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":"unknown","operations":["GET /pets","POST /removed"]}
+    expect:
+      - ruleId: api-contract-hygiene.consumption
+        messageContains: disagree
+  - name: explicitly staged partial migration is not a false positive
+    rule: api-contract-hygiene.consumption
+    outcome: pass
+    parameters:
+      require_all_operations: false
+      allow_undeclared_evidence: true
+    files:
+      api/openapi.json: |
+        {"openapi":"3.1.0","info":{"title":"Demo","version":"1.0.0"},"paths":{"/pets":{"get":{"operationId":"listPets"}},"/pets/{id}":{"get":{"operationId":"getPet"}}}}
+      evidence/api-consumption.json: |
+        {"version":1,"contractDigest":"sha256:e1bdc5c22b9c5cda02e9c9cfbf982e48d4f985dd07396934ac46feaf2189f3b7","producer":"typescript-client-usage/v1","operations":["GET /pets","POST /migration-only"]}
+  - name: malformed OpenAPI fails closed
+    rule: api-contract-hygiene.consumption
+    outcome: error
+    files:
+      api/openapi.json: '{broken'
+      evidence/api-consumption.json: '{}'
+    errorContains: api/openapi.json

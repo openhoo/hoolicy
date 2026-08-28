@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/v1/evidence.schema.json",
+  "title": "Hoolicy decision evidence bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "createdAt", "tool", "project", "revision", "dirty", "configDigest", "policyDigest", "packs", "rules", "decision", "controls", "waivers", "external"],
+  "properties": {
+    "version": { "const": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "tool": { "$ref": "report.schema.json#/$defs/tool" },
+    "project": { "type": "string" },
+    "revision": { "type": "string" },
+    "dirty": { "type": "boolean" },
+    "configDigest": { "$ref": "#/$defs/sha256" },
+    "policyDigest": { "$ref": "#/$defs/sha256" },
+    "packs": { "type": "array", "items": { "$ref": "lock.schema.json#/$defs/pack" } },
+    "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" } },
+    "decision": { "$ref": "report.schema.json" },
+    "controls": { "type": "array", "items": { "$ref": "#/$defs/control" } },
+    "waivers": { "type": "array", "items": { "$ref": "waivers.schema.json#/$defs/waiver" } },
+    "external": { "type": "array", "items": { "$ref": "#/$defs/external" } }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "rule": {
+      "type": "object", "additionalProperties": false, "required": ["id", "digest"],
+      "properties": { "id": { "type": "string" }, "digest": { "$ref": "#/$defs/sha256" }, "pack": { "type": "string" }, "packVersion": { "type": "string" } }
+    },
+    "control": {
+      "type": "object", "additionalProperties": false, "required": ["ruleId", "status"],
+      "properties": { "framework": { "type": "string" }, "id": { "type": "string" }, "ruleId": { "type": "string" }, "status": { "enum": ["passed", "failed", "waived", "not-evaluated", "unmapped"] } }
+    },
+    "external": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "type", "path", "digest", "subjectDigest", "metrics", "verified"],
+      "properties": {
+        "id": { "type": "string" }, "type": { "enum": ["sarif", "cyclonedx", "spdx", "junit", "provenance"] },
+        "path": { "type": "string" }, "digest": { "$ref": "#/$defs/sha256" }, "subjectDigest": { "$ref": "#/$defs/sha256" },
+        "generatedAt": { "type": "string", "format": "date-time" }, "metrics": { "type": "object", "additionalProperties": { "type": "integer" } }, "verified": { "const": true }
+      }
+    }
+  }
+}

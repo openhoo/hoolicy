@@ -16,3 +16,8 @@ cases:
     outcome: fail
     branch: feature/Add_Policy
     mergeRequestTitle: 'feat: Add policy'
+    expect:
+      - key: branch:feature/Add_Policy
+        messageContains: branch
+        waived: false
+        hasFix: false

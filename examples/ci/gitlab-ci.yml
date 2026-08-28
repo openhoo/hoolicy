@@ -1,0 +1,19 @@
+stages: [test]
+
+hoolicy:
+  stage: test
+  image: golang:1.26-alpine
+  variables:
+    # Required so CI_MERGE_REQUEST_DIFF_BASE_SHA is locally resolvable.
+    GIT_DEPTH: "0"
+  before_script:
+    - go install github.com/openhoo/hoolicy/cmd/hoolicy@v0.2.0
+  script:
+    - hoolicy doctor
+    - status=0; hoolicy check --format json --output hoolicy-report.json || status=$?; hoolicy check --format gitlab-codequality --output gl-code-quality-report.json || true; exit "$status"
+  artifacts:
+    when: always
+    paths:
+      - hoolicy-report.json
+    reports:
+      codequality: gl-code-quality-report.json

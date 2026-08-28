@@ -1,0 +1,125 @@
+version: 1
+cases:
+  - name: locked npm manifest with approved license passes
+    rule: dependency-governance.manifests
+    outcome: pass
+    files:
+      package.json: |
+        {"name":"demo","license":"MIT","dependencies":{"left-pad":"1.3.0"}}
+      package-lock.json: |
+        {"lockfileVersion":3}
+  - name: npm drift local reference and license fail
+    rule: dependency-governance.manifests
+    outcome: fail
+    files:
+      package.json: |
+        {"name":"demo","license":"GPL-3.0-only","dependencies":{"shared":"workspace:*","tool":"git+https://example.com/tool.git#main"}}
+    expect:
+      - ruleId: dependency-governance.manifests
+        path: package.json
+  - name: approved local workspace edge is not a false positive
+    rule: dependency-governance.manifests
+    outcome: pass
+    parameters:
+      allowed_local_dependencies: ['@demo/shared']
+    files:
+      package.json: |
+        {"name":"demo","license":"Apache-2.0","dependencies":{"@demo/shared":"workspace:*"}}
+      pnpm-lock.yaml: |
+        lockfileVersion: '9.0'
+  - name: resolved npm workspace edge and root lock pass
+    rule: dependency-governance.manifests
+    outcome: pass
+    files:
+      package.json: |
+        {"name":"demo-root","packageManager":"pnpm@10.0.0","license":"MIT"}
+      pnpm-lock.yaml: |
+        lockfileVersion: '9.0'
+      packages/app/package.json: |
+        {"name":"@demo/app","license":"MIT","dependencies":{"@demo/shared":"workspace:*"}}
+      packages/shared/package.json: |
+        {"name":"@demo/shared","license":"MIT"}
+  - name: narrow fixture exclusion is explicit
+    rule: dependency-governance.manifests
+    outcome: pass
+    parameters:
+      excluded_manifests: [fixtures/**]
+    files:
+      fixtures/unlocked/package.json: |
+        {"name":"intentionally-unlocked","license":"CC0-1.0"}
+  - name: unrelated npm lock does not satisfy declared pnpm manager
+    rule: dependency-governance.manifests
+    outcome: fail
+    files:
+      package.json: |
+        {"name":"demo","packageManager":"pnpm@10.0.0","license":"MIT"}
+      package-lock.json: |
+        {"lockfileVersion":3}
+    expect:
+      - ruleId: dependency-governance.manifests
+        messageContains: pnpm lock
+  - name: pinned Cargo Git dependency passes
+    rule: dependency-governance.manifests
+    outcome: pass
+    files:
+      Cargo.toml: |
+        [package]
+        name = "demo"
+        version = "0.1.0"
+        [dependencies]
+        tool = { git = "https://example.com/tool.git", rev = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      Cargo.lock: |
+        version = 4
+  - name: resolved Cargo workspace path and root lock pass
+    rule: dependency-governance.manifests
+    outcome: pass
+    files:
+      Cargo.toml: |
+        [workspace]
+        members = ["crates/app", "crates/shared"]
+      Cargo.lock: |
+        version = 4
+      crates/app/Cargo.toml: |
+        [package]
+        name = "app"
+        version = "0.1.0"
+        license = "MIT"
+        [dependencies]
+        shared = { path = "../shared" }
+      crates/shared/Cargo.toml: |
+        [package]
+        name = "shared"
+        version = "0.1.0"
+        license = "MIT"
+  - name: unapproved Cargo license fails
+    rule: dependency-governance.manifests
+    outcome: fail
+    files:
+      Cargo.toml: |
+        [package]
+        name = "demo"
+        version = "0.1.0"
+        license = "GPL-3.0-only"
+      Cargo.lock: |
+        version = 4
+    expect:
+      - ruleId: dependency-governance.manifests
+        messageContains: license expression
+  - name: local Go replacement fails
+    rule: dependency-governance.manifests
+    outcome: fail
+    files:
+      go.mod: |
+        module example.com/demo
+        go 1.26
+        replace example.com/shared => ../shared
+      go.sum: ""
+    expect:
+      - ruleId: dependency-governance.manifests
+        messageContains: local replace
+  - name: malformed dependency manifest fails closed
+    rule: dependency-governance.manifests
+    outcome: error
+    files:
+      package.json: '{broken'
+    errorContains: package.json

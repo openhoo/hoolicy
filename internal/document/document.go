@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 	"github.com/openhoo/hoolicy/sdk"
@@ -23,6 +24,41 @@ type Document struct {
 	Column int
 	Data   any
 	Node   *yaml.Node
+}
+
+const parseCacheLimit = 512
+
+var sharedParseCache = struct {
+	sync.Mutex
+	entries map[string][]Document
+	order   []string
+}{entries: make(map[string][]Document)}
+
+// ParseCached caches immutable parsed documents by path, format, and content
+// digest. Changed content naturally invalidates the entry; callers receive a
+// fresh slice so they cannot mutate cache membership.
+func ParseCached(file sdk.File, format string) ([]Document, bool, error) {
+	key := file.Path + "\x00" + strings.ToLower(format) + "\x00" + file.SHA256()
+	sharedParseCache.Lock()
+	if cached, exists := sharedParseCache.entries[key]; exists {
+		result := append([]Document(nil), cached...)
+		sharedParseCache.Unlock()
+		return result, true, nil
+	}
+	sharedParseCache.Unlock()
+	parsed, err := Parse(file, format)
+	if err != nil {
+		return nil, false, err
+	}
+	sharedParseCache.Lock()
+	if len(sharedParseCache.order) == parseCacheLimit {
+		delete(sharedParseCache.entries, sharedParseCache.order[0])
+		sharedParseCache.order = append(sharedParseCache.order[:0], sharedParseCache.order[1:]...)
+	}
+	sharedParseCache.entries[key] = append([]Document(nil), parsed...)
+	sharedParseCache.order = append(sharedParseCache.order, key)
+	sharedParseCache.Unlock()
+	return parsed, false, nil
 }
 
 func Parse(file sdk.File, format string) ([]Document, error) {
@@ -68,7 +104,11 @@ func detect(path string) string {
 }
 
 func parseJSON(file sdk.File) ([]Document, error) {
-	decoder := json.NewDecoder(bytes.NewReader(file.Data))
+	data := file.Data
+	if bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) {
+		data = data[3:]
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	var value any
 	if err := decoder.Decode(&value); err != nil {

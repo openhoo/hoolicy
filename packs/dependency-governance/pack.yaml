@@ -1,0 +1,43 @@
+version: 1
+name: dependency-governance
+release: 0.1.0
+description: Structured lock, source-drift, local-reference, and license governance for ecosystem manifests.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: Maintained parsers cover npm package.json, Cargo.toml, and go.mod, including repository-contained workspace edges and ancestor workspace locks; vulnerability discovery remains delegated. Graduation awaits reviewed measurements on multiple unrelated repositories.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.1.3-0 <0.1.3 || >=0.2.0 <2.0.0'
+parameters:
+  require_locks:
+    type: bool
+    description: Require an ecosystem lock beside each manifest.
+    default: true
+  approved_licenses:
+    type: string_list
+    description: Exact approved package license expressions.
+    default: [Apache-2.0, BSD-2-Clause, BSD-3-Clause, MIT]
+  allowed_local_dependencies:
+    type: string_list
+    description: Exact dependency names approved for local workspace resolution.
+    default: []
+  excluded_manifests:
+    type: string_list
+    description: Narrow repository-relative manifest globs excluded after review.
+    default: []
+rules:
+  - id: dependency-governance.manifests
+    title: Dependency manifests have authoritative resolution and approved licenses
+    description: Checks ecosystem locks, mutable sources, unresolved local references, and exact manifest license expressions.
+    rationale: Source drift and unresolved local edges make reviewed dependency state differ from built state.
+    remediation: Commit the authoritative lock, pin Git sources by full commit, resolve or approve local edges, and use a reviewed license expression.
+    severity: error
+    kind: dependency.governance
+    files: ['**/package.json', '**/Cargo.toml', '**/go.mod']
+    exclude: ['{{ excluded_manifests }}']
+    dependencies: ['**/*lock*', '**/go.sum']
+    controls: [{framework: SLSA, id: dependencies-complete}]
+    spec:
+      requireLocks: '{{ require_locks }}'
+      approvedLicenses: '{{ approved_licenses }}'
+      allowedLocalDependencies: '{{ allowed_local_dependencies }}'

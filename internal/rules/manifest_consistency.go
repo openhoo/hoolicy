@@ -60,7 +60,7 @@ func (ManifestConsistency) Evaluate(_ context.Context, input sdk.EvalContext, ru
 	if err != nil {
 		return nil, err
 	}
-	authoritative, err := readPointer(authoritativeFile, spec.Authoritative.Pointer)
+	authoritative, err := readPointer(authoritativeFile, spec.Authoritative.Pointer, input.Metrics)
 	if err != nil {
 		return nil, fmt.Errorf("rule %s authoritative value: %w", rule.ID, err)
 	}
@@ -74,7 +74,7 @@ func (ManifestConsistency) Evaluate(_ context.Context, input sdk.EvalContext, ru
 		if readErr != nil {
 			return nil, readErr
 		}
-		value, pointerErr := readPointer(file, target.Pointer)
+		value, pointerErr := readPointer(file, target.Pointer, input.Metrics)
 		if pointerErr != nil {
 			return nil, fmt.Errorf("rule %s target %s: %w", rule.ID, target.Path, pointerErr)
 		}
@@ -106,10 +106,13 @@ func manifestValuesEqual(left, right any) (bool, error) {
 	return bytes.Equal(leftJSON, rightJSON), nil
 }
 
-func readPointer(file sdk.File, pointer string) (any, error) {
-	documents, err := document.Parse(file, "auto")
+func readPointer(file sdk.File, pointer string, metrics *sdk.EvaluationMetrics) (any, error) {
+	documents, hit, err := document.ParseCached(file, "auto")
 	if err != nil {
 		return nil, err
+	}
+	if hit && metrics != nil {
+		metrics.ParseCacheHits++
 	}
 	if len(documents) != 1 {
 		return nil, fmt.Errorf("expected exactly one document")

@@ -1,0 +1,85 @@
+version: 1
+name: deployment-invariants
+release: 0.1.0
+description: Parameterized structured deployment invariants for Kubernetes, Compose, and Terraform plan evidence.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: Kubernetes pod-spec and Compose service semantics are experimental; Terraform inspection is limited to plan JSON image fields.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.1.3-0 <0.1.3 || >=0.2.0 <2.0.0'
+parameters:
+  approved_registries:
+    type: string_list
+    required: true
+    description: Exact registries approved for deployment images.
+  require_immutable_images:
+    type: bool
+    description: Require sha256 image digests.
+    default: true
+  require_resource_limits:
+    type: bool
+    description: Require CPU and memory limits where platform semantics support them.
+    default: true
+  require_non_root:
+    type: bool
+    description: Require explicit non-root security context where platform semantics support it.
+    default: true
+  allow_templated_images:
+    type: bool
+    description: Allow template expressions whose rendered evidence is checked elsewhere.
+    default: false
+  excluded_files:
+    type: string_list
+    description: Narrow repository-relative deployment globs excluded after review.
+    default: []
+rules:
+  - id: deployment-invariants.kubernetes
+    title: Kubernetes workloads preserve deployment invariants
+    description: Checks immutable approved images, CPU/memory limits, and explicit non-root pod or container context.
+    rationale: Mutable images and unconstrained privileged workloads create deployment drift and availability risk.
+    remediation: Pin images by digest, set resource limits, and set runAsNonRoot; parameterize exceptions explicitly.
+    severity: error
+    kind: deployment.invariants
+    files: [deploy/**/*.yaml, deploy/**/*.yml]
+    exclude: ['{{ excluded_files }}']
+    controls: [{framework: CIS-Kubernetes, id: workload-security}]
+    spec:
+      platform: kubernetes
+      approvedRegistries: '{{ approved_registries }}'
+      requireImmutableImages: '{{ require_immutable_images }}'
+      requireResourceLimits: '{{ require_resource_limits }}'
+      requireNonRoot: '{{ require_non_root }}'
+      allowTemplatedImages: '{{ allow_templated_images }}'
+  - id: deployment-invariants.compose
+    title: Compose services preserve deployment invariants
+    description: Checks immutable approved images, CPU/memory limits, non-root user, and read-only filesystem.
+    rationale: Local and edge deployments need the same reviewed image and resource boundaries.
+    remediation: Pin images by digest, set resource limits, a non-root user, and read_only; parameterize exceptions explicitly.
+    severity: error
+    kind: deployment.invariants
+    files: [compose*.yaml, compose*.yml, docker-compose*.yaml, docker-compose*.yml, '**/compose*.yaml', '**/compose*.yml', '**/docker-compose*.yaml', '**/docker-compose*.yml']
+    exclude: ['{{ excluded_files }}']
+    controls: [{framework: CIS-Docker, id: runtime-boundaries}]
+    spec:
+      platform: compose
+      approvedRegistries: '{{ approved_registries }}'
+      requireImmutableImages: '{{ require_immutable_images }}'
+      requireResourceLimits: '{{ require_resource_limits }}'
+      requireNonRoot: '{{ require_non_root }}'
+      allowTemplatedImages: '{{ allow_templated_images }}'
+  - id: deployment-invariants.terraform-plan
+    title: Terraform plan image references are immutable and approved
+    description: Inspects structured Terraform plan JSON image fields without parsing or executing HCL.
+    rationale: Plan evidence is closer to applied deployment input than source-text heuristics.
+    remediation: Generate plan JSON and pin discovered image fields to an approved registry and SHA-256 digest.
+    severity: error
+    kind: deployment.invariants
+    files: [terraform-plan*.json]
+    exclude: ['{{ excluded_files }}']
+    controls: [{framework: SLSA, id: deployment-input}]
+    spec:
+      platform: terraform-plan
+      approvedRegistries: '{{ approved_registries }}'
+      requireImmutableImages: '{{ require_immutable_images }}'
+      allowTemplatedImages: '{{ allow_templated_images }}'
