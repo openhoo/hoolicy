@@ -361,6 +361,10 @@ func TestOpenRevisionReadsCompleteHistoricalSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	runGit(t, root, "add", "tracked.txt", "link.txt")
+	// Windows worktrees do not infer the executable bit from NTFS metadata.
+	// Set the index bit explicitly so the committed tree exercises mode recovery
+	// on every supported platform.
+	runGit(t, root, "update-index", "--chmod=+x", "tracked.txt")
 	runGit(t, root, "commit", "-m", "test: base snapshot")
 	base := runGit(t, root, "rev-parse", "HEAD")
 	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("after\n"), 0o755); err != nil {

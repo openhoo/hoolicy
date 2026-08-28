@@ -45,7 +45,7 @@ func requireFiles(rule sdk.Rule) error {
 }
 
 func safeRelativeRulePath(path string) bool {
-	if strings.TrimSpace(path) == "" || strings.TrimSpace(path) != path || strings.ContainsAny(path, "\\\x00") || filepath.IsAbs(path) || windowsVolume(path) {
+	if strings.TrimSpace(path) == "" || strings.TrimSpace(path) != path || strings.ContainsAny(path, "\\\x00") || strings.HasPrefix(path, "/") || filepath.IsAbs(path) || windowsVolume(path) {
 		return false
 	}
 	clean := filepath.Clean(filepath.FromSlash(path))
