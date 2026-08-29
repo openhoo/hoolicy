@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2 (2026-08-29)
+
+### Bug Fixes
+
+- **hoolicy:** harden policy execution boundaries (5838482)
+
 ## 0.2.1 (2026-08-28)
 
 ### Bug Fixes
