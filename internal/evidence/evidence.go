@@ -176,15 +176,11 @@ func Verify(project *config.Project, bundle *Bundle, current *engine.Report, rul
 	if bundle.ConfigDigest != current.ConfigDigest || bundle.PolicyDigest != current.PolicyDigest {
 		return errors.New("evidence config or policy digest changed")
 	}
-	storedWaivers, _ := json.Marshal(bundle.Waivers)
-	currentWaivers, _ := json.Marshal(current.Waivers)
-	if !bytes.Equal(storedWaivers, currentWaivers) {
-		return errors.New("evidence waiver set changed")
+	if err := requireJSONEqual(bundle.Waivers, current.Waivers, "evidence waiver set changed"); err != nil {
+		return err
 	}
-	storedDecision, _ := json.Marshal(decisionContract(bundle.Decision, bundle.Controls))
-	currentDecision, _ := json.Marshal(decisionContract(current, controlRecords(rules, current.Findings, current.Metrics)))
-	if !bytes.Equal(storedDecision, currentDecision) {
-		return errors.New("policy decision no longer reproduces")
+	if err := requireJSONEqual(decisionContract(bundle.Decision, bundle.Controls), decisionContract(current, controlRecords(rules, current.Findings, current.Metrics)), "policy decision no longer reproduces"); err != nil {
+		return err
 	}
 	currentPacks := []config.LockedPack{}
 	if lock, err := config.LoadLock(filepath.Join(project.Root, config.DefaultLockfile)); err == nil {
@@ -193,20 +189,16 @@ func Verify(project *config.Project, bundle *Bundle, current *engine.Report, rul
 		return err
 	}
 	sort.Slice(currentPacks, func(i, j int) bool { return currentPacks[i].Name < currentPacks[j].Name })
-	storedPacks, _ := json.Marshal(bundle.Packs)
-	actualPacks, _ := json.Marshal(currentPacks)
-	if !bytes.Equal(storedPacks, actualPacks) {
-		return errors.New("pack lock inputs changed")
+	if err := requireJSONEqual(bundle.Packs, currentPacks, "pack lock inputs changed"); err != nil {
+		return err
 	}
 	expectedRules := make([]RuleRecord, 0, len(rules))
 	for _, rule := range rules {
 		expectedRules = append(expectedRules, RuleRecord{ID: rule.ID, Digest: sdk.RuleDigest(rule), Pack: rule.Pack, PackVersion: rule.PackVersion})
 	}
 	sort.Slice(expectedRules, func(i, j int) bool { return expectedRules[i].ID < expectedRules[j].ID })
-	left, _ := json.Marshal(bundle.Rules)
-	right, _ := json.Marshal(expectedRules)
-	if !bytes.Equal(left, right) {
-		return errors.New("evaluated rule set changed")
+	if err := requireJSONEqual(bundle.Rules, expectedRules, "evaluated rule set changed"); err != nil {
+		return err
 	}
 	policy, err := LoadPolicy(project)
 	if err != nil {
@@ -228,10 +220,11 @@ func Verify(project *config.Project, bundle *Bundle, current *engine.Report, rul
 			return err
 		}
 		stored, exists := records[spec.ID]
-		storedData, _ := json.Marshal(stored)
-		currentData, _ := json.Marshal(currentRecord)
-		if !exists || !bytes.Equal(storedData, currentData) || !stored.Verified {
+		if !exists || !stored.Verified {
 			return fmt.Errorf("external evidence %s changed or is unverified", spec.ID)
+		}
+		if err := requireJSONEqual(stored, currentRecord, fmt.Sprintf("external evidence %s changed or is unverified", spec.ID)); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -298,13 +291,50 @@ func decisionContract(report *engine.Report, controls []ControlRecord) decisionC
 }
 
 func validateBundle(bundle *Bundle) error {
+	if err := validateBundleEnvelope(bundle); err != nil {
+		return err
+	}
+	if err := validateDecisionEnvelope(bundle); err != nil {
+		return err
+	}
+	if err := validateDecisionMetrics(bundle.Decision); err != nil {
+		return err
+	}
+	if err := validateEvidenceFindings(bundle.Decision.Findings); err != nil {
+		return err
+	}
+	if err := validateEvidenceWaivers(bundle); err != nil {
+		return err
+	}
+	ruleIDs, err := validateEvidenceRules(bundle.Rules)
+	if err != nil {
+		return err
+	}
+	if err := validateEvidenceControls(bundle.Controls, ruleIDs); err != nil {
+		return err
+	}
+	if err := validateExternalRecords(bundle.External); err != nil {
+		return err
+	}
+	return validateEvidencePacks(bundle.Packs)
+}
+
+func validateBundleEnvelope(bundle *Bundle) error {
 	if bundle == nil || bundle.Version != 1 || bundle.Decision == nil || bundle.CreatedAt.IsZero() || bundle.Project == "" || !exactGitRevision.MatchString(bundle.Revision) || bundle.Tool.Name != "hoolicy" || bundle.Tool.Version == "" || !exactSHA256.MatchString(bundle.ConfigDigest) || !exactSHA256.MatchString(bundle.PolicyDigest) || bundle.Packs == nil || bundle.Rules == nil || bundle.Controls == nil || bundle.Waivers == nil || bundle.External == nil {
 		return errors.New("invalid evidence bundle schema")
 	}
+	return nil
+}
+
+func validateDecisionEnvelope(bundle *Bundle) error {
 	decision := bundle.Decision
 	if decision.ReportVersion != 2 || decision.Tool != bundle.Tool || decision.Project != bundle.Project || !decision.GeneratedAt.Equal(bundle.CreatedAt) || decision.ConfigDigest != bundle.ConfigDigest || decision.PolicyDigest != bundle.PolicyDigest || decision.Git.Commit != bundle.Revision || decision.Git.Dirty != bundle.Dirty || !decision.FailOn.Valid() || decision.Findings == nil || decision.Waivers == nil || decision.Metrics.Rules == nil {
 		return errors.New("evidence decision envelope does not match bundle")
 	}
+	return nil
+}
+
+func validateDecisionMetrics(decision *engine.Report) error {
 	if !nonnegativeSummary(decision.Summary) || decision.Metrics.Files < 0 || decision.Metrics.Bytes < 0 || decision.Metrics.DurationMilliseconds < 0 || decision.Metrics.InputCacheHits < 0 || decision.Metrics.ParseCacheHits < 0 {
 		return errors.New("invalid evidence decision metrics")
 	}
@@ -313,30 +343,59 @@ func validateBundle(bundle *Bundle) error {
 			return errors.New("invalid evidence rule metrics")
 		}
 	}
-	for _, finding := range decision.Findings {
+	return nil
+}
+
+func validateEvidenceFindings(findings []sdk.Finding) error {
+	for _, finding := range findings {
 		if finding.RuleID == "" || finding.Title == "" || finding.Message == "" || finding.Remediation == "" || !finding.Severity.Valid() || !exactFingerprint.MatchString(finding.Fingerprint) || !exactSHA256.MatchString(finding.PolicyDigest) || !exactSHA256.MatchString(finding.FindingDigest) || finding.Location.Line < 0 || finding.Location.Column < 0 || finding.State != sdk.FindingNew && finding.State != sdk.FindingExisting && finding.State != sdk.FindingWaived {
 			return errors.New("invalid evidence finding")
 		}
 	}
-	bundleWaivers, _ := json.Marshal(bundle.Waivers)
-	decisionWaivers, _ := json.Marshal(decision.Waivers)
-	if !bytes.Equal(bundleWaivers, decisionWaivers) {
-		return errors.New("evidence decision waiver set does not match bundle")
+	return nil
+}
+
+func validateEvidenceWaivers(bundle *Bundle) error {
+	if err := requireJSONEqual(bundle.Waivers, bundle.Decision.Waivers, "evidence decision waiver set does not match bundle"); err != nil {
+		return err
 	}
 	for _, waiver := range bundle.Waivers {
 		if err := config.ValidateWaiver(waiver, bundle.CreatedAt); err != nil {
 			return fmt.Errorf("invalid evidence waiver %s: %w", waiver.ID, err)
 		}
 	}
-	ruleIDs := make(map[string]bool, len(bundle.Rules))
-	for _, rule := range bundle.Rules {
+	return nil
+}
+
+func requireJSONEqual(left, right any, mismatch string) error {
+	leftData, err := json.Marshal(left)
+	if err != nil {
+		return fmt.Errorf("encode JSON comparison: %w", err)
+	}
+	rightData, err := json.Marshal(right)
+	if err != nil {
+		return fmt.Errorf("encode JSON comparison: %w", err)
+	}
+	if !bytes.Equal(leftData, rightData) {
+		return errors.New(mismatch)
+	}
+	return nil
+}
+
+func validateEvidenceRules(rules []RuleRecord) (map[string]bool, error) {
+	ruleIDs := make(map[string]bool, len(rules))
+	for _, rule := range rules {
 		if rule.ID == "" || ruleIDs[rule.ID] || !exactSHA256.MatchString(rule.Digest) {
-			return errors.New("invalid or duplicate evidence rule record")
+			return nil, errors.New("invalid or duplicate evidence rule record")
 		}
 		ruleIDs[rule.ID] = true
 	}
-	controlKeys := make(map[string]bool, len(bundle.Controls))
-	for _, control := range bundle.Controls {
+	return ruleIDs, nil
+}
+
+func validateEvidenceControls(controls []ControlRecord, ruleIDs map[string]bool) error {
+	controlKeys := make(map[string]bool, len(controls))
+	for _, control := range controls {
 		if !ruleIDs[control.RuleID] || !validControlStatus(control.Status) {
 			return errors.New("invalid evidence control record")
 		}
@@ -346,8 +405,12 @@ func validateBundle(bundle *Bundle) error {
 		}
 		controlKeys[key] = true
 	}
-	externalIDs := make(map[string]bool, len(bundle.External))
-	for _, record := range bundle.External {
+	return nil
+}
+
+func validateExternalRecords(records []ExternalRecord) error {
+	externalIDs := make(map[string]bool, len(records))
+	for _, record := range records {
 		if record.ID == "" || externalIDs[record.ID] || !supportedType(record.Type) || record.Path == "" || !exactSHA256.MatchString(record.Digest) || !exactSHA256.MatchString(record.SubjectDigest) || !record.Verified || record.Metrics == nil {
 			return errors.New("invalid or duplicate external evidence record")
 		}
@@ -358,8 +421,12 @@ func validateBundle(bundle *Bundle) error {
 		}
 		externalIDs[record.ID] = true
 	}
-	packNames := make(map[string]bool, len(bundle.Packs))
-	for _, pack := range bundle.Packs {
+	return nil
+}
+
+func validateEvidencePacks(packs []config.LockedPack) error {
+	packNames := make(map[string]bool, len(packs))
+	for _, pack := range packs {
 		if pack.Name == "" || packNames[pack.Name] || !exactSHA256.MatchString(pack.Digest) {
 			return errors.New("invalid or duplicate evidence pack record")
 		}
@@ -481,7 +548,7 @@ func readBoundedRegularFile(path string, maximum int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	opened, err := file.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(opened, pathInfo) || opened.Size() > maximum {
 		return nil, fmt.Errorf("%s: evidence changed, is not regular, or exceeds %d bytes", path, maximum)
@@ -552,7 +619,10 @@ func InspectExternalBytes(spec ExternalSpec, data []byte, now time.Time) (Extern
 		if record.GeneratedAt.IsZero() {
 			return ExternalRecord{}, errors.New("freshness timestamp is absent")
 		}
-		maximum, _ := time.ParseDuration(spec.MaximumAge)
+		maximum, err := time.ParseDuration(spec.MaximumAge)
+		if err != nil || maximum <= 0 {
+			return ExternalRecord{}, errors.New("maximumAge must be a positive duration")
+		}
 		if now.Sub(record.GeneratedAt) > maximum || record.GeneratedAt.After(now.Add(5*time.Minute)) {
 			return ExternalRecord{}, errors.New("evidence is stale or from the future")
 		}
@@ -589,58 +659,81 @@ func validateJSONType(kind string, value any) error {
 	}
 	switch kind {
 	case "sarif":
-		runs, ok := object["runs"].([]any)
-		if object["version"] != "2.1.0" || !ok || len(runs) == 0 {
-			return errors.New("SARIF 2.1.0 requires at least one run")
-		}
-		for _, raw := range runs {
-			run, ok := raw.(map[string]any)
-			tool, toolOK := objectAt(run, "tool")
-			driver, driverOK := objectAt(tool, "driver")
-			if !ok || !toolOK || !driverOK || stringAt(driver, "name") == "" {
-				return errors.New("each SARIF run requires tool.driver.name")
-			}
-			if results, exists := run["results"]; exists {
-				if _, ok := results.([]any); !ok {
-					return errors.New("SARIF run results must be an array")
-				}
-			}
-		}
+		return validateSARIF(object)
 	case "cyclonedx":
-		metadata, metadataOK := objectAt(object, "metadata")
-		_, componentsOK := object["components"].([]any)
-		if object["bomFormat"] != "CycloneDX" || !strings.HasPrefix(stringAt(object, "specVersion"), "1.") || !metadataOK || !componentsOK {
-			return errors.New("CycloneDX requires bomFormat, 1.x specVersion, metadata, and components")
-		}
-		if timestamp := stringAt(metadata, "timestamp"); timestamp != "" {
-			if _, err := time.Parse(time.RFC3339, timestamp); err != nil {
-				return errors.New("CycloneDX metadata.timestamp must be RFC3339")
-			}
-		}
+		return validateCycloneDX(object)
 	case "spdx":
-		creation, creationOK := objectAt(object, "creationInfo")
-		creators, creatorsOK := creation["creators"].([]any)
-		_, packagesOK := object["packages"].([]any)
-		_, filesOK := object["files"].([]any)
-		version := stringAt(object, "spdxVersion")
-		if (version != "SPDX-2.2" && version != "SPDX-2.3") || stringAt(object, "SPDXID") == "" || stringAt(object, "dataLicense") == "" || stringAt(object, "documentNamespace") == "" || !creationOK || !creatorsOK || len(creators) == 0 || !packagesOK && !filesOK || len(spdxDescribedIDs(object)) == 0 {
-			return errors.New("SPDX 2.2/2.3 requires document identity, creationInfo, a document description relationship, and package or file entries")
-		}
-		if _, err := time.Parse(time.RFC3339, stringAt(creation, "created")); err != nil {
-			return errors.New("SPDX creationInfo.created must be RFC3339")
-		}
+		return validateSPDX(object)
 	case "provenance":
-		subjects, subjectsOK := object["subject"].([]any)
-		_, predicateOK := objectAt(object, "predicate")
-		if object["_type"] != "https://in-toto.io/Statement/v1" || !subjectsOK || len(subjects) == 0 || stringAt(object, "predicateType") == "" || !predicateOK {
-			return errors.New("in-toto Statement v1 requires subjects, predicateType, and predicate")
+		return validateProvenance(object)
+	default:
+		return fmt.Errorf("unsupported evidence type %s", kind)
+	}
+}
+
+func validateSARIF(object map[string]any) error {
+	runs, ok := object["runs"].([]any)
+	if object["version"] != "2.1.0" || !ok || len(runs) == 0 {
+		return errors.New("SARIF 2.1.0 requires at least one run")
+	}
+	for _, raw := range runs {
+		run, runOK := raw.(map[string]any)
+		tool, toolOK := objectAt(run, "tool")
+		driver, driverOK := objectAt(tool, "driver")
+		if !runOK || !toolOK || !driverOK || stringAt(driver, "name") == "" {
+			return errors.New("each SARIF run requires tool.driver.name")
 		}
-		for _, raw := range subjects {
-			subject, ok := raw.(map[string]any)
-			digests, digestOK := objectAt(subject, "digest")
-			if !ok || !digestOK || len(digests) == 0 {
-				return errors.New("each in-toto subject requires a digest")
+		if results, exists := run["results"]; exists {
+			if _, ok := results.([]any); !ok {
+				return errors.New("SARIF run results must be an array")
 			}
+		}
+	}
+	return nil
+}
+
+func validateCycloneDX(object map[string]any) error {
+	metadata, metadataOK := objectAt(object, "metadata")
+	_, componentsOK := object["components"].([]any)
+	if object["bomFormat"] != "CycloneDX" || !strings.HasPrefix(stringAt(object, "specVersion"), "1.") || !metadataOK || !componentsOK {
+		return errors.New("CycloneDX requires bomFormat, 1.x specVersion, metadata, and components")
+	}
+	if timestamp := stringAt(metadata, "timestamp"); timestamp != "" {
+		if _, err := time.Parse(time.RFC3339, timestamp); err != nil {
+			return errors.New("CycloneDX metadata.timestamp must be RFC3339")
+		}
+	}
+	return nil
+}
+
+func validateSPDX(object map[string]any) error {
+	creation, creationOK := objectAt(object, "creationInfo")
+	creators, creatorsOK := creation["creators"].([]any)
+	_, packagesOK := object["packages"].([]any)
+	_, filesOK := object["files"].([]any)
+	version := stringAt(object, "spdxVersion")
+	validVersion := version == "SPDX-2.2" || version == "SPDX-2.3"
+	hasContent := packagesOK || filesOK
+	if !validVersion || stringAt(object, "SPDXID") == "" || stringAt(object, "dataLicense") == "" || stringAt(object, "documentNamespace") == "" || !creationOK || !creatorsOK || len(creators) == 0 || !hasContent || len(spdxDescribedIDs(object)) == 0 {
+		return errors.New("SPDX 2.2/2.3 requires document identity, creationInfo, a document description relationship, and package or file entries")
+	}
+	if _, err := time.Parse(time.RFC3339, stringAt(creation, "created")); err != nil {
+		return errors.New("SPDX creationInfo.created must be RFC3339")
+	}
+	return nil
+}
+
+func validateProvenance(object map[string]any) error {
+	subjects, subjectsOK := object["subject"].([]any)
+	_, predicateOK := objectAt(object, "predicate")
+	if object["_type"] != "https://in-toto.io/Statement/v1" || !subjectsOK || len(subjects) == 0 || stringAt(object, "predicateType") == "" || !predicateOK {
+		return errors.New("in-toto Statement v1 requires subjects, predicateType, and predicate")
+	}
+	for _, raw := range subjects {
+		subject, subjectOK := raw.(map[string]any)
+		digests, digestOK := objectAt(subject, "digest")
+		if !subjectOK || !digestOK || len(digests) == 0 {
+			return errors.New("each in-toto subject requires a digest")
 		}
 	}
 	return nil

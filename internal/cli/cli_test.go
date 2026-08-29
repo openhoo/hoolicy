@@ -283,6 +283,37 @@ func TestInventoryAndReadOnlyServiceUseSameEngineContract(t *testing.T) {
 	}
 }
 
+func TestReadOnlyServiceReturnsCleanErrorWhenResponseCannotBeEncoded(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, configPath, `version: 1
+project: demo
+rules:
+  - id: demo.invalid-json
+    title: Invalid JSON
+    description: Exercises response encoding failure.
+    rationale: API failures must have an unambiguous status.
+    remediation: Return JSON-compatible properties.
+    severity: error
+    kind: test.invalid-json
+`)
+	app, _, _ := testApplication(t)
+	if err := app.registry.Register("test.invalid-json", invalidJSONRuleKind{}); err != nil {
+		t.Fatal(err)
+	}
+	app.engine = engine.New(app.registry)
+	recorder := httptest.NewRecorder()
+	app.readOnlyHandler(configPath).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/check", nil))
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || !strings.Contains(response["error"], "encode response") {
+		t.Fatalf("response=%q err=%v", recorder.Body.String(), err)
+	}
+}
+
 func TestCommandOutputLineRemovesControlsAndCredentials(t *testing.T) {
 	t.Parallel()
 	output := commandOutputLine([]byte("https://secret@example.com/failure\x1b[31m\n" + strings.Repeat("x", 600)))
@@ -418,6 +449,29 @@ func TestPackScaffoldCompatibilityTracksStableEngineLine(t *testing.T) {
 		if actual := scaffoldHoolicyCompatibility(version); actual != expected {
 			t.Fatalf("%s compatibility = %q, want %q", version, actual, expected)
 		}
+	}
+}
+
+func TestDoctorAndPackInitPreserveCallerCancellation(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	projectPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, projectPath, "version: 1\nproject: demo\nrules: []\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	app, _, stderr := testApplication(t)
+	if code := app.run(ctx, []string{"doctor", "--config", projectPath}); code != 2 || !strings.Contains(stderr.String(), context.Canceled.Error()) {
+		t.Fatalf("doctor code=%d stderr=%q", code, stderr.String())
+	}
+
+	packPath := filepath.Join(root, "canceled-pack")
+	app, _, stderr = testApplication(t)
+	if code := app.run(ctx, []string{"pack", "init", "--name", "canceled", packPath}); code != 2 || !strings.Contains(stderr.String(), context.Canceled.Error()) {
+		t.Fatalf("pack init code=%d stderr=%q", code, stderr.String())
+	}
+	if _, err := os.Stat(packPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("canceled pack scaffold remains: %v", err)
 	}
 }
 
@@ -819,6 +873,14 @@ func testApplication(t *testing.T) (application, *bytes.Buffer, *bytes.Buffer) {
 		stdout: stdout, stderr: stderr, info: BuildInfo{Version: "test", Commit: "test", Date: "test"},
 		registry: registry, engine: engine.New(registry),
 	}, stdout, stderr
+}
+
+type invalidJSONRuleKind struct{}
+
+func (invalidJSONRuleKind) Validate(sdk.Rule) error { return nil }
+
+func (invalidJSONRuleKind) Evaluate(context.Context, sdk.EvalContext, sdk.Rule) ([]sdk.Finding, error) {
+	return []sdk.Finding{{Message: "invalid property", Properties: map[string]any{"channel": make(chan struct{})}}}, nil
 }
 
 func writeCLIFile(t *testing.T, path, body string) {

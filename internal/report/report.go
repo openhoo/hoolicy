@@ -444,7 +444,7 @@ func readReportFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	opened, err := file.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(opened, pathInfo) || opened.Size() > MaxReportFileSize {
 		return nil, fmt.Errorf("%s: report changed, is not regular, or exceeds %d bytes", path, MaxReportFileSize)

@@ -411,7 +411,7 @@ func readRegularArtifact(root, name string, maximum int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	opened, err := file.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(opened, info) || opened.Size() > maximum {
 		return nil, fmt.Errorf("artifact entry %s changed, is not regular, or exceeds %d bytes", name, maximum)

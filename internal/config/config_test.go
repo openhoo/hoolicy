@@ -136,6 +136,36 @@ func TestLoadPackRequiresRules(t *testing.T) {
 	}
 }
 
+func TestPackParameterErrorsAreDeterministic(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "pack.yaml"), `version: 1
+name: demo
+release: 1.0.0
+description: Demo pack.
+parameters:
+  zed: {type: invalid, description: Zed parameter.}
+  alpha: {type: invalid, description: Alpha parameter.}
+rules:
+  - id: demo.rule
+    title: Demo
+    description: Demo rule.
+    rationale: Needed for testing.
+    remediation: Correct it.
+    severity: error
+    kind: files
+    files: [README.md]
+    spec: {mode: require}
+`)
+	if _, err := LoadPack(root); err == nil || !strings.Contains(err.Error(), "parameter alpha") {
+		t.Fatalf("unexpected parameter validation error: %v", err)
+	}
+	pack := &Pack{Name: "demo", Parameters: map[string]Parameter{"known": {Type: "string"}}}
+	if _, err := pack.Instantiate(map[string]any{"zed": true, "alpha": true}); err == nil || !strings.Contains(err.Error(), "unknown parameter alpha") {
+		t.Fatalf("unexpected instantiation error: %v", err)
+	}
+}
+
 func TestPackCompatibilityRangesFailBeforeEvaluation(t *testing.T) {
 	t.Parallel()
 	pack := &Pack{Name: "demo", Compatibility: Compatibility{Config: ">=1 <2", Hoolicy: ">=0.2.0 <1.0.0"}}
@@ -285,7 +315,7 @@ requirements:
 
 func TestProjectRejectsPathsThatRuntimeCannotResolve(t *testing.T) {
 	t.Parallel()
-	for _, path := range []string{".", " ../outside", "waivers.yaml\x00ignored", "C:/outside", `C:\outside`, `..\outside`} {
+	for _, path := range []string{".", " ../outside", "waivers.yaml\x00ignored", "/outside", "C:/outside", `C:\outside`, `..\outside`} {
 		project := Project{Version: 1, Project: "demo", FailOn: "error", Waivers: path}
 		if err := project.Validate(); err == nil || !strings.Contains(err.Error(), "waivers") {
 			t.Fatalf("expected unsafe path rejection for %q, got %v", path, err)

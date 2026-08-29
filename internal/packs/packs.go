@@ -29,87 +29,14 @@ func Resolve(project *config.Project, toolVersions ...string) ([]sdk.Rule, error
 	if len(toolVersions) > 0 {
 		toolVersion = toolVersions[0]
 	}
-	lockPath := filepath.Join(project.Root, config.DefaultLockfile)
-	var lock *config.Lock
-	remoteCount := 0
-	for _, reference := range project.Packs {
-		if reference.Git != "" || reference.OCI != "" {
-			remoteCount++
-		}
-	}
-	loaded, lockErr := config.LoadLock(lockPath)
-	if lockErr == nil {
-		lock = loaded
-	} else if remoteCount > 0 {
-		return nil, fmt.Errorf("remote packs require a valid %s: %w", config.DefaultLockfile, lockErr)
-	} else if !errors.Is(lockErr, os.ErrNotExist) {
-		return nil, fmt.Errorf("invalid %s: %w", config.DefaultLockfile, lockErr)
-	}
-	configuredRemote := make(map[string]bool, remoteCount)
-	for _, reference := range project.Packs {
-		if reference.Git != "" || reference.OCI != "" {
-			configuredRemote[reference.Name] = true
-		}
-	}
-	lockedByName := make(map[string]config.LockedPack)
-	if lock != nil {
-		for _, entry := range lock.Packs {
-			if _, exists := lockedByName[entry.Name]; exists {
-				return nil, fmt.Errorf("lock contains duplicate pack %s", entry.Name)
-			}
-			if !configuredRemote[entry.Name] {
-				return nil, fmt.Errorf("lock contains stale pack %s not present as a remote project pack", entry.Name)
-			}
-			lockedByName[entry.Name] = entry
-		}
+	lockedByName, err := resolveLock(project)
+	if err != nil {
+		return nil, err
 	}
 	var rules []sdk.Rule
 	seen := make(map[string]string)
 	for _, reference := range project.Packs {
-		path := reference.Path
-		if reference.Git != "" || reference.OCI != "" {
-			locked, exists := lockedByName[reference.Name]
-			if !exists {
-				return nil, fmt.Errorf("pack %s is absent from lock", reference.Name)
-			}
-			if locked.Git != reference.Git || locked.Ref != reference.Ref || locked.Subdir != reference.Subdir || locked.OCI != reference.OCI {
-				return nil, fmt.Errorf("pack %s config and lock disagree", reference.Name)
-			}
-			if reference.Git != "" && !commitPattern.MatchString(locked.Commit) {
-				return nil, fmt.Errorf("pack %s lock has invalid commit", reference.Name)
-			}
-			expectedVendor := filepath.ToSlash(filepath.Join(".hoolicy", "vendor", reference.Name))
-			if locked.Vendor != expectedVendor {
-				return nil, fmt.Errorf("pack %s lock has unexpected vendor path %s", reference.Name, locked.Vendor)
-			}
-			path = locked.Vendor
-			_, absolute, err := safepath.Existing(project.Root, path)
-			if err != nil {
-				return nil, fmt.Errorf("pack %s: %w", reference.Name, err)
-			}
-			digest, err := Digest(absolute)
-			if err != nil {
-				return nil, fmt.Errorf("pack %s: %w", reference.Name, err)
-			}
-			if digest != locked.Digest {
-				return nil, fmt.Errorf("pack %s digest mismatch: lock %s, vendor %s", reference.Name, locked.Digest, digest)
-			}
-		}
-		_, absolute, err := safepath.Existing(project.Root, path)
-		if err != nil {
-			return nil, fmt.Errorf("pack %s: %w", reference.Name, err)
-		}
-		pack, err := config.LoadPack(absolute)
-		if err != nil {
-			return nil, err
-		}
-		if pack.Name != reference.Name {
-			return nil, fmt.Errorf("pack reference %s loaded manifest %s", reference.Name, pack.Name)
-		}
-		if err := config.ValidatePackCompatibility(pack, toolVersion); err != nil {
-			return nil, err
-		}
-		instantiated, err := pack.Instantiate(reference.With)
+		instantiated, err := resolvePack(project, reference, lockedByName, toolVersion)
 		if err != nil {
 			return nil, err
 		}
@@ -130,6 +57,85 @@ func Resolve(project *config.Project, toolVersions ...string) ([]sdk.Rule, error
 	}
 	sort.Slice(rules, func(i, j int) bool { return rules[i].ID < rules[j].ID })
 	return rules, nil
+}
+
+func resolveLock(project *config.Project) (map[string]config.LockedPack, error) {
+	lockPath := filepath.Join(project.Root, config.DefaultLockfile)
+	var lock *config.Lock
+	configuredRemote := make(map[string]bool)
+	for _, reference := range project.Packs {
+		if reference.Git != "" || reference.OCI != "" {
+			configuredRemote[reference.Name] = true
+		}
+	}
+	loaded, lockErr := config.LoadLock(lockPath)
+	if lockErr == nil {
+		lock = loaded
+	} else if len(configuredRemote) > 0 {
+		return nil, fmt.Errorf("remote packs require a valid %s: %w", config.DefaultLockfile, lockErr)
+	} else if !errors.Is(lockErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("invalid %s: %w", config.DefaultLockfile, lockErr)
+	}
+	lockedByName := make(map[string]config.LockedPack)
+	if lock != nil {
+		for _, entry := range lock.Packs {
+			if _, exists := lockedByName[entry.Name]; exists {
+				return nil, fmt.Errorf("lock contains duplicate pack %s", entry.Name)
+			}
+			if !configuredRemote[entry.Name] {
+				return nil, fmt.Errorf("lock contains stale pack %s not present as a remote project pack", entry.Name)
+			}
+			lockedByName[entry.Name] = entry
+		}
+	}
+	return lockedByName, nil
+}
+
+func resolvePack(project *config.Project, reference config.PackRef, lockedByName map[string]config.LockedPack, toolVersion string) ([]sdk.Rule, error) {
+	path := reference.Path
+	if reference.Git != "" || reference.OCI != "" {
+		locked, exists := lockedByName[reference.Name]
+		if !exists {
+			return nil, fmt.Errorf("pack %s is absent from lock", reference.Name)
+		}
+		if locked.Git != reference.Git || locked.Ref != reference.Ref || locked.Subdir != reference.Subdir || locked.OCI != reference.OCI {
+			return nil, fmt.Errorf("pack %s config and lock disagree", reference.Name)
+		}
+		if reference.Git != "" && !commitPattern.MatchString(locked.Commit) {
+			return nil, fmt.Errorf("pack %s lock has invalid commit", reference.Name)
+		}
+		expectedVendor := filepath.ToSlash(filepath.Join(".hoolicy", "vendor", reference.Name))
+		if locked.Vendor != expectedVendor {
+			return nil, fmt.Errorf("pack %s lock has unexpected vendor path %s", reference.Name, locked.Vendor)
+		}
+		path = locked.Vendor
+		_, absolute, err := safepath.Existing(project.Root, path)
+		if err != nil {
+			return nil, fmt.Errorf("pack %s: %w", reference.Name, err)
+		}
+		digest, err := Digest(absolute)
+		if err != nil {
+			return nil, fmt.Errorf("pack %s: %w", reference.Name, err)
+		}
+		if digest != locked.Digest {
+			return nil, fmt.Errorf("pack %s digest mismatch: lock %s, vendor %s", reference.Name, locked.Digest, digest)
+		}
+	}
+	_, absolute, err := safepath.Existing(project.Root, path)
+	if err != nil {
+		return nil, fmt.Errorf("pack %s: %w", reference.Name, err)
+	}
+	pack, err := config.LoadPack(absolute)
+	if err != nil {
+		return nil, err
+	}
+	if pack.Name != reference.Name {
+		return nil, fmt.Errorf("pack reference %s loaded manifest %s", reference.Name, pack.Name)
+	}
+	if err := config.ValidatePackCompatibility(pack, toolVersion); err != nil {
+		return nil, err
+	}
+	return pack.Instantiate(reference.With)
 }
 
 func Digest(root string) (string, error) {
@@ -161,7 +167,17 @@ func Digest(root string) (string, error) {
 		if !entry.Type().IsRegular() {
 			return fmt.Errorf("non-regular file is forbidden in pack: %s", relative)
 		}
+		fileInfo, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if fileInfo.Size() > packarchive.MaxFileSize {
+			return fmt.Errorf("pack file exceeds %d bytes: %s", packarchive.MaxFileSize, relative)
+		}
 		paths = append(paths, filepath.ToSlash(relative))
+		if len(paths) > packarchive.MaxFiles {
+			return fmt.Errorf("pack exceeds %d files", packarchive.MaxFiles)
+		}
 		return nil
 	})
 	if err != nil {
@@ -169,10 +185,15 @@ func Digest(root string) (string, error) {
 	}
 	sort.Strings(paths)
 	hash := sha256.New()
+	var total int64
 	for _, path := range paths {
-		data, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		data, readErr := readDigestFile(root, path)
 		if readErr != nil {
 			return "", readErr
+		}
+		total += int64(len(data))
+		if total > packarchive.MaxTotalSize {
+			return "", fmt.Errorf("pack content exceeds %d bytes", packarchive.MaxTotalSize)
 		}
 		hash.Write([]byte(path))
 		hash.Write([]byte{0})
@@ -180,6 +201,39 @@ func Digest(root string) (string, error) {
 		hash.Write([]byte{0})
 	}
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func readDigestFile(root, path string) ([]byte, error) {
+	_, absolute, err := safepath.Existing(root, path)
+	if err != nil {
+		return nil, err
+	}
+	pathInfo, err := os.Lstat(absolute)
+	if err != nil || pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("pack entry changed or is not regular: %s", path)
+	}
+	file, err := os.Open(absolute)
+	if err != nil {
+		return nil, err
+	}
+	opened, statErr := file.Stat()
+	currentInfo, pathErr := os.Lstat(absolute)
+	if statErr != nil || pathErr != nil || currentInfo.Mode()&os.ModeSymlink != 0 || !opened.Mode().IsRegular() || !os.SameFile(opened, currentInfo) || opened.Size() > packarchive.MaxFileSize {
+		_ = file.Close()
+		return nil, fmt.Errorf("pack entry changed or exceeds limits: %s", path)
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, packarchive.MaxFileSize+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if len(data) > packarchive.MaxFileSize || int64(len(data)) != opened.Size() {
+		return nil, fmt.Errorf("pack entry changed or exceeds limits: %s", path)
+	}
+	return data, nil
 }
 
 func Sync(project *config.Project, name string, toolVersions ...string) (config.LockedPack, error) {

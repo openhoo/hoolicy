@@ -3,7 +3,9 @@ package rules
 import (
 	"context"
 	"fmt"
+	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -120,8 +122,14 @@ func (kind CEL) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Rule
 		message := stringValue(violation["message"], spec.Message)
 		path := stringValue(violation["path"], "")
 		key := stringValue(violation["key"], fmt.Sprintf("cel:%d", index))
-		line := intValue(violation["line"])
-		column := intValue(violation["column"])
+		line, err := locationValue(violation["line"])
+		if err != nil {
+			return nil, fmt.Errorf("rule %s: violation %d line: %w", rule.ID, index, err)
+		}
+		column, err := locationValue(violation["column"])
+		if err != nil {
+			return nil, fmt.Errorf("rule %s: violation %d column: %w", rule.ID, index, err)
+		}
 		findings = append(findings, finding(rule, message, path, key, line, column))
 	}
 	return findings, nil
@@ -201,18 +209,35 @@ func stringValue(value any, fallback string) string {
 	return fallback
 }
 
-func intValue(value any) int {
+func locationValue(value any) (int, error) {
+	if value == nil {
+		return 0, nil
+	}
+	maximum := uint64(^uint(0) >> 1)
 	switch current := value.(type) {
 	case int:
-		return current
+		if current < 0 {
+			return 0, fmt.Errorf("must be a non-negative integer")
+		}
+		return current, nil
 	case int64:
-		return int(current)
+		if current < 0 || uint64(current) > maximum {
+			return 0, fmt.Errorf("must be a non-negative platform integer")
+		}
+		return int(current), nil
 	case uint64:
-		return int(current)
+		if current > maximum {
+			return 0, fmt.Errorf("must fit a platform integer")
+		}
+		return int(current), nil
 	case float64:
-		return int(current)
+		upperBound := math.Ldexp(1, strconv.IntSize-1)
+		if math.IsNaN(current) || math.IsInf(current, 0) || current < 0 || current >= upperBound || math.Trunc(current) != current {
+			return 0, fmt.Errorf("must be a non-negative platform integer")
+		}
+		return int(current), nil
 	default:
-		return 0
+		return 0, fmt.Errorf("must be an integer, got %T", value)
 	}
 }
 

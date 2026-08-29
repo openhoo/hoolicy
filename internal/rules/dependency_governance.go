@@ -218,11 +218,15 @@ func inspectGoModule(input sdk.EvalContext, rule sdk.Rule, file sdk.File, requir
 		left, right, _ := strings.Cut(strings.TrimPrefix(text, "replace "), "=>")
 		module := strings.Fields(strings.TrimSpace(left))
 		target := strings.TrimSpace(right)
-		if len(module) > 0 && !allowedLocal[module[0]] && (strings.HasPrefix(target, "./") || strings.HasPrefix(target, "../") || filepath.IsAbs(target)) {
+		if len(module) > 0 && !allowedLocal[module[0]] && localGoReplacement(target) {
 			findings = append(findings, finding(rule, message+": "+module[0]+" uses unresolved local replace "+target, file.Path, "replace:"+module[0], index+1, 1))
 		}
 	}
 	return findings
+}
+
+func localGoReplacement(target string) bool {
+	return strings.HasPrefix(target, "./") || strings.HasPrefix(target, "../") || strings.HasPrefix(target, "/") || filepath.IsAbs(target) || windowsVolume(target) || strings.Contains(target, "\\")
 }
 
 func hasSibling(repository sdk.Repository, manifest string, names ...string) bool {
@@ -285,10 +289,11 @@ func referencedRepositoryFileExists(repository sdk.Repository, manifest, target 
 }
 
 func repositoryRelativeReference(manifest, target string) (string, bool) {
-	target = filepath.ToSlash(strings.TrimSpace(target))
-	if target == "" || filepath.IsAbs(target) || strings.ContainsRune(target, '\x00') {
+	trimmed := strings.TrimSpace(target)
+	if trimmed == "" || trimmed != target || strings.HasPrefix(target, "/") || filepath.IsAbs(target) || windowsVolume(target) || strings.ContainsAny(target, "\\\x00") {
 		return "", false
 	}
+	target = filepath.ToSlash(target)
 	resolved := pathpkg.Clean(pathpkg.Join(pathpkg.Dir(manifest), target))
 	if resolved == ".." || strings.HasPrefix(resolved, "../") {
 		return "", false

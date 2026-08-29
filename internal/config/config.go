@@ -303,59 +303,79 @@ func (p *Project) Validate() error {
 	if !p.FailOn.Valid() {
 		problems = append(problems, "failOn must be info, warning, or error")
 	}
+	seenPacks, packProblems := validatePackReferences(p.Packs)
+	problems = append(problems, packProblems...)
+	problems = append(problems, validateProjectRules(p.Rules)...)
+	problems = append(problems, p.validateWorkspaces(seenPacks)...)
+	problems = append(problems, validateBudgets(p.Budgets)...)
+	problems = append(problems, validateProjectPaths(p)...)
+	if len(problems) > 0 {
+		sort.Strings(problems)
+		return errors.New(strings.Join(problems, "\n"))
+	}
+	return nil
+}
+
+func validatePackReferences(references []PackRef) (map[string]struct{}, []string) {
 	seenPacks := make(map[string]struct{})
-	for i, pack := range p.Packs {
+	var problems []string
+	for i, pack := range references {
 		prefix := fmt.Sprintf("packs[%d]", i)
-		if !projectNamePattern.MatchString(pack.Name) {
-			problems = append(problems, prefix+".name is invalid")
-		}
 		if _, exists := seenPacks[pack.Name]; exists {
 			problems = append(problems, prefix+" duplicates pack "+pack.Name)
 		}
 		seenPacks[pack.Name] = struct{}{}
-		local := pack.Path != ""
-		gitRemote := pack.Git != "" || pack.Ref != "" || pack.Subdir != ""
-		ociRemote := pack.OCI != ""
-		choices := 0
-		if local {
+		problems = append(problems, validatePackReference(prefix, pack)...)
+	}
+	return seenPacks, problems
+}
+
+func validatePackReference(prefix string, pack PackRef) []string {
+	var problems []string
+	if !projectNamePattern.MatchString(pack.Name) {
+		problems = append(problems, prefix+".name is invalid")
+	}
+	local := pack.Path != ""
+	gitRemote := pack.Git != "" || pack.Ref != "" || pack.Subdir != ""
+	ociRemote := pack.OCI != ""
+	choices := 0
+	for _, selected := range []bool{local, gitRemote, ociRemote} {
+		if selected {
 			choices++
-		}
-		if gitRemote {
-			choices++
-		}
-		if ociRemote {
-			choices++
-		}
-		if choices != 1 {
-			problems = append(problems, prefix+" must define exactly one of path, git/ref, or oci")
-		}
-		if gitRemote && (pack.Git == "" || pack.Ref == "") {
-			problems = append(problems, prefix+" requires both git and ref")
-		}
-		if pack.Git != "" {
-			if err := validateGitLocation(pack.Git); err != nil {
-				problems = append(problems, prefix+".git: "+err.Error())
-			}
-		}
-		if pack.Ref != "" {
-			if strings.TrimSpace(pack.Ref) != pack.Ref || strings.HasPrefix(pack.Ref, "-") || strings.ContainsAny(pack.Ref, "\x00\r\n") {
-				problems = append(problems, prefix+".ref is unsafe")
-			}
-		}
-		if err := validateRelativePath(pack.Path); local && err != nil {
-			problems = append(problems, prefix+".path: "+err.Error())
-		}
-		if err := validateRelativePath(pack.Subdir); pack.Subdir != "" && err != nil {
-			problems = append(problems, prefix+".subdir: "+err.Error())
-		}
-		if pack.OCI != "" {
-			if err := validateOCIReference(pack.OCI); err != nil {
-				problems = append(problems, prefix+".oci: "+err.Error())
-			}
 		}
 	}
+	if choices != 1 {
+		problems = append(problems, prefix+" must define exactly one of path, git/ref, or oci")
+	}
+	if gitRemote && (pack.Git == "" || pack.Ref == "") {
+		problems = append(problems, prefix+" requires both git and ref")
+	}
+	if pack.Git != "" {
+		if err := validateGitLocation(pack.Git); err != nil {
+			problems = append(problems, prefix+".git: "+err.Error())
+		}
+	}
+	if pack.Ref != "" && (strings.TrimSpace(pack.Ref) != pack.Ref || strings.HasPrefix(pack.Ref, "-") || strings.ContainsAny(pack.Ref, "\x00\r\n")) {
+		problems = append(problems, prefix+".ref is unsafe")
+	}
+	if err := validateRelativePath(pack.Path); local && err != nil {
+		problems = append(problems, prefix+".path: "+err.Error())
+	}
+	if err := validateRelativePath(pack.Subdir); pack.Subdir != "" && err != nil {
+		problems = append(problems, prefix+".subdir: "+err.Error())
+	}
+	if pack.OCI != "" {
+		if err := validateOCIReference(pack.OCI); err != nil {
+			problems = append(problems, prefix+".oci: "+err.Error())
+		}
+	}
+	return problems
+}
+
+func validateProjectRules(rules []sdk.Rule) []string {
 	seenRules := make(map[string]struct{})
-	for i, rule := range p.Rules {
+	var problems []string
+	for i, rule := range rules {
 		if errs := ValidateRule(rule); len(errs) > 0 {
 			for _, problem := range errs {
 				problems = append(problems, fmt.Sprintf("rules[%d]: %s", i, problem))
@@ -366,34 +386,30 @@ func (p *Project) Validate() error {
 		}
 		seenRules[rule.ID] = struct{}{}
 	}
-	if errs := p.validateWorkspaces(seenPacks); len(errs) > 0 {
-		problems = append(problems, errs...)
-	}
-	if p.Budgets.MaximumFiles < 1 || p.Budgets.MaximumDocumentBytes < 1 || p.Budgets.MaximumFindings < 1 {
+	return problems
+}
+
+func validateBudgets(budgets ResourceBudgets) []string {
+	var problems []string
+	if budgets.MaximumFiles < 1 || budgets.MaximumDocumentBytes < 1 || budgets.MaximumFindings < 1 {
 		problems = append(problems, "budgets file, document-byte, and finding limits must be positive")
 	}
-	for name, value := range map[string]string{"maximumRuleDuration": p.Budgets.MaximumRuleDuration, "maximumTotalDuration": p.Budgets.MaximumTotalDuration} {
+	for name, value := range map[string]string{"maximumRuleDuration": budgets.MaximumRuleDuration, "maximumTotalDuration": budgets.MaximumTotalDuration} {
 		if duration, err := time.ParseDuration(value); err != nil || duration <= 0 {
 			problems = append(problems, "budgets."+name+" must be a positive duration")
 		}
 	}
-	if err := validateRelativePath(p.Waivers); err != nil {
-		problems = append(problems, "waivers: "+err.Error())
+	return problems
+}
+
+func validateProjectPaths(project *Project) []string {
+	var problems []string
+	for name, value := range map[string]string{"waivers": project.Waivers, "baseline": project.Baseline, "trust": project.Trust, "evidence": project.Evidence} {
+		if err := validateRelativePath(value); err != nil {
+			problems = append(problems, name+": "+err.Error())
+		}
 	}
-	if err := validateRelativePath(p.Baseline); err != nil {
-		problems = append(problems, "baseline: "+err.Error())
-	}
-	if err := validateRelativePath(p.Trust); err != nil {
-		problems = append(problems, "trust: "+err.Error())
-	}
-	if err := validateRelativePath(p.Evidence); err != nil {
-		problems = append(problems, "evidence: "+err.Error())
-	}
-	if len(problems) > 0 {
-		sort.Strings(problems)
-		return errors.New(strings.Join(problems, "\n"))
-	}
-	return nil
+	return problems
 }
 
 func (p *Project) setBudgetDefaults() {
@@ -565,62 +581,84 @@ func LoadPack(path string) (*Pack, error) {
 	if err := LoadYAMLStrict(manifest, &pack); err != nil {
 		return nil, err
 	}
+	if err := validatePackEnvelope(manifest, &pack); err != nil {
+		return nil, err
+	}
+	if err := validatePackParameters(manifest, pack.Parameters); err != nil {
+		return nil, err
+	}
+	if err := validatePackRules(manifest, &pack); err != nil {
+		return nil, err
+	}
+	return &pack, nil
+}
+
+func validatePackEnvelope(manifest string, pack *Pack) error {
 	if pack.Version != CurrentVersion {
-		return nil, fmt.Errorf("%s: version must be %d", manifest, CurrentVersion)
+		return fmt.Errorf("%s: version must be %d", manifest, CurrentVersion)
 	}
 	if !projectNamePattern.MatchString(pack.Name) {
-		return nil, fmt.Errorf("%s: invalid pack name", manifest)
+		return fmt.Errorf("%s: invalid pack name", manifest)
 	}
 	if !semverPattern.MatchString(pack.Release) || strings.TrimSpace(pack.Description) == "" {
-		return nil, fmt.Errorf("%s: semantic release and description are required", manifest)
+		return fmt.Errorf("%s: semantic release and description are required", manifest)
 	}
 	if pack.Maturity == "" {
 		pack.Maturity = "experimental"
 	}
 	if pack.Maturity != "experimental" && pack.Maturity != "recommended" && pack.Maturity != "stable" {
-		return nil, fmt.Errorf("%s: maturity must be experimental, recommended, or stable", manifest)
+		return fmt.Errorf("%s: maturity must be experimental, recommended, or stable", manifest)
 	}
 	if pack.Maturity != "experimental" && (strings.TrimSpace(pack.Owner) == "" || strings.TrimSpace(pack.CompatibilityNotes) == "") {
-		return nil, fmt.Errorf("%s: owner and compatibilityNotes are required", manifest)
+		return fmt.Errorf("%s: owner and compatibilityNotes are required", manifest)
 	}
 	if pack.Compatibility.Config != "" {
 		if _, err := versionSatisfies(strconv.Itoa(CurrentVersion), pack.Compatibility.Config); err != nil {
-			return nil, fmt.Errorf("%s: invalid config compatibility: %w", manifest, err)
+			return fmt.Errorf("%s: invalid config compatibility: %w", manifest, err)
 		}
 	}
 	if pack.Compatibility.Hoolicy != "" {
 		if _, err := versionSatisfies("0.0.0", pack.Compatibility.Hoolicy); err != nil {
-			return nil, fmt.Errorf("%s: invalid Hoolicy compatibility: %w", manifest, err)
+			return fmt.Errorf("%s: invalid Hoolicy compatibility: %w", manifest, err)
 		}
 	}
 	if len(pack.Rules) == 0 {
-		return nil, fmt.Errorf("%s: at least one rule is required", manifest)
+		return fmt.Errorf("%s: at least one rule is required", manifest)
 	}
-	for name, parameter := range pack.Parameters {
+	return nil
+}
+
+func validatePackParameters(manifest string, parameters map[string]Parameter) error {
+	for _, name := range sortedMapKeys(parameters) {
+		parameter := parameters[name]
 		if !projectNamePattern.MatchString(name) {
-			return nil, fmt.Errorf("%s: invalid parameter name %s", manifest, name)
+			return fmt.Errorf("%s: invalid parameter name %s", manifest, name)
 		}
 		if strings.TrimSpace(parameter.Description) == "" || !parameterTypeMatches(parameter.Type, parameter.Default) && parameter.Default != nil {
-			return nil, fmt.Errorf("%s: parameter %s needs a description and a valid %s default", manifest, name, parameter.Type)
+			return fmt.Errorf("%s: parameter %s needs a description and a valid %s default", manifest, name, parameter.Type)
 		}
 		if parameter.Type != "string" && parameter.Type != "string_list" && parameter.Type != "bool" && parameter.Type != "number" {
-			return nil, fmt.Errorf("%s: parameter %s has unsupported type %s", manifest, name, parameter.Type)
+			return fmt.Errorf("%s: parameter %s has unsupported type %s", manifest, name, parameter.Type)
 		}
 	}
+	return nil
+}
+
+func validatePackRules(manifest string, pack *Pack) error {
 	seen := make(map[string]struct{})
 	for i, rule := range pack.Rules {
 		if problems := ValidateRule(rule); len(problems) > 0 {
-			return nil, fmt.Errorf("%s rules[%d]: %s", manifest, i, strings.Join(problems, "; "))
+			return fmt.Errorf("%s rules[%d]: %s", manifest, i, strings.Join(problems, "; "))
 		}
 		if _, exists := seen[rule.ID]; exists {
-			return nil, fmt.Errorf("%s: duplicate rule id %s", manifest, rule.ID)
+			return fmt.Errorf("%s: duplicate rule id %s", manifest, rule.ID)
 		}
 		if !strings.HasPrefix(rule.ID, pack.Name+".") {
-			return nil, fmt.Errorf("%s: rule id %s must use pack prefix %s", manifest, rule.ID, pack.Name+".")
+			return fmt.Errorf("%s: rule id %s must use pack prefix %s", manifest, rule.ID, pack.Name+".")
 		}
 		seen[rule.ID] = struct{}{}
 	}
-	return &pack, nil
+	return nil
 }
 
 func ValidatePackCompatibility(pack *Pack, toolVersion string) error {
@@ -727,18 +765,21 @@ func normalizeRangeVersion(value string) (string, error) {
 
 func (p *Pack) Instantiate(values map[string]any) ([]sdk.Rule, error) {
 	parameters := make(map[string]any, len(p.Parameters))
-	for name, definition := range p.Parameters {
+	for _, name := range sortedMapKeys(p.Parameters) {
+		definition := p.Parameters[name]
 		if definition.Default != nil {
 			parameters[name] = definition.Default
 		}
 	}
-	for name, value := range values {
+	for _, name := range sortedMapKeys(values) {
+		value := values[name]
 		if _, known := p.Parameters[name]; !known {
 			return nil, fmt.Errorf("pack %s: unknown parameter %s", p.Name, name)
 		}
 		parameters[name] = value
 	}
-	for name, definition := range p.Parameters {
+	for _, name := range sortedMapKeys(p.Parameters) {
+		definition := p.Parameters[name]
 		value, exists := parameters[name]
 		if definition.Required && !exists {
 			return nil, fmt.Errorf("pack %s: required parameter %s is missing", p.Name, name)
@@ -775,6 +816,15 @@ func (p *Pack) Instantiate(values map[string]any) ([]sdk.Rule, error) {
 		rules = append(rules, rule)
 	}
 	return rules, nil
+}
+
+func sortedMapKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func LoadLock(path string) (*Lock, error) {
@@ -1133,7 +1183,7 @@ func readPolicyFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	opened, err := file.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(opened, pathInfo) || opened.Size() > maxPolicyInputBytes {
 		return nil, fmt.Errorf("%s: policy input changed, is not regular, or exceeds %d bytes", path, maxPolicyInputBytes)
@@ -1142,8 +1192,8 @@ func readPolicyFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > maxPolicyInputBytes {
-		return nil, fmt.Errorf("%s: policy input exceeds %d bytes", path, maxPolicyInputBytes)
+	if len(data) > maxPolicyInputBytes || int64(len(data)) != opened.Size() {
+		return nil, fmt.Errorf("%s: policy input changed or exceeds %d bytes", path, maxPolicyInputBytes)
 	}
 	return data, nil
 }
@@ -1369,7 +1419,7 @@ func validateRelativePath(path string) error {
 	if strings.TrimSpace(path) != path || strings.ContainsAny(path, "\\\x00") {
 		return errors.New("path contains unsafe whitespace or NUL")
 	}
-	if filepath.IsAbs(path) || portableWindowsVolume(path) {
+	if strings.HasPrefix(path, "/") || filepath.IsAbs(path) || portableWindowsVolume(path) {
 		return errors.New("absolute paths are forbidden")
 	}
 	clean := filepath.Clean(filepath.FromSlash(path))
@@ -1533,16 +1583,13 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	temporaryName := temporary.Name()
 	defer os.Remove(temporaryName)
 	if err := temporary.Chmod(mode); err != nil {
-		temporary.Close()
-		return err
+		return errors.Join(err, temporary.Close())
 	}
 	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return err
+		return errors.Join(err, temporary.Close())
 	}
 	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
+		return errors.Join(err, temporary.Close())
 	}
 	if err := temporary.Close(); err != nil {
 		return err

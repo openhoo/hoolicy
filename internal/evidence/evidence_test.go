@@ -101,6 +101,20 @@ rules:
 	if err := evidence.Verify(project, loaded, current, ruleSet, now); err != nil {
 		t.Fatal(err)
 	}
+	storedFindings := loaded.Decision.Findings
+	currentFindings := current.Findings
+	invalidFinding := sdk.Finding{
+		RuleID: "demo.readme", Title: "README", Message: "invalid property", Remediation: "Add a reviewed README file.", Severity: sdk.SeverityError,
+		Fingerprint: strings.Repeat("c", 64), PolicyDigest: "sha256:" + strings.Repeat("d", 64), FindingDigest: "sha256:" + strings.Repeat("e", 64), State: sdk.FindingNew,
+		Properties: map[string]any{"channel": make(chan struct{})},
+	}
+	loaded.Decision.Findings = []sdk.Finding{invalidFinding}
+	current.Findings = []sdk.Finding{invalidFinding}
+	if err := evidence.Verify(project, loaded, current, ruleSet, now); err == nil || !strings.Contains(err.Error(), "encode JSON comparison") {
+		t.Fatalf("unencodable decision comparison accepted: %v", err)
+	}
+	loaded.Decision.Findings = storedFindings
+	current.Findings = currentFindings
 	loaded.Tool.Version = "forged"
 	if err := evidence.Verify(project, loaded, current, ruleSet, now); err == nil || !strings.Contains(err.Error(), "envelope") {
 		t.Fatalf("forged tool envelope accepted: %v", err)
@@ -183,6 +197,11 @@ func TestExternalAdaptersRequireSchemaAndDefinedSubjectBinding(t *testing.T) {
 	spec := evidence.ExternalSpec{ID: "unbound", Type: "cyclonedx", SHA256: sha(unbound), SubjectDigest: subject, RequiredProducer: "syft"}
 	if _, err := evidence.InspectExternalBytes(spec, unbound, now); err == nil || !strings.Contains(err.Error(), "subject") {
 		t.Fatalf("unbound subject text accepted: %v", err)
+	}
+	sarif := []byte(tests[0].body)
+	invalidAge := evidence.ExternalSpec{ID: "invalid-age", Type: "sarif", SHA256: sha(sarif), SubjectDigest: subject, RequiredProducer: "scanner", MaximumAge: "not-a-duration"}
+	if _, err := evidence.InspectExternalBytes(invalidAge, sarif, now); err == nil || !strings.Contains(err.Error(), "maximumAge") {
+		t.Fatalf("invalid maximumAge accepted: %v", err)
 	}
 }
 

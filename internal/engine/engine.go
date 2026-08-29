@@ -144,8 +144,14 @@ func (e *Engine) Validate(project *config.Project) ([]sdk.Rule, error) {
 }
 
 func (e *Engine) Check(ctx context.Context, project *config.Project, options Options) (*Report, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	rules, err := e.Validate(project)
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	digest, err := projectDigest(project, rules)
@@ -244,8 +250,8 @@ func (e *Engine) evaluate(ctx context.Context, project *config.Project, rules []
 			if !scope.global && !scope.packs[rule.Pack] {
 				continue
 			}
-			if err := totalContext.Err(); err != nil {
-				return nil, metrics, fmt.Errorf("total execution budget exceeded: %w", err)
+			if err := executionContextError(ctx, totalContext); err != nil {
+				return nil, metrics, err
 			}
 			inputHitsBefore := repositoryInputCacheHits(scope.repository)
 			inputs := len(scope.repository.AllFiles())
@@ -279,11 +285,11 @@ func (e *Engine) evaluate(ctx context.Context, project *config.Project, rules []
 				duration := time.Since(ruleStarted)
 				cancelRule()
 				metrics.Rules = append(metrics.Rules, RuleMetric{RuleID: rule.ID, Workspace: scope.name, Inputs: inputs, DurationMilliseconds: duration.Milliseconds()})
-				if errors.Is(totalContext.Err(), context.DeadlineExceeded) {
-					return nil, metrics, fmt.Errorf("total execution budget exceeded: %w", totalContext.Err())
-				}
 				if err := ctx.Err(); err != nil {
 					return nil, metrics, err
+				}
+				if errors.Is(totalContext.Err(), context.DeadlineExceeded) {
+					return nil, metrics, fmt.Errorf("total execution budget exceeded: %w", totalContext.Err())
 				}
 				return nil, metrics, fmt.Errorf("rule %s exceeded execution budget %s", rule.ID, ruleLimit)
 			}
@@ -316,10 +322,20 @@ func (e *Engine) evaluate(ctx context.Context, project *config.Project, rules []
 		}
 	}
 	metrics.DurationMilliseconds = time.Since(started).Milliseconds()
-	if err := totalContext.Err(); err != nil {
-		return nil, metrics, fmt.Errorf("total execution budget exceeded: %w", err)
+	if err := executionContextError(ctx, totalContext); err != nil {
+		return nil, metrics, err
 	}
 	return findings, metrics, nil
+}
+
+func executionContextError(parent, total context.Context) error {
+	if err := parent.Err(); err != nil {
+		return err
+	}
+	if err := total.Err(); err != nil {
+		return fmt.Errorf("total execution budget exceeded: %w", err)
+	}
+	return nil
 }
 
 func repositoryInputCacheHits(repo sdk.Repository) int {

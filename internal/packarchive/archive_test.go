@@ -4,8 +4,10 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -55,7 +57,7 @@ func TestExtractRejectsTraversalAndLinks(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		kind byte
-	}{{"../escape", tar.TypeReg}, {"dir/../../escape", tar.TypeReg}, {"/escape", tar.TypeReg}, {"C:/escape", tar.TypeReg}, {`C:\escape`, tar.TypeReg}, {"link", tar.TypeSymlink}} {
+	}{{"../escape", tar.TypeReg}, {"dir/../../escape", tar.TypeReg}, {"/escape", tar.TypeReg}, {"C:/escape", tar.TypeReg}, {`C:\escape`, tar.TypeReg}, {"link", tar.TypeSymlink}, {"legacy-regular", 0}} {
 		var data bytes.Buffer
 		gz := gzip.NewWriter(&data)
 		tw := tar.NewWriter(gz)
@@ -125,6 +127,52 @@ func TestBuildRejectsSymbolicLinks(t *testing.T) {
 	}
 	if _, _, err := Build(root); err == nil {
 		t.Fatal("archived symbolic link")
+	}
+}
+
+func TestMaximumContentSizeRoundTripsWithTarOverhead(t *testing.T) {
+	root := t.TempDir()
+	payload := make([]byte, MaxFileSize)
+	for index := 0; index < MaxTotalSize/MaxFileSize; index++ {
+		path := filepath.Join(root, "payload", fmt.Sprintf("%02d.bin", index))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, payload, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	archive, expectedDigest, err := Build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := Extract(archive, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if digest != expectedDigest {
+		t.Fatalf("digest = %s, want %s", digest, expectedDigest)
+	}
+}
+
+func TestBuildRejectsContentBeyondAggregateLimit(t *testing.T) {
+	root := t.TempDir()
+	payload := make([]byte, MaxFileSize)
+	for index := 0; index <= MaxTotalSize/MaxFileSize; index++ {
+		path := filepath.Join(root, fmt.Sprintf("%02d.bin", index))
+		if err := os.WriteFile(path, payload, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := Build(root); err == nil || !strings.Contains(err.Error(), "pack content exceeds") {
+		t.Fatalf("unexpected aggregate limit result: %v", err)
+	}
+}
+
+func TestBuildRejectsEmptyPack(t *testing.T) {
+	t.Parallel()
+	if _, _, err := Build(t.TempDir()); err == nil {
+		t.Fatal("built an archive that Extract would reject as empty")
 	}
 }
 

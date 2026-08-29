@@ -98,21 +98,11 @@ func BuildSnapshot(ctx context.Context, packPath string, registry *sdk.Registry)
 	}
 	snapshot := &Snapshot{Version: 1, Pack: pack.Name, Release: pack.Release, Cases: make([]SnapshotCase, 0, len(tests.Cases))}
 	for _, testCase := range tests.Cases {
-		rules, err := pack.Instantiate(merge(tests.Parameters, testCase.Parameters))
+		selected, err := instantiateRule(pack, merge(tests.Parameters, testCase.Parameters), testCase.Rule)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", testCase.Name, err)
 		}
-		var selected *sdk.Rule
-		for index := range rules {
-			if rules[index].ID == testCase.Rule {
-				selected = &rules[index]
-				break
-			}
-		}
-		if selected == nil {
-			return nil, fmt.Errorf("%s: unknown rule %s", testCase.Name, testCase.Rule)
-		}
-		result, runErr := runCase(ctx, *selected, testCase, registry)
+		result, runErr := runCase(ctx, selected, testCase, registry)
 		caseSnapshot := SnapshotCase{Name: testCase.Name, RuleID: testCase.Rule, Outcome: testCase.Outcome, Findings: make([]SnapshotFinding, 0)}
 		if runErr != nil {
 			caseSnapshot.Error = runErr.Error()
@@ -187,42 +177,13 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 		if testCase.Outcome != "error" {
 			coverage[testCase.Rule][testCase.Outcome] = true
 		}
-		parameters := merge(tests.Parameters, testCase.Parameters)
-		rules, instantiateErr := pack.Instantiate(parameters)
+		selected, instantiateErr := instantiateRule(pack, merge(tests.Parameters, testCase.Parameters), testCase.Rule)
 		if instantiateErr != nil {
 			result.Errors = append(result.Errors, testCase.Name+": "+instantiateErr.Error())
 			continue
 		}
-		var selected *sdk.Rule
-		for index := range rules {
-			if rules[index].ID == testCase.Rule {
-				selected = &rules[index]
-				break
-			}
-		}
-		if selected == nil {
-			result.Errors = append(result.Errors, testCase.Name+": unknown rule "+testCase.Rule)
-			continue
-		}
-		report, runErr := runCase(ctx, *selected, testCase, registry)
-		if testCase.Outcome == "error" {
-			if runErr == nil {
-				result.Errors = append(result.Errors, testCase.Name+": expected evaluation error")
-				continue
-			}
-			if testCase.ErrorContains != "" && !strings.Contains(runErr.Error(), testCase.ErrorContains) {
-				result.Errors = append(result.Errors, testCase.Name+": error does not contain "+testCase.ErrorContains+": "+runErr.Error())
-				continue
-			}
-			result.Passed++
-			continue
-		}
-		if runErr != nil {
-			result.Errors = append(result.Errors, testCase.Name+": "+runErr.Error())
-			continue
-		}
-		if assertionErr := assertFindings(*selected, testCase, report); assertionErr != nil {
-			result.Errors = append(result.Errors, testCase.Name+": "+assertionErr.Error())
+		if err := evaluateTestCase(ctx, selected, testCase, registry); err != nil {
+			result.Errors = append(result.Errors, testCase.Name+": "+err.Error())
 			continue
 		}
 		result.Passed++
@@ -236,50 +197,44 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 	return result
 }
 
+func instantiateRule(pack *config.Pack, parameters map[string]any, ruleID string) (sdk.Rule, error) {
+	rules, err := pack.Instantiate(parameters)
+	if err != nil {
+		return sdk.Rule{}, err
+	}
+	for _, rule := range rules {
+		if rule.ID == ruleID {
+			return rule, nil
+		}
+	}
+	return sdk.Rule{}, fmt.Errorf("unknown rule %s", ruleID)
+}
+
+func evaluateTestCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Registry) error {
+	report, runErr := runCase(ctx, rule, testCase, registry)
+	if testCase.Outcome == "error" {
+		if runErr == nil {
+			return fmt.Errorf("expected evaluation error")
+		}
+		if testCase.ErrorContains != "" && !strings.Contains(runErr.Error(), testCase.ErrorContains) {
+			return fmt.Errorf("error does not contain %s: %w", testCase.ErrorContains, runErr)
+		}
+		return nil
+	}
+	if runErr != nil {
+		return runErr
+	}
+	return assertFindings(rule, testCase, report)
+}
+
 func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Registry) (*engine.Report, error) {
 	root, err := os.MkdirTemp("", "hoolicy-policy-test-*")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(root)
-	for path, content := range testCase.Files {
-		clean, err := safeFixturePath(path)
-		if err != nil {
-			return nil, err
-		}
-		if reservedFixturePath(clean) {
-			return nil, fmt.Errorf("fixture path %s is reserved for the test harness", filepath.ToSlash(clean))
-		}
-		absolute := filepath.Join(root, clean)
-		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(absolute, []byte(content), 0o644); err != nil {
-			return nil, err
-		}
-	}
-	for path, documents := range testCase.Documents {
-		if _, exists := testCase.Files[path]; exists {
-			return nil, fmt.Errorf("fixture path %s is present in both files and documents", path)
-		}
-		clean, err := safeFixturePath(path)
-		if err != nil {
-			return nil, err
-		}
-		if reservedFixturePath(clean) {
-			return nil, fmt.Errorf("fixture path %s is reserved for the test harness", filepath.ToSlash(clean))
-		}
-		absolute := filepath.Join(root, clean)
-		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
-			return nil, err
-		}
-		content := strings.Join(documents, "\n---\n")
-		if !strings.HasSuffix(content, "\n") {
-			content += "\n"
-		}
-		if err := os.WriteFile(absolute, []byte(content), 0o644); err != nil {
-			return nil, err
-		}
+	if err := writeCaseFixtures(root, testCase); err != nil {
+		return nil, err
 	}
 	project := config.Project{Version: 1, Project: "fixture", FailOn: sdk.SeverityInfo, Rules: []sdk.Rule{rule}, Root: root, Path: filepath.Join(root, "hoolicy.yaml")}
 	if err := config.SaveProject(project.Path, project); err != nil {
@@ -298,26 +253,9 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 	if err != nil {
 		return nil, err
 	}
-	const fixtureCommit = "0000000000000000000000000000000000000001"
-	commit := fallback(testCase.Commit, fixtureCommit)
-	commits := testCase.Commits
-	if len(commits) == 0 {
-		commits = []sdk.Commit{{SHA: commit, Subject: "test: fixture"}}
-	}
-	gitContext := sdk.GitContext{
-		Branch: fallback(testCase.Branch, "main"), Commit: commit, Dirty: testCase.Dirty,
-		CommitSubjects: commits, MergeRequestTitle: testCase.MRTitle, Properties: testCase.GitProperties,
-	}
-	if gitContext.Properties == nil {
-		gitContext.Properties = make(map[string]any)
-	}
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	if testCase.Now != "" {
-		parsed, err := time.Parse(time.RFC3339, testCase.Now)
-		if err != nil {
-			return nil, fmt.Errorf("now must be RFC3339: %w", err)
-		}
-		now = parsed
+	gitContext, now, err := fixtureContext(testCase)
+	if err != nil {
+		return nil, err
 	}
 	report, err := engine.New(registry).Check(ctx, loaded, engine.Options{
 		Now: now, ToolVersion: "test", GitContext: &gitContext,
@@ -325,30 +263,105 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 	if err != nil {
 		return nil, err
 	}
-	if testCase.WaiveFindings {
-		fingerprints := make([]string, 0, len(report.Findings))
-		for _, finding := range report.Findings {
-			if finding.RuleID == rule.ID {
-				fingerprints = append(fingerprints, finding.Fingerprint)
-			}
-		}
-		if len(fingerprints) == 0 {
-			return nil, fmt.Errorf("waiveFindings requires at least one rule finding")
-		}
-		waiver := config.Waiver{ID: "fixture.waiver", Rule: rule.ID, Fingerprints: fingerprints, Reason: "Policy fixture verifies explicit waiver behavior.", Owner: "policy-test@example.com", Ticket: "https://issues.example.com/POLICY-1", Created: config.Date{Time: now.Add(-24 * time.Hour)}, Expires: config.Date{Time: now.Add(30 * 24 * time.Hour)}}
-		waiverPath := filepath.Join(root, config.DefaultWaivers)
-		if err := os.MkdirAll(filepath.Dir(waiverPath), 0o755); err != nil {
-			return nil, err
-		}
-		if err := config.SaveWaivers(waiverPath, config.WaiverFile{Version: config.CurrentVersion, Waivers: append(testCase.Waivers, waiver)}); err != nil {
-			return nil, err
-		}
-		report, err = engine.New(registry).Check(ctx, loaded, engine.Options{Now: now, ToolVersion: "test", GitContext: &gitContext})
-		if err != nil {
-			return nil, err
+	if !testCase.WaiveFindings {
+		return report, nil
+	}
+	return rerunWithFixtureWaiver(ctx, loaded, rule, testCase, report, registry, gitContext, now)
+}
+
+func writeCaseFixtures(root string, testCase Case) error {
+	filePaths := sortedFixturePaths(testCase.Files)
+	for _, path := range filePaths {
+		if err := writeFixture(root, path, testCase.Files[path]); err != nil {
+			return err
 		}
 	}
-	return report, nil
+	documentPaths := sortedFixturePaths(testCase.Documents)
+	for _, path := range documentPaths {
+		if _, exists := testCase.Files[path]; exists {
+			return fmt.Errorf("fixture path %s is present in both files and documents", path)
+		}
+		content := strings.Join(testCase.Documents[path], "\n---\n")
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		if err := writeFixture(root, path, content); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sortedFixturePaths[T any](files map[string]T) []string {
+	paths := make([]string, 0, len(files))
+	for path := range files {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func writeFixture(root, path, content string) error {
+	clean, err := safeFixturePath(path)
+	if err != nil {
+		return err
+	}
+	if reservedFixturePath(clean) {
+		return fmt.Errorf("fixture path %s is reserved for the test harness", filepath.ToSlash(clean))
+	}
+	absolute := filepath.Join(root, clean)
+	if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(absolute, []byte(content), 0o644)
+}
+
+func fixtureContext(testCase Case) (sdk.GitContext, time.Time, error) {
+	const fixtureCommit = "0000000000000000000000000000000000000001"
+	commit := fallback(testCase.Commit, fixtureCommit)
+	commits := testCase.Commits
+	if len(commits) == 0 {
+		commits = []sdk.Commit{{SHA: commit, Subject: "test: fixture"}}
+	}
+	properties := testCase.GitProperties
+	if properties == nil {
+		properties = make(map[string]any)
+	}
+	gitContext := sdk.GitContext{
+		Branch: fallback(testCase.Branch, "main"), Commit: commit, Dirty: testCase.Dirty,
+		CommitSubjects: commits, MergeRequestTitle: testCase.MRTitle, Properties: properties,
+	}
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if testCase.Now == "" {
+		return gitContext, now, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, testCase.Now)
+	if err != nil {
+		return sdk.GitContext{}, time.Time{}, fmt.Errorf("now must be RFC3339: %w", err)
+	}
+	return gitContext, parsed, nil
+}
+
+func rerunWithFixtureWaiver(ctx context.Context, project *config.Project, rule sdk.Rule, testCase Case, report *engine.Report, registry *sdk.Registry, gitContext sdk.GitContext, now time.Time) (*engine.Report, error) {
+	fingerprints := make([]string, 0, len(report.Findings))
+	for _, finding := range report.Findings {
+		if finding.RuleID == rule.ID {
+			fingerprints = append(fingerprints, finding.Fingerprint)
+		}
+	}
+	if len(fingerprints) == 0 {
+		return nil, fmt.Errorf("waiveFindings requires at least one rule finding")
+	}
+	waiver := config.Waiver{ID: "fixture.waiver", Rule: rule.ID, Fingerprints: fingerprints, Reason: "Policy fixture verifies explicit waiver behavior.", Owner: "policy-test@example.com", Ticket: "https://issues.example.com/POLICY-1", Created: config.Date{Time: now.Add(-24 * time.Hour)}, Expires: config.Date{Time: now.Add(30 * 24 * time.Hour)}}
+	waiverPath := filepath.Join(project.Root, config.DefaultWaivers)
+	if err := os.MkdirAll(filepath.Dir(waiverPath), 0o755); err != nil {
+		return nil, err
+	}
+	waivers := append(append([]config.Waiver(nil), testCase.Waivers...), waiver)
+	if err := config.SaveWaivers(waiverPath, config.WaiverFile{Version: config.CurrentVersion, Waivers: waivers}); err != nil {
+		return nil, err
+	}
+	return engine.New(registry).Check(ctx, project, engine.Options{Now: now, ToolVersion: "test", GitContext: &gitContext})
 }
 
 func assertFindings(rule sdk.Rule, testCase Case, report *engine.Report) error {
@@ -421,14 +434,22 @@ func fallback(value, defaultValue string) string {
 	return value
 }
 func safeFixturePath(path string) (string, error) {
-	if strings.TrimSpace(path) == "" || filepath.IsAbs(path) {
+	if strings.TrimSpace(path) == "" || strings.TrimSpace(path) != path || strings.HasPrefix(path, "/") || filepath.IsAbs(path) || fixtureWindowsVolume(path) || strings.ContainsAny(path, "\\\x00") {
 		return "", fmt.Errorf("fixture path must be relative")
 	}
-	clean := filepath.Clean(path)
+	portable := filepath.FromSlash(path)
+	clean := filepath.Clean(portable)
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("fixture path escapes root")
 	}
+	if clean != portable {
+		return "", fmt.Errorf("fixture path must be canonical")
+	}
 	return clean, nil
+}
+
+func fixtureWindowsVolume(path string) bool {
+	return len(path) >= 2 && path[1] == ':' && (path[0] >= 'A' && path[0] <= 'Z' || path[0] >= 'a' && path[0] <= 'z')
 }
 
 func reservedFixturePath(path string) bool {

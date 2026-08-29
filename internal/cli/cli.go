@@ -95,7 +95,7 @@ func (a application) run(ctx context.Context, args []string) int {
 	case "baseline":
 		return a.baseline(ctx, args[1:])
 	case "doctor":
-		return a.doctor(args[1:])
+		return a.doctor(ctx, args[1:])
 	case "report":
 		return a.report(args[1:])
 	case "fmt":
@@ -718,11 +718,16 @@ func (a application) serve(ctx context.Context, args []string) int {
 		return a.fail(err)
 	}
 	server := &http.Server{Addr: *listen, Handler: a.readOnlyHandler(project.Path), ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 5 * time.Minute, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
+	shutdownDone := make(chan struct{})
+	defer close(shutdownDone)
 	go func() {
-		<-ctx.Done()
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownContext)
+		select {
+		case <-ctx.Done():
+			shutdownContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = server.Shutdown(shutdownContext)
+		case <-shutdownDone:
+		}
 	}()
 	fmt.Fprintf(a.stdout, "Hoolicy read-only service listening on http://%s.\n", *listen)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -738,42 +743,50 @@ func (a application) readOnlyHandler(configPath string) http.Handler {
 		writer.WriteHeader(status)
 		_ = json.NewEncoder(writer).Encode(map[string]string{"error": err.Error()})
 	}
-	getOnly := func(handler func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
+	getOnly := func(handler func(*http.Request) (any, error)) http.HandlerFunc {
 		return func(writer http.ResponseWriter, request *http.Request) {
 			if request.Method != http.MethodGet {
 				jsonError(writer, http.StatusMethodNotAllowed, errors.New("read-only service accepts GET only"))
 				return
 			}
-			writer.Header().Set("Content-Type", "application/json")
-			if err := handler(writer, request); err != nil {
+			payload, err := handler(request)
+			if err != nil {
 				jsonError(writer, http.StatusInternalServerError, err)
+				return
 			}
+			data, err := json.Marshal(payload)
+			if err != nil {
+				jsonError(writer, http.StatusInternalServerError, fmt.Errorf("encode response: %w", err))
+				return
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write(append(data, '\n'))
 		}
 	}
-	mux.HandleFunc("/health", getOnly(func(writer http.ResponseWriter, _ *http.Request) error {
-		return json.NewEncoder(writer).Encode(map[string]string{"status": "ok"})
+	mux.HandleFunc("/health", getOnly(func(_ *http.Request) (any, error) {
+		return map[string]string{"status": "ok"}, nil
 	}))
-	mux.HandleFunc("/v1/check", getOnly(func(writer http.ResponseWriter, request *http.Request) error {
+	mux.HandleFunc("/v1/check", getOnly(func(request *http.Request) (any, error) {
 		project, err := config.LoadProject(configPath)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		decision, err := a.engine.Check(request.Context(), project, engine.Options{ToolVersion: a.info.Version})
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return json.NewEncoder(writer).Encode(decision)
+		return decision, nil
 	}))
-	mux.HandleFunc("/v1/inventory", getOnly(func(writer http.ResponseWriter, request *http.Request) error {
+	mux.HandleFunc("/v1/inventory", getOnly(func(request *http.Request) (any, error) {
 		project, err := config.LoadProject(configPath)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		inventory, err := a.buildInventory(request.Context(), project)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return json.NewEncoder(writer).Encode(inventory)
+		return inventory, nil
 	}))
 	return mux
 }
@@ -1263,7 +1276,7 @@ func short(value string) string {
 	return value
 }
 
-func (a application) doctor(args []string) int {
+func (a application) doctor(ctx context.Context, args []string) int {
 	flags := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
@@ -1290,7 +1303,7 @@ func (a application) doctor(args []string) int {
 	fmt.Fprintf(a.stdout, "OK packs-and-compatibility %d active rules; lock integrity verified\n", len(rules))
 	repo, err := repository.Open(project.Root, repository.Options{BaseSHA: *base})
 	if err != nil {
-		return a.fail(fmt.Errorf("Git context: %w", err))
+		return a.fail(fmt.Errorf("git context: %w", err))
 	}
 	git := repo.Git()
 	if git.Commit == "" {
@@ -1343,7 +1356,7 @@ func (a application) doctor(args []string) int {
 			fmt.Fprintf(a.stdout, "WARN ignored-target %s matches %s\n", path, strings.Join(ignoredTargets[path], ","))
 		}
 	}
-	if _, err := a.engine.Check(context.Background(), project, engine.Options{BaseSHA: *base, ToolVersion: a.info.Version}); err != nil {
+	if _, err := a.engine.Check(ctx, project, engine.Options{BaseSHA: *base, ToolVersion: a.info.Version}); err != nil {
 		if strings.Contains(err.Error(), "unsupported document format") {
 			return a.fail(fmt.Errorf("unsupported file types: %w", err))
 		}
@@ -1547,7 +1560,7 @@ func (a application) pack(ctx context.Context, args []string) int {
 		fmt.Fprintln(a.stdout, "Usage: hoolicy pack init|add|update|verify|snapshot|compare|publish|catalog")
 		return 0
 	case "init":
-		return a.packInit(args[1:])
+		return a.packInit(ctx, args[1:])
 	case "add":
 		return a.packAdd(args[1:])
 	case "update":
@@ -1853,7 +1866,7 @@ func sha256Digest(data []byte) string {
 	return "sha256:" + hex.EncodeToString(hash[:])
 }
 
-func (a application) packInit(args []string) int {
+func (a application) packInit(ctx context.Context, args []string) int {
 	flags := flag.NewFlagSet("pack init", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
 	name := flags.String("name", "", "lowercase pack name")
@@ -1941,7 +1954,7 @@ cases:
 	if _, err := config.LoadPack(directory); err != nil {
 		return a.fail(err)
 	}
-	result := policytest.Run(context.Background(), directory, a.registry)
+	result := policytest.Run(ctx, directory, a.registry)
 	if len(result.Errors) > 0 {
 		return a.fail(fmt.Errorf("generated pack tests failed: %s", strings.Join(result.Errors, "; ")))
 	}
@@ -2604,19 +2617,19 @@ func stageReportFile(path string, data []byte) (string, error) {
 	}
 	temporaryName := temporary.Name()
 	if err := temporary.Chmod(0o644); err != nil {
-		temporary.Close()
+		closeErr := temporary.Close()
 		_ = os.Remove(temporaryName)
-		return "", err
+		return "", errors.Join(err, closeErr)
 	}
 	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
+		closeErr := temporary.Close()
 		_ = os.Remove(temporaryName)
-		return "", err
+		return "", errors.Join(err, closeErr)
 	}
 	if err := temporary.Sync(); err != nil {
-		temporary.Close()
+		closeErr := temporary.Close()
 		_ = os.Remove(temporaryName)
-		return "", err
+		return "", errors.Join(err, closeErr)
 	}
 	if err := temporary.Close(); err != nil {
 		_ = os.Remove(temporaryName)

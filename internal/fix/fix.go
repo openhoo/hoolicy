@@ -173,62 +173,80 @@ func (p *Plan) Diff() string {
 	return output.String()
 }
 
-func (p *Plan) Apply() error {
+func (p *Plan) Apply() (resultErr error) {
 	stages := make([]stagedFile, 0, len(p.Files))
-	cleanup := func() {
-		for _, entry := range stages {
-			os.Remove(entry.temp)
+	defer func() {
+		if err := cleanupStagedTemps(stages); err != nil {
+			resultErr = errors.Join(resultErr, err)
 		}
-	}
-	defer cleanup()
+	}()
 	for _, file := range p.Files {
-		_, target, err := safePath(p.Root, file.Path)
+		stage, err := p.stageFile(file)
 		if err != nil {
 			return err
 		}
-		current, readErr := os.ReadFile(target)
-		if file.Exists && (readErr != nil || !bytes.Equal(current, file.Old)) {
-			return fmt.Errorf("%s changed after preview", file.Path)
-		}
-		if !file.Exists && !errors.Is(readErr, os.ErrNotExist) {
-			return fmt.Errorf("%s changed after preview", file.Path)
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		_, verifiedTarget, err := safePath(p.Root, file.Path)
-		if err != nil || verifiedTarget != target {
-			if err == nil {
-				err = fmt.Errorf("fix target changed after directory creation: %s", file.Path)
-			}
-			return err
-		}
-		temporary, err := os.CreateTemp(filepath.Dir(target), ".hoolicy-fix-*")
-		if err != nil {
-			return err
-		}
-		if err := temporary.Chmod(file.Mode); err != nil {
-			temporary.Close()
-			return err
-		}
-		if _, err := temporary.Write(file.New); err != nil {
-			temporary.Close()
-			return err
-		}
-		if err := temporary.Sync(); err != nil {
-			temporary.Close()
-			return err
-		}
-		if err := temporary.Close(); err != nil {
-			return err
-		}
-		backup, err := reserveName(filepath.Dir(target), ".hoolicy-backup-*")
-		if err != nil {
-			_ = os.Remove(temporary.Name())
-			return err
-		}
-		stages = append(stages, stagedFile{path: file.Path, target: target, temp: temporary.Name(), backup: backup, existed: file.Exists, old: append([]byte(nil), file.Old...)})
+		stages = append(stages, stage)
 	}
+	if err := p.installStages(stages); err != nil {
+		return err
+	}
+	if err := removeBackups(stages); err != nil {
+		return fmt.Errorf("fixes applied but backup cleanup failed: %w", err)
+	}
+	return nil
+}
+
+func (p *Plan) stageFile(file FilePlan) (stage stagedFile, resultErr error) {
+	_, target, err := safePath(p.Root, file.Path)
+	if err != nil {
+		return stage, err
+	}
+	current, readErr := os.ReadFile(target)
+	if file.Exists && (readErr != nil || !bytes.Equal(current, file.Old)) || !file.Exists && !errors.Is(readErr, os.ErrNotExist) {
+		return stage, fmt.Errorf("%s changed after preview", file.Path)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return stage, err
+	}
+	_, verifiedTarget, err := safePath(p.Root, file.Path)
+	if err != nil || verifiedTarget != target {
+		if err == nil {
+			err = fmt.Errorf("fix target changed after directory creation: %s", file.Path)
+		}
+		return stage, err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(target), ".hoolicy-fix-*")
+	if err != nil {
+		return stage, err
+	}
+	stage = stagedFile{path: file.Path, target: target, temp: temporary.Name(), existed: file.Exists, old: append([]byte(nil), file.Old...)}
+	defer func() {
+		if resultErr != nil {
+			if err := os.Remove(stage.temp); err != nil && !errors.Is(err, os.ErrNotExist) {
+				resultErr = errors.Join(resultErr, fmt.Errorf("remove staged fix %s: %w", stage.temp, err))
+			}
+		}
+	}()
+	if err := temporary.Chmod(file.Mode); err != nil {
+		return stage, errors.Join(err, temporary.Close())
+	}
+	if _, err := temporary.Write(file.New); err != nil {
+		return stage, errors.Join(err, temporary.Close())
+	}
+	if err := temporary.Sync(); err != nil {
+		return stage, errors.Join(err, temporary.Close())
+	}
+	if err := temporary.Close(); err != nil {
+		return stage, err
+	}
+	stage.backup, err = reserveName(filepath.Dir(target), ".hoolicy-backup-*")
+	if err != nil {
+		return stage, err
+	}
+	return stage, nil
+}
+
+func (p *Plan) installStages(stages []stagedFile) error {
 	for index, entry := range stages {
 		_, verifiedTarget, err := safePath(p.Root, entry.path)
 		if err != nil || verifiedTarget != entry.target {
@@ -247,27 +265,56 @@ func (p *Plan) Apply() error {
 			}
 		}
 		if err := os.Rename(entry.temp, entry.target); err != nil {
-			if entry.existed {
-				_ = os.Rename(entry.backup, entry.target)
-			}
-			return rollback(stages[:index], err)
+			return rollback(stages[:index+1], err)
 		}
 	}
+	return nil
+}
+
+func removeBackups(stages []stagedFile) error {
+	var cleanupErrors []error
 	for _, entry := range stages {
-		os.Remove(entry.backup)
+		if err := os.Remove(entry.backup); err != nil && !errors.Is(err, os.ErrNotExist) {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("remove recovery backup %s: %w", entry.backup, err))
+		}
+	}
+	if len(cleanupErrors) > 0 {
+		return errors.Join(cleanupErrors...)
 	}
 	return nil
 }
 
 func rollback(applied []stagedFile, cause error) error {
+	var failures []error
 	for index := len(applied) - 1; index >= 0; index-- {
 		entry := applied[index]
-		_ = os.Remove(entry.target)
+		if err := os.Remove(entry.target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			failures = append(failures, fmt.Errorf("remove partially applied %s: %w", entry.path, err))
+			continue
+		}
 		if entry.existed {
-			_ = os.Rename(entry.backup, entry.target)
+			if err := os.Rename(entry.backup, entry.target); err != nil {
+				failures = append(failures, fmt.Errorf("restore %s from %s: %w", entry.path, entry.backup, err))
+			}
 		}
 	}
+	if len(failures) > 0 {
+		return fmt.Errorf("%w; rollback failed: %v", cause, errors.Join(failures...))
+	}
 	return cause
+}
+
+func cleanupStagedTemps(stages []stagedFile) error {
+	var failures []error
+	for _, entry := range stages {
+		if err := os.Remove(entry.temp); err != nil && !errors.Is(err, os.ErrNotExist) {
+			failures = append(failures, fmt.Errorf("remove staged fix %s: %w", entry.temp, err))
+		}
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("fix staging cleanup failed: %w", errors.Join(failures...))
+	}
+	return nil
 }
 
 func reserveName(directory, pattern string) (string, error) {

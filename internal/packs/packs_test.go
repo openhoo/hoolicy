@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/openhoo/hoolicy/internal/config"
+	"github.com/openhoo/hoolicy/internal/packarchive"
 )
 
 func TestReleaseLessIncludesPrereleasePrecedence(t *testing.T) {
@@ -35,6 +36,19 @@ func TestDigestRejectsSymlinks(t *testing.T) {
 	}
 	if _, err := Digest(root); err == nil {
 		t.Fatal("expected symlink rejection")
+	}
+}
+
+func TestDigestEnforcesPackFileLimit(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "oversized.bin")
+	writePackFile(t, root, "oversized.bin", "")
+	if err := os.Truncate(path, packarchive.MaxFileSize+1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Digest(root); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized pack file accepted: %v", err)
 	}
 }
 

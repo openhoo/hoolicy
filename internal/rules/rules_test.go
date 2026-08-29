@@ -3,6 +3,7 @@ package rules
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,6 +94,34 @@ func TestSafeRelativeRulePathIsPortable(t *testing.T) {
 	}
 }
 
+func TestRepositoryRelativeReferenceIsPortable(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{"C:/outside", `C:\outside`, "/outside", `..\outside`, "../../../outside", " path"} {
+		if resolved, ok := repositoryRelativeReference("services/api/package.json", target); ok {
+			t.Fatalf("accepted unsafe target %q as %q", target, resolved)
+		}
+	}
+	for target, expected := range map[string]string{".": "services/api", "../shared": "services/shared", "../../package.json": "package.json"} {
+		if resolved, ok := repositoryRelativeReference("services/api/package.json", target); !ok || resolved != expected {
+			t.Fatalf("target %q resolved as %q, %t; want %q", target, resolved, ok, expected)
+		}
+	}
+}
+
+func TestLocalGoReplacementIsPortable(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{"./shared", "../shared", "/shared", "C:/shared", `C:\shared`, `..\shared`, `\\server\shared`} {
+		if !localGoReplacement(target) {
+			t.Fatalf("missed local Go replacement %q", target)
+		}
+	}
+	for _, target := range []string{"example.com/fork v1.2.3", "example.com/fork v1.2.3-0.20260101000000-abcdefabcdef"} {
+		if localGoReplacement(target) {
+			t.Fatalf("classified module replacement %q as local", target)
+		}
+	}
+}
+
 func TestReadPointerSupportsDocumentRoot(t *testing.T) {
 	t.Parallel()
 	value, err := readPointer(sdk.File{Path: "root.json", Data: []byte(`{"version":1}`)}, "", nil)
@@ -154,6 +183,46 @@ func TestCELProgramCacheConcurrent(t *testing.T) {
 	defer kind.compiler.mu.Unlock()
 	if len(kind.compiler.programs) != 1 {
 		t.Fatalf("expected one cached CEL program, got %d", len(kind.compiler.programs))
+	}
+}
+
+func TestCELLocationValueRejectsInvalidAndOverflowingCoordinates(t *testing.T) {
+	t.Parallel()
+	maximum := uint64(^uint(0) >> 1)
+	for _, test := range []struct {
+		name  string
+		value any
+		want  int
+	}{
+		{name: "missing", value: nil, want: 0},
+		{name: "int", value: int(7), want: 7},
+		{name: "int64", value: int64(8), want: 8},
+		{name: "uint64", value: uint64(9), want: 9},
+		{name: "float64", value: float64(10), want: 10},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := locationValue(test.value)
+			if err != nil || got != test.want {
+				t.Fatalf("locationValue(%v) = %d, %v; want %d", test.value, got, err, test.want)
+			}
+		})
+	}
+	for _, test := range []struct {
+		name  string
+		value any
+	}{
+		{name: "negative int", value: -1},
+		{name: "negative int64", value: int64(-1)},
+		{name: "overflowing uint64", value: maximum + 1},
+		{name: "fraction", value: 1.5},
+		{name: "infinity", value: math.Inf(1)},
+		{name: "wrong type", value: "12"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := locationValue(test.value); err == nil {
+				t.Fatalf("locationValue(%v) accepted invalid coordinate", test.value)
+			}
+		})
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -478,6 +479,22 @@ rules:
 	close(release)
 	if err == nil || !strings.Contains(err.Error(), "exceeded execution budget") || time.Since(started) > 500*time.Millisecond {
 		t.Fatalf("hard rule timeout failed after %s: %v", time.Since(started), err)
+	}
+}
+
+func TestCheckPreservesCallerCancellation(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	projectPath := filepath.Join(root, config.DefaultFilename)
+	writeEngineFile(t, projectPath, "version: 1\nproject: canceled\nrules: []\n")
+	project, err := config.LoadProject(projectPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := engine.New(sdk.NewRegistry()).Check(ctx, project, engine.Options{ToolVersion: "test"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("caller cancellation was hidden: %v", err)
 	}
 }
 

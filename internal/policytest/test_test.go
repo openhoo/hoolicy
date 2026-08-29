@@ -17,9 +17,17 @@ func TestBuiltInPacksHavePassingPositiveAndNegativeCases(t *testing.T) {
 	if err := rules.RegisterCore(registry); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"repository", "supply-chain", "product-quality"} {
+	packFiles, err := filepath.Glob(filepath.Join("..", "..", "packs", "*", "pack.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packFiles) == 0 {
+		t.Fatal("no built-in policy packs found")
+	}
+	for _, packFile := range packFiles {
+		name := filepath.Base(filepath.Dir(packFile))
 		t.Run(name, func(t *testing.T) {
-			result := Run(context.Background(), filepath.Join("..", "..", "packs", name), registry)
+			result := Run(context.Background(), filepath.Dir(packFile), registry)
 			if len(result.Errors) > 0 || result.Passed != result.Cases || result.Cases < 2 {
 				t.Fatalf("unexpected pack test result: %#v", result)
 			}
@@ -175,6 +183,20 @@ cases:
 	result := Run(context.Background(), root, registry)
 	if len(result.Errors) == 0 || !strings.Contains(strings.Join(result.Errors, "\n"), "reserved for the test harness") {
 		t.Fatalf("expected reserved fixture rejection, got %#v", result)
+	}
+}
+
+func TestFixturePathsArePortable(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{"C:/outside", `C:\outside`, "/outside", `..\outside`, "../outside", " path", "a/../b", "a/./b", "a//b"} {
+		if clean, err := safeFixturePath(path); err == nil {
+			t.Fatalf("accepted unsafe fixture path %q as %q", path, clean)
+		}
+	}
+	for _, path := range []string{"README.md", "fixtures/service/config.yaml"} {
+		if clean, err := safeFixturePath(path); err != nil || clean != filepath.FromSlash(path) {
+			t.Fatalf("rejected fixture path %q as %q: %v", path, clean, err)
+		}
 	}
 }
 

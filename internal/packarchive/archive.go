@@ -32,13 +32,28 @@ const (
 	MaxTotalSize   = 20 << 20
 )
 
+const maxTarSize = MaxTotalSize + MaxArchiveSize
+
+type archiveEntry struct {
+	name string
+	data []byte
+}
+
 func Build(root string) ([]byte, string, error) {
-	info, err := os.Lstat(root)
+	entries, err := readPackEntries(root)
 	if err != nil {
 		return nil, "", err
 	}
+	return canonicalArchive(entries)
+}
+
+func readPackEntries(root string) ([]archiveEntry, error) {
+	info, err := os.Lstat(root)
+	if err != nil {
+		return nil, err
+	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return nil, "", errors.New("pack root must be a real directory")
+		return nil, errors.New("pack root must be a real directory")
 	}
 	var names []string
 	err = filepath.WalkDir(root, func(candidate string, entry fs.DirEntry, walkErr error) error {
@@ -72,9 +87,67 @@ func Build(root string) ([]byte, string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	sort.Strings(names)
+	entries := make([]archiveEntry, 0, len(names))
+	var total int64
+	for _, name := range names {
+		data, err := readPackFile(root, name)
+		if err != nil {
+			return nil, err
+		}
+		total += int64(len(data))
+		if total > MaxTotalSize {
+			return nil, fmt.Errorf("pack content exceeds %d bytes", MaxTotalSize)
+		}
+		entries = append(entries, archiveEntry{name: name, data: data})
+	}
+	return entries, nil
+}
+
+func readPackFile(root, name string) ([]byte, error) {
+	_, absolute, err := safepath.Existing(root, name)
+	if err != nil {
+		return nil, err
+	}
+	pathInfo, err := os.Lstat(absolute)
+	if err != nil || pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("pack entry changed or is not regular: %s", name)
+	}
+	file, err := os.Open(absolute)
+	if err != nil {
+		return nil, err
+	}
+	opened, statErr := file.Stat()
+	currentInfo, pathErr := os.Lstat(absolute)
+	if statErr != nil || pathErr != nil || currentInfo.Mode()&os.ModeSymlink != 0 || !opened.Mode().IsRegular() || !os.SameFile(opened, currentInfo) || opened.Size() > MaxFileSize {
+		_ = file.Close()
+		return nil, fmt.Errorf("pack entry changed or exceeds limits: %s", name)
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, MaxFileSize+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if len(data) > MaxFileSize || int64(len(data)) != opened.Size() {
+		return nil, fmt.Errorf("pack entry changed or exceeds limits: %s", name)
+	}
+	return data, nil
+}
+
+func canonicalArchive(entries []archiveEntry) ([]byte, string, error) {
+	if len(entries) == 0 {
+		return nil, "", errors.New("pack archive is empty")
+	}
+	if len(entries) > MaxFiles {
+		return nil, "", fmt.Errorf("pack exceeds %d files", MaxFiles)
+	}
+	entries = append([]archiveEntry(nil), entries...)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 	var output bytes.Buffer
 	gzipWriter, err := gzip.NewWriterLevel(&output, gzip.BestCompression)
 	if err != nil {
@@ -84,45 +157,26 @@ func Build(root string) ([]byte, string, error) {
 	gzipWriter.Header.OS = 255
 	tarWriter := tar.NewWriter(gzipWriter)
 	var total int64
-	for _, name := range names {
-		_, absolute, err := safepath.Existing(root, name)
+	for index, entry := range entries {
+		name, err := safeArchivePath(entry.name)
 		if err != nil {
 			return nil, "", err
 		}
-		info, err := os.Lstat(absolute)
-		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			return nil, "", fmt.Errorf("pack entry changed or is not regular: %s", name)
+		if index > 0 && entries[index-1].name == name {
+			return nil, "", fmt.Errorf("duplicate archive path %s", name)
 		}
-		file, err := os.Open(absolute)
-		if err != nil {
-			return nil, "", err
+		if len(entry.data) > MaxFileSize {
+			return nil, "", fmt.Errorf("pack file exceeds %d bytes: %s", MaxFileSize, name)
 		}
-		opened, statErr := file.Stat()
-		pathInfo, pathErr := os.Lstat(absolute)
-		if statErr != nil || pathErr != nil || pathInfo.Mode()&os.ModeSymlink != 0 || !opened.Mode().IsRegular() || !os.SameFile(opened, pathInfo) || opened.Size() > MaxFileSize {
-			_ = file.Close()
-			return nil, "", fmt.Errorf("pack entry changed or exceeds limits: %s", name)
-		}
-		data, readErr := io.ReadAll(io.LimitReader(file, MaxFileSize+1))
-		closeErr := file.Close()
-		if readErr != nil {
-			return nil, "", readErr
-		}
-		if closeErr != nil {
-			return nil, "", closeErr
-		}
-		if len(data) > MaxFileSize || int64(len(data)) != opened.Size() {
-			return nil, "", fmt.Errorf("pack entry changed or exceeds limits: %s", name)
-		}
-		total += int64(len(data))
+		total += int64(len(entry.data))
 		if total > MaxTotalSize {
 			return nil, "", fmt.Errorf("pack content exceeds %d bytes", MaxTotalSize)
 		}
-		header := &tar.Header{Name: name, Mode: 0o644, Size: int64(len(data)), ModTime: time.Unix(0, 0).UTC(), AccessTime: time.Time{}, ChangeTime: time.Time{}, Typeflag: tar.TypeReg, Format: tar.FormatPAX}
+		header := &tar.Header{Name: name, Mode: 0o644, Size: int64(len(entry.data)), ModTime: time.Unix(0, 0).UTC(), AccessTime: time.Time{}, ChangeTime: time.Time{}, Typeflag: tar.TypeReg, Format: tar.FormatPAX}
 		if err := tarWriter.WriteHeader(header); err != nil {
 			return nil, "", err
 		}
-		if _, err := tarWriter.Write(data); err != nil {
+		if _, err := tarWriter.Write(entry.data); err != nil {
 			return nil, "", err
 		}
 	}
@@ -161,14 +215,35 @@ func Extract(data []byte, target string) (string, error) {
 	if len(entries) != 0 {
 		return "", errors.New("pack extraction target must be empty")
 	}
-	gzipReader, err := gzip.NewReader(bytes.NewReader(data))
+	archiveEntries, err := parseArchive(data)
 	if err != nil {
 		return "", err
 	}
-	defer gzipReader.Close()
-	tarReader := tar.NewReader(io.LimitReader(gzipReader, MaxTotalSize+1))
+	canonical, digest, err := canonicalArchive(archiveEntries)
+	if err != nil {
+		return "", err
+	}
+	if !bytes.Equal(canonical, data) {
+		return "", errors.New("pack archive is not in canonical Hoolicy format")
+	}
+	for _, entry := range archiveEntries {
+		if err := writeExtractedEntry(target, entry); err != nil {
+			return "", err
+		}
+	}
+	return digest, nil
+}
+
+func parseArchive(data []byte) ([]archiveEntry, error) {
+	gzipReader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = gzipReader.Close() }()
+	limited := &io.LimitedReader{R: gzipReader, N: maxTarSize + 1}
+	tarReader := tar.NewReader(limited)
 	seen := make(map[string]bool)
-	count := 0
+	entries := make([]archiveEntry, 0)
 	var total int64
 	for {
 		header, err := tarReader.Next()
@@ -176,76 +251,81 @@ func Extract(data []byte, target string) (string, error) {
 			break
 		}
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		count++
-		if count > MaxFiles {
-			return "", fmt.Errorf("pack exceeds %d files", MaxFiles)
+		if len(entries) == MaxFiles {
+			return nil, fmt.Errorf("pack exceeds %d files", MaxFiles)
 		}
 		name, err := safeArchivePath(header.Name)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if seen[name] {
-			return "", fmt.Errorf("duplicate archive path %s", name)
+			return nil, fmt.Errorf("duplicate archive path %s", name)
 		}
 		seen[name] = true
-		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
-			return "", fmt.Errorf("archive entry %s is not a regular file", name)
+		if header.Typeflag != tar.TypeReg {
+			return nil, fmt.Errorf("archive entry %s is not a regular file", name)
 		}
 		if header.Size < 0 || header.Size > MaxFileSize {
-			return "", fmt.Errorf("archive entry %s has invalid size", name)
+			return nil, fmt.Errorf("archive entry %s has invalid size", name)
 		}
 		total += header.Size
 		if total > MaxTotalSize {
-			return "", fmt.Errorf("pack content exceeds %d bytes", MaxTotalSize)
+			return nil, fmt.Errorf("pack content exceeds %d bytes", MaxTotalSize)
 		}
-		destination := filepath.Join(target, filepath.FromSlash(name))
-		if !strings.HasPrefix(destination, filepath.Clean(target)+string(os.PathSeparator)) {
-			return "", fmt.Errorf("archive entry escapes extraction target: %s", name)
+		body := make([]byte, int(header.Size))
+		if _, err := io.ReadFull(tarReader, body); err != nil {
+			return nil, fmt.Errorf("read archive entry %s: %w", name, err)
 		}
-		_, checkedDestination, err := safepath.Writable(target, name)
-		if err != nil {
-			return "", err
-		}
-		if checkedDestination != destination {
-			return "", fmt.Errorf("archive entry resolves ambiguously: %s", name)
-		}
-		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
-			return "", err
-		}
-		if _, checked, err := safepath.Writable(target, name); err != nil || checked != destination {
-			return "", fmt.Errorf("unsafe extraction destination %s", name)
-		}
-		file, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err != nil {
-			return "", err
-		}
-		_, copyErr := io.CopyN(file, tarReader, header.Size)
-		closeErr := file.Close()
-		if copyErr != nil {
-			return "", copyErr
-		}
-		if closeErr != nil {
-			return "", closeErr
-		}
+		entries = append(entries, archiveEntry{name: name, data: body})
 	}
-	if count == 0 {
-		return "", errors.New("pack archive is empty")
+	if len(entries) == 0 {
+		return nil, errors.New("pack archive is empty")
 	}
-	canonical, canonicalDigest, err := Build(target)
+	if _, err := io.Copy(io.Discard, limited); err != nil {
+		return nil, err
+	}
+	if limited.N == 0 {
+		return nil, fmt.Errorf("pack tar stream exceeds %d bytes", maxTarSize)
+	}
+	return entries, nil
+}
+
+func writeExtractedEntry(target string, entry archiveEntry) error {
+	destination := filepath.Join(target, filepath.FromSlash(entry.name))
+	if !strings.HasPrefix(destination, filepath.Clean(target)+string(os.PathSeparator)) {
+		return fmt.Errorf("archive entry escapes extraction target: %s", entry.name)
+	}
+	_, checkedDestination, err := safepath.Writable(target, entry.name)
 	if err != nil {
-		return "", err
+		return err
 	}
-	if !bytes.Equal(canonical, data) {
-		return "", errors.New("pack archive is not in canonical Hoolicy format")
+	if checkedDestination != destination {
+		return fmt.Errorf("archive entry resolves ambiguously: %s", entry.name)
 	}
-	hash := sha256.Sum256(data)
-	digest := "sha256:" + hex.EncodeToString(hash[:])
-	if digest != canonicalDigest {
-		return "", errors.New("canonical pack digest mismatch")
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return err
 	}
-	return digest, nil
+	if _, checked, err := safepath.Writable(target, entry.name); err != nil || checked != destination {
+		return fmt.Errorf("unsafe extraction destination %s", entry.name)
+	}
+	file, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	written, writeErr := file.Write(entry.data)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if written != len(entry.data) {
+		return io.ErrShortWrite
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return nil
 }
 
 func safeArchivePath(name string) (string, error) {
