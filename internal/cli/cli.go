@@ -1337,7 +1337,11 @@ func (a application) doctor(ctx context.Context, args []string) int {
 			if matchErr != nil {
 				return a.fail(matchErr)
 			}
-			if matched {
+			excluded, matchErr := repository.Matches(ignoredPath, rule.Exclude)
+			if matchErr != nil {
+				return a.fail(matchErr)
+			}
+			if matched && !excluded {
 				ignoredTargets[ignoredPath] = append(ignoredTargets[ignoredPath], rule.ID)
 			}
 		}

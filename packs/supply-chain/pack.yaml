@@ -41,6 +41,22 @@ rules:
       - '**/*.{json,yaml,yml}'
     exclude:
       - '.hoolicy/vendor/**'
+      - '.cache/**'
+      - '.next/**'
+      - '.hooversion/**'
+      - '**/BenchmarkDotNet.Artifacts/**'
+      - '**/bin/**'
+      - '**/node_modules/**'
+      - '**/obj/**'
+      - '**/test-results/**'
+      - 'BenchmarkDotNet.Artifacts/**'
+      - 'build/**'
+      - 'charts/**/templates/**'
+      - 'coverage/**'
+      - 'dist/**'
+      - 'gitleaks-report.json'
+      - 'node_modules/**'
+      - 'target/**'
     spec:
       registries: "{{ registries }}"
       npm: "{{ npm_registries }}"

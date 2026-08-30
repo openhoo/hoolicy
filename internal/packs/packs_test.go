@@ -85,12 +85,16 @@ rules:
 	}}}); err != nil {
 		t.Fatal(err)
 	}
+	writePackFile(t, root, ".hoolicy/vendor/stale/pack.yaml", "stale")
 	lock, err := UpdateLock(project, []string{"demo"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(lock.Packs) != 1 || len(lock.Packs[0].Commit) != 40 {
 		t.Fatalf("unexpected lock: %#v", lock)
+	}
+	if _, err := os.Lstat(filepath.Join(root, ".hoolicy", "vendor", "stale")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale vendor survived lock pruning: %v", err)
 	}
 	rules, err := Resolve(project)
 	if err != nil {
@@ -136,6 +140,24 @@ func TestUpdateLockValidatesSelectionBeforeSync(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(project.Root, config.DefaultLockfile)); !os.IsNotExist(err) {
 		t.Fatalf("selection validation should not touch lockfile, got %v", err)
 	}
+}
+
+func TestUpdateLockRefusesNonCanonicalStaleVendorPath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writePackFile(t, root, "README.md", "keep")
+	lock := config.Lock{Version: 1, Packs: []config.LockedPack{{
+		Name: "stale", Git: "https://example.com/policy.git", Ref: "v1.0.0",
+		Commit: strings.Repeat("a", 40), Digest: "sha256:" + strings.Repeat("b", 64), Vendor: "README.md",
+	}}}
+	if err := config.SaveLock(filepath.Join(root, config.DefaultLockfile), lock); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{Version: 1, Project: "consumer", Root: root}
+	if _, err := UpdateLock(project, nil); err == nil || !strings.Contains(err.Error(), "non-canonical vendor path") {
+		t.Fatalf("unsafe stale vendor path accepted: %v", err)
+	}
+	assertPackFile(t, filepath.Join(root, "README.md"), "keep")
 }
 
 func TestUpdateLockRejectsDowngradeBeforeMutatingVendorOrLock(t *testing.T) {
@@ -282,13 +304,24 @@ func TestInstallAcquiredRollsBackAllVendorsWhenLockCommitFails(t *testing.T) {
 	writePackFile(t, firstStage, "value.txt", "first-new")
 	writePackFile(t, secondStage, "value.txt", "second-new")
 	packs := []*acquiredPack{{staged: firstStage, vendor: firstVendor}, {staged: secondStage, vendor: secondVendor}}
-	if err := installAcquired(packs, func() error { return errors.New("lock commit failed") }); err == nil || !strings.Contains(err.Error(), "lock commit failed") {
+	if err := installAcquired(packs, nil, func() error { return errors.New("lock commit failed") }); err == nil || !strings.Contains(err.Error(), "lock commit failed") {
 		t.Fatalf("commit failure ignored: %v", err)
 	}
 	assertPackFile(t, filepath.Join(firstVendor, "value.txt"), "first-old")
 	if _, err := os.Lstat(secondVendor); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("new vendor survived rollback: %v", err)
 	}
+}
+
+func TestInstallAcquiredRestoresRemovedVendorsWhenLockCommitFails(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	vendor := filepath.Join(root, "vendor", "stale")
+	writePackFile(t, vendor, "value.txt", "old")
+	if err := installAcquired(nil, []string{vendor}, func() error { return errors.New("lock commit failed") }); err == nil || !strings.Contains(err.Error(), "lock commit failed") {
+		t.Fatalf("commit failure ignored: %v", err)
+	}
+	assertPackFile(t, filepath.Join(vendor, "value.txt"), "old")
 }
 
 func writePackFile(t *testing.T, root, path, body string) {

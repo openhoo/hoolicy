@@ -242,7 +242,7 @@ func Sync(project *config.Project, name string, toolVersions ...string) (config.
 		return config.LockedPack{}, err
 	}
 	defer acquired.cleanup()
-	if err := installAcquired([]*acquiredPack{acquired}, nil); err != nil {
+	if err := installAcquired([]*acquiredPack{acquired}, nil, nil); err != nil {
 		return config.LockedPack{}, err
 	}
 	return acquired.locked, nil
@@ -439,10 +439,31 @@ func UpdateLock(project *config.Project, names []string, toolVersions ...string)
 		return nil, err
 	}
 	byName := make(map[string]config.LockedPack)
+	staleVendors := make([]string, 0)
 	for _, entry := range lock.Packs {
 		if remote[entry.Name] {
 			byName[entry.Name] = entry
+			continue
 		}
+		expected := filepath.ToSlash(filepath.Join(".hoolicy", "vendor", entry.Name))
+		if entry.Vendor != expected {
+			return nil, fmt.Errorf("stale pack %s has non-canonical vendor path %s", entry.Name, entry.Vendor)
+		}
+		_, vendor, err := safepath.Existing(project.Root, entry.Vendor)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("stale pack %s vendor: %w", entry.Name, err)
+		}
+		info, err := os.Lstat(vendor)
+		if err != nil {
+			return nil, err
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("stale pack %s vendor is not a directory", entry.Name)
+		}
+		staleVendors = append(staleVendors, vendor)
 	}
 	acquired := make([]*acquiredPack, 0, len(names))
 	defer func() {
@@ -466,7 +487,7 @@ func UpdateLock(project *config.Project, names []string, toolVersions ...string)
 	for _, entry := range byName {
 		lock.Packs = append(lock.Packs, entry)
 	}
-	if err := installAcquired(acquired, func() error { return config.SaveLock(lockPath, *lock) }); err != nil {
+	if err := installAcquired(acquired, staleVendors, func() error { return config.SaveLock(lockPath, *lock) }); err != nil {
 		return nil, err
 	}
 	return lock, nil
@@ -478,8 +499,14 @@ type installedPack struct {
 	installed bool
 }
 
-func installAcquired(packs []*acquiredPack, commit func() error) error {
+type removedPack struct {
+	vendor string
+	backup string
+}
+
+func installAcquired(packs []*acquiredPack, removals []string, commit func() error) error {
 	states := make([]installedPack, 0, len(packs))
+	removed := make([]removedPack, 0, len(removals))
 	rollback := func(cause error) error {
 		var failures []string
 		for index := len(states) - 1; index >= 0; index-- {
@@ -496,10 +523,29 @@ func installAcquired(packs []*acquiredPack, commit func() error) error {
 				}
 			}
 		}
+		for index := len(removed) - 1; index >= 0; index-- {
+			state := removed[index]
+			if err := os.Rename(state.backup, state.vendor); err != nil {
+				failures = append(failures, fmt.Sprintf("restore removed %s from %s: %v", state.vendor, state.backup, err))
+			}
+		}
 		if len(failures) > 0 {
 			return fmt.Errorf("%w; rollback failed: %s", cause, strings.Join(failures, "; "))
 		}
 		return cause
+	}
+	for _, vendor := range removals {
+		reserved, err := os.MkdirTemp(filepath.Dir(vendor), "."+filepath.Base(vendor)+"-removed-*")
+		if err != nil {
+			return rollback(err)
+		}
+		if err := os.Remove(reserved); err != nil {
+			return rollback(err)
+		}
+		if err := os.Rename(vendor, reserved); err != nil {
+			return rollback(err)
+		}
+		removed = append(removed, removedPack{vendor: vendor, backup: reserved})
 	}
 	for _, pack := range packs {
 		state := installedPack{pack: pack}
@@ -534,6 +580,11 @@ func installAcquired(packs []*acquiredPack, commit func() error) error {
 			if err := os.RemoveAll(state.backup); err != nil {
 				return fmt.Errorf("installed packs but could not remove recovery backup %s: %w", state.backup, err)
 			}
+		}
+	}
+	for _, state := range removed {
+		if err := os.RemoveAll(state.backup); err != nil {
+			return fmt.Errorf("removed stale pack but could not remove recovery backup %s: %w", state.backup, err)
 		}
 	}
 	return nil

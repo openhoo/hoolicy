@@ -1,0 +1,22 @@
+name: Setup Hoolicy
+description: Download a verified Hoolicy release binary and add it to PATH.
+inputs:
+  version:
+    description: Hoolicy release version to install.
+    required: false
+    default: "0.2.2"
+outputs:
+  version:
+    description: Hoolicy version configured by this action.
+    value: ${{ steps.install.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - name: Download and install Hoolicy
+      id: install
+      shell: bash
+      env:
+        HOOLICY_VERSION: ${{ inputs.version }}
+        RUNNER_OS_VALUE: ${{ runner.os }}
+        RUNNER_ARCH_VALUE: ${{ runner.arch }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
