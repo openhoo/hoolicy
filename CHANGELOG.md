@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.4 (2026-08-30)
+
+### Bug Fixes
+
+- **license:** include complete Apache-2.0 terms (#9) (7f3a1d4)
+
+### Other Changes
+
+- standardize Hoostack dogfood (#8) (c7cd89e)
+
 ## 0.2.3 (2026-08-30)
 
 ### Bug Fixes
