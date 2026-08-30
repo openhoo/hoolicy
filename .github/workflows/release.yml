@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  HOOVERSION_VERSION: 1.0.1
+  HOOVERSION_VERSION: 1.0.2
 
 jobs:
   release:
@@ -48,7 +48,7 @@ jobs:
           cache: true
       - name: Set up Hooversion
         if: inputs.rebuild_tag == ''
-        uses: openhoo/hooversion/actions/setup@2f977d9c91d98d800cac6557fa170cf1a7fccd39 # v1.0.1
+        uses: openhoo/hooversion/actions/setup@57471be6e07c7bc1d6db07e3a3364cc25c710414 # v1.0.2
         with:
           version: ${{ env.HOOVERSION_VERSION }}
       - name: Configure release git author

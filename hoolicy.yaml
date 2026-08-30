@@ -14,8 +14,21 @@ packs:
   - name: supply-chain
     path: packs/supply-chain
     with:
-      registries: [docker.io, ghcr.io, registry.example.com]
+      registries: [docker.io, ghcr.io, gcr.io, mcr.microsoft.com, quay.io, registry.example.com]
       npm_registries: ['https://registry.npmjs.org']
       nuget_sources: ['https://api.nuget.org/v3/index.json']
       require_image_digests: false
-rules: []
+rules:
+  - id: repository.required-files
+    title: Repository has required public documentation
+    description: Requires entry-point, license, and vulnerability-reporting documents.
+    rationale: Every Hoostack repository needs the same discoverable public contract.
+    remediation: Add reviewed README.md, LICENSE, and SECURITY.md files.
+    severity: error
+    kind: files
+    files: [README.md, LICENSE, SECURITY.md]
+    spec:
+      mode: count
+      minimum: 3
+      maximum: 3
+      message: README.md, LICENSE, and SECURITY.md are required

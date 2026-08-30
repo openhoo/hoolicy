@@ -1,0 +1,85 @@
+name: Check with Hoolicy
+description: Install Hoolicy, diagnose its inputs, and enforce repository policy.
+inputs:
+  version:
+    description: Hoolicy release version to install.
+    required: false
+    default: "0.2.2"
+  executable:
+    description: Optional Hoolicy executable path; skips release installation when set.
+    required: false
+    default: ""
+  working-directory:
+    description: Repository directory where Hoolicy should run.
+    required: false
+    default: "."
+  config:
+    description: Hoolicy configuration path, relative to the working directory.
+    required: false
+    default: "hoolicy.yaml"
+  base:
+    description: Optional base revision for full-repository comparison and Git naming checks.
+    required: false
+    default: ""
+  merge-request-title:
+    description: Optional pull-request title for Git naming checks.
+    required: false
+    default: ""
+  format:
+    description: Hoolicy report format.
+    required: false
+    default: "text"
+  output:
+    description: Optional report output path.
+    required: false
+    default: ""
+  doctor:
+    description: Run hoolicy doctor before the policy check.
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Set up Hoolicy
+      if: ${{ inputs.executable == '' }}
+      shell: bash
+      env:
+        HOOLICY_VERSION: ${{ inputs.version }}
+        RUNNER_OS_VALUE: ${{ runner.os }}
+        RUNNER_ARCH_VALUE: ${{ runner.arch }}
+      run: bash "$GITHUB_ACTION_PATH/../setup/install.sh"
+
+    - name: Diagnose and check repository policy
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        HOOLICY_ACTION_BASE: ${{ inputs.base || github.event.pull_request.base.sha }}
+        HOOLICY_ACTION_CONFIG: ${{ inputs.config }}
+        HOOLICY_ACTION_DOCTOR: ${{ inputs.doctor }}
+        HOOLICY_ACTION_EXECUTABLE: ${{ inputs.executable }}
+        HOOLICY_ACTION_FORMAT: ${{ inputs.format }}
+        HOOLICY_ACTION_MERGE_REQUEST_TITLE: ${{ inputs.merge-request-title || github.event.pull_request.title }}
+        HOOLICY_ACTION_OUTPUT: ${{ inputs.output }}
+      run: |
+        set -euo pipefail
+
+        hoolicy_command=(hoolicy)
+        if [[ -n "$HOOLICY_ACTION_EXECUTABLE" ]]; then
+          hoolicy_command=("$HOOLICY_ACTION_EXECUTABLE")
+        fi
+        common=(--config "$HOOLICY_ACTION_CONFIG")
+        if [[ -n "$HOOLICY_ACTION_BASE" ]]; then
+          common+=(--base "$HOOLICY_ACTION_BASE")
+        fi
+        if [[ "$HOOLICY_ACTION_DOCTOR" == true ]]; then
+          "${hoolicy_command[@]}" doctor "${common[@]}"
+        fi
+
+        args=("${common[@]}" --format "$HOOLICY_ACTION_FORMAT")
+        if [[ -n "$HOOLICY_ACTION_MERGE_REQUEST_TITLE" ]]; then
+          args+=(--merge-request-title "$HOOLICY_ACTION_MERGE_REQUEST_TITLE")
+        fi
+        if [[ -n "$HOOLICY_ACTION_OUTPUT" ]]; then
+          args+=(--output "$HOOLICY_ACTION_OUTPUT")
+        fi
+        "${hoolicy_command[@]}" check "${args[@]}"

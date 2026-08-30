@@ -659,16 +659,18 @@ rules:
     remediation: Stop ignoring the policy input.
     severity: error
     kind: files
-    files: [ignored.json]
+    files: [ignored.json, excluded.json]
+    exclude: [excluded.json]
     spec: {mode: require, message: ignored.json required}
 `)
-	writeCLIFile(t, filepath.Join(root, ".gitignore"), "ignored.json\n")
+	writeCLIFile(t, filepath.Join(root, ".gitignore"), "ignored.json\nexcluded.json\n")
 	writeCLIFile(t, filepath.Join(root, "ignored.json"), "{}\n")
+	writeCLIFile(t, filepath.Join(root, "excluded.json"), "{}\n")
 	runCLICommand(t, root, "git", "add", config.DefaultFilename, ".gitignore")
 	runCLICommand(t, root, "git", "commit", "-qm", "test: doctor")
 	t.Setenv("GITHUB_EVENT_NAME", "pull_request")
 	app, stdout, stderr := testApplication(t)
-	if code := app.run(context.Background(), []string{"doctor", "--config", configPath}); code != 1 || !strings.Contains(stdout.String(), "WARN ci-base-revision missing") || !strings.Contains(stdout.String(), "WARN ignored-target ignored.json") {
+	if code := app.run(context.Background(), []string{"doctor", "--config", configPath}); code != 1 || !strings.Contains(stdout.String(), "WARN ci-base-revision missing") || !strings.Contains(stdout.String(), "WARN ignored-target ignored.json") || strings.Contains(stdout.String(), "WARN ignored-target excluded.json") {
 		t.Fatalf("doctor code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
