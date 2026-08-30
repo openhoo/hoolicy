@@ -60,9 +60,6 @@ jobs:
     name: Policy and quality
     needs: commitlint
     runs-on: ubuntu-latest
-    env:
-      HOOLICY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      HOOLICY_MERGE_REQUEST_TITLE: ${{ github.event.pull_request.title }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,6 +81,9 @@ jobs:
           go test ./sdk -run TestStableContractGoldenDigests -count=1
           go test ./internal/engine -run '^$' -bench 'BenchmarkEngine(SmallRepository|Check|LargeMonorepo|AdversarialLimit)$' -benchtime=1x
       - name: Build and dogfood
+        env:
+          HOOLICY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HOOLICY_MERGE_REQUEST_TITLE: ${{ github.event.pull_request.title }}
         run: |
           mkdir -p dist
           go build -trimpath -o dist/hoolicy ./cmd/hoolicy
