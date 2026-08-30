@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 (2026-08-30)
+
+### Bug Fixes
+
+- **packs:** make Hoostack dogfood reliable (d30dbe7)
+- **ci:** isolate dogfood comparison inputs (7db27da)
+
 ## 0.2.2 (2026-08-29)
 
 ### Bug Fixes
