@@ -82,6 +82,8 @@ type ControlRecord struct {
 
 const MaxEvidenceFileSize int64 = 64 << 20
 
+const vsaPredicateType = "https://slsa.dev/verification_summary/v1"
+
 var exactSHA256 = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 var exactGitRevision = regexp.MustCompile(`^[0-9a-f]{40}(?:[0-9a-f]{24})?$`)
 var exactFingerprint = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -736,6 +738,21 @@ func validateProvenance(object map[string]any) error {
 			return errors.New("each in-toto subject requires a digest")
 		}
 	}
+	if stringAt(object, "predicateType") == vsaPredicateType {
+		predicate, _ := objectAt(object, "predicate")
+		verifier, verifierOK := objectAt(predicate, "verifier")
+		policy, policyOK := objectAt(predicate, "policy")
+		_, levelsOK := predicate["verifiedLevels"].([]any)
+		result := stringAt(predicate, "verificationResult")
+		if !verifierOK || stringAt(verifier, "id") == "" || stringAt(predicate, "resourceUri") == "" ||
+			!policyOK || stringAt(policy, "uri") == "" || !levelsOK || stringAt(predicate, "slsaVersion") == "" ||
+			(result != "PASSED" && result != "FAILED") {
+			return errors.New("SLSA VSA requires verifier, resourceUri, policy, verificationResult, verifiedLevels, and slsaVersion")
+		}
+		if _, err := time.Parse(time.RFC3339, stringAt(predicate, "timeVerified")); err != nil {
+			return errors.New("SLSA VSA timeVerified must be RFC3339")
+		}
+	}
 	return nil
 }
 
@@ -828,6 +845,10 @@ func jsonProducerMatches(kind string, object map[string]any, producer string) bo
 		}
 	case "provenance":
 		predicate, _ := objectAt(object, "predicate")
+		if stringAt(object, "predicateType") == vsaPredicateType {
+			verifier, _ := objectAt(predicate, "verifier")
+			return stringAt(verifier, "id") == producer
+		}
 		builder, _ := objectAt(predicate, "builder")
 		if stringAt(builder, "id") == producer {
 			return true
@@ -865,6 +886,10 @@ func jsonTimestamp(kind string, object map[string]any) time.Time {
 		value = stringAt(creation, "created")
 	case "provenance":
 		predicate, _ := objectAt(object, "predicate")
+		if stringAt(object, "predicateType") == vsaPredicateType {
+			value = stringAt(predicate, "timeVerified")
+			break
+		}
 		metadata, _ := objectAt(predicate, "metadata")
 		value = stringAt(metadata, "buildFinishedOn")
 		if value == "" {
@@ -929,6 +954,12 @@ func jsonMetrics(kind string, value any) map[string]int {
 		metrics["items"] = len(objectsAt(object, "packages")) + len(objectsAt(object, "files"))
 	case "provenance":
 		list = object["subject"]
+		if stringAt(object, "predicateType") == vsaPredicateType {
+			predicate, _ := objectAt(object, "predicate")
+			if stringAt(predicate, "verificationResult") != "PASSED" {
+				metrics["failures"] = 1
+			}
+		}
 	}
 	if values, ok := list.([]any); ok {
 		metrics["items"] = len(values)

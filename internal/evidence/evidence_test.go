@@ -180,6 +180,7 @@ func TestExternalAdaptersRequireSchemaAndDefinedSubjectBinding(t *testing.T) {
 		{"spdx-relationship", "spdx", "syft", `{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"demo","dataLicense":"CC0-1.0","documentNamespace":"https://example.invalid/spdx/demo","creationInfo":{"created":"2026-08-28T11:30:00Z","creators":["Tool: syft-1.0"]},"relationships":[{"spdxElementId":"SPDXRef-DOCUMENT","relationshipType":"DESCRIBES","relatedSpdxElement":"SPDXRef-Package"}],"packages":[{"SPDXID":"SPDXRef-Package","name":"demo","checksums":[{"algorithm":"SHA256","checksumValue":"` + hexSubject + `"}]}]}`, 1},
 		{"spdx-file", "spdx", "syft", `{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"demo","dataLicense":"CC0-1.0","documentNamespace":"https://example.invalid/spdx/file","creationInfo":{"created":"2026-08-28T11:30:00Z","creators":["Tool: syft-1.0"]},"relationships":[{"spdxElementId":"SPDXRef-DOCUMENT","relationshipType":"DESCRIBES","relatedSpdxElement":"SPDXRef-File"}],"files":[{"SPDXID":"SPDXRef-File","fileName":"demo","checksums":[{"algorithm":"SHA256","checksumValue":"` + hexSubject + `"}]}]}`, 1},
 		{"provenance", "provenance", "https://builder.example", `{"_type":"https://in-toto.io/Statement/v1","subject":[{"name":"artifact","digest":{"sha256":"` + hexSubject + `"}}],"predicateType":"https://slsa.dev/provenance/v1","predicate":{"builder":{"id":"https://builder.example"},"metadata":{"buildFinishedOn":"2026-08-28T11:30:00Z"}}}`, 1},
+		{"vsa", "provenance", "https://verifier.example/v1", `{"_type":"https://in-toto.io/Statement/v1","subject":[{"name":"artifact","digest":{"sha256":"` + hexSubject + `"}}],"predicateType":"https://slsa.dev/verification_summary/v1","predicate":{"verifier":{"id":"https://verifier.example/v1"},"timeVerified":"2026-08-28T11:30:00Z","resourceUri":"https://example.invalid/releases/v1","policy":{"uri":"https://policy.example/v1"},"verificationResult":"PASSED","verifiedLevels":[],"slsaVersion":"1.2"}}`, 1},
 		{"junit", "junit", "runner", `<testsuites tests="1" failures="0" timestamp="2026-08-28T11:30:00Z"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/><property name="hoolicy.producer" value="runner"/></properties><testsuite tests="1" failures="0"/></testsuites>`, 1},
 	}
 	for _, test := range tests {
@@ -202,6 +203,11 @@ func TestExternalAdaptersRequireSchemaAndDefinedSubjectBinding(t *testing.T) {
 	invalidAge := evidence.ExternalSpec{ID: "invalid-age", Type: "sarif", SHA256: sha(sarif), SubjectDigest: subject, RequiredProducer: "scanner", MaximumAge: "not-a-duration"}
 	if _, err := evidence.InspectExternalBytes(invalidAge, sarif, now); err == nil || !strings.Contains(err.Error(), "maximumAge") {
 		t.Fatalf("invalid maximumAge accepted: %v", err)
+	}
+	failedVSA := []byte(strings.Replace(tests[6].body, `"verificationResult":"PASSED"`, `"verificationResult":"FAILED"`, 1))
+	failedSpec := evidence.ExternalSpec{ID: "failed-vsa", Type: "provenance", SHA256: sha(failedVSA), SubjectDigest: subject, RequiredProducer: "https://verifier.example/v1"}
+	if _, err := evidence.InspectExternalBytes(failedSpec, failedVSA, now); err == nil || !strings.Contains(err.Error(), "failures") {
+		t.Fatalf("failed VSA accepted: %v", err)
 	}
 }
 

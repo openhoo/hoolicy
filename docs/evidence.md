@@ -30,7 +30,12 @@ Subject and producer binding is field-specific; a matching string in an unrelate
 - SARIF uses `runs[].properties["hoolicy.subjectDigest"]`, `tool.driver.name` or `fullName`, and invocation `endTimeUtc` (or `hoolicy.generatedAt`).
 - CycloneDX uses `metadata.component.hashes`, `metadata.tools`, and `metadata.timestamp`.
 - SPDX uses a SHA-256 checksum on an element named by `documentDescribes`, `creationInfo.creators`, and `creationInfo.created`.
-- in-toto uses `subject[].digest.sha256`, the predicate builder ID, and a predicate completion timestamp.
+- in-toto provenance uses `subject[].digest.sha256`, the predicate builder ID,
+  and a predicate completion timestamp. SLSA Verification Summary Attestations
+  additionally require their defined verifier, resource, policy, result,
+  levels, SLSA version, and verification timestamp fields; producer binding
+  uses `verifier.id`, freshness uses `timeVerified`, and `FAILED` counts as a
+  failure.
 - JUnit uses explicit `hoolicy.subjectDigest` and `hoolicy.producer` properties plus the suite timestamp.
 
 Adapters validate required structural fields before applying subject, producer, freshness, and threshold policy. They do not claim full conformance certification for every optional field in the upstream format.
