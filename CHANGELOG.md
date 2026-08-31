@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 (2026-08-31)
+
+### Features
+
+- **evidence:** consume SLSA verification summaries (#15) (c95b4c0)
+
 ## 0.2.5 (2026-08-31)
 
 ### Bug Fixes
