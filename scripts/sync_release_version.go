@@ -42,6 +42,23 @@ func syncReleaseVersion(root string) error {
 		return err
 	}
 
+	for _, path := range []string{
+		filepath.Join(root, "actions", "setup", "action.yml"),
+		filepath.Join(root, "actions", "check", "action.yml"),
+	} {
+		if err := updateFile(path, []replacement{
+			{regexp.MustCompile(`(?m)^(    default: ")[0-9]+\.[0-9]+\.[0-9]+("\s*)$`), "${1}" + version + "${2}"},
+		}); err != nil {
+			return err
+		}
+	}
+
+	if err := updateFile(filepath.Join(root, "actions", "README.md"), []replacement{
+		{regexp.MustCompile(`(?m)^(    version: )[0-9]+\.[0-9]+\.[0-9]+(\s*)$`), "${1}" + version + "${2}"},
+	}); err != nil {
+		return err
+	}
+
 	return updateFile(filepath.Join(root, "SECURITY.md"), []replacement{
 		{regexp.MustCompile("(?m)^([^\\r\\n]*latest `)v[0-9]+\\.[0-9]+\\.x(` release[^\\r\\n]*)$"), "${1}v" + majorMinor + ".x${2}"},
 	})

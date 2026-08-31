@@ -17,6 +17,9 @@ func TestSyncReleaseVersion(t *testing.T) {
 		"v1.0.0 stays unchanged",
 	}, "\n"))
 	writeTestFile(t, root, "SECURITY.md", "Security fixes target the latest `v0.1.x` release.\n")
+	writeTestFile(t, root, "actions/setup/action.yml", "inputs:\n  version:\n    default: \"0.1.1\"\n")
+	writeTestFile(t, root, "actions/check/action.yml", "inputs:\n  version:\n    default: \"0.1.1\"\n")
+	writeTestFile(t, root, "actions/README.md", "with:\n    version: 0.1.1\n")
 
 	if err := syncReleaseVersion(root); err != nil {
 		t.Fatal(err)
@@ -32,6 +35,12 @@ func TestSyncReleaseVersion(t *testing.T) {
 	if !strings.Contains(security, "latest `v2.3.x` release") {
 		t.Fatalf("SECURITY.md not updated:\n%s", security)
 	}
+	for _, name := range []string{"actions/setup/action.yml", "actions/check/action.yml", "actions/README.md"} {
+		content := readTestFile(t, root, name)
+		if !strings.Contains(content, "2.3.4") {
+			t.Fatalf("%s not updated:\n%s", name, content)
+		}
+	}
 }
 
 func TestSyncReleaseVersionRejectsInvalidVersion(t *testing.T) {
@@ -44,7 +53,11 @@ func TestSyncReleaseVersionRejectsInvalidVersion(t *testing.T) {
 
 func writeTestFile(t *testing.T, root, name, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+	path := filepath.Join(root, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
