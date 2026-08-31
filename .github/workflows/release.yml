@@ -20,21 +20,21 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  HOOVERSION_VERSION: 1.0.6
+  HOOVERSION_VERSION: 1.0.7
 
 jobs:
   release:
     name: Hooversion release
     if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && !contains(github.event.workflow_run.head_commit.message, 'chore(release):')) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main') ||
       (github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
-      published: ${{ steps.rebuild.outputs.published || steps.release.outputs.published }}
-      version: ${{ steps.rebuild.outputs.version || steps.release.outputs.version }}
-      tag: ${{ steps.rebuild.outputs.tag || steps.release.outputs.tag }}
+      published: ${{ steps.rebuild.outputs.published || steps.finalize.outputs.published }}
+      version: ${{ steps.rebuild.outputs.version || steps.finalize.outputs.version }}
+      tag: ${{ steps.rebuild.outputs.tag || steps.finalize.outputs.tag }}
     steps:
       - name: Checkout validated revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,22 +46,25 @@ jobs:
         with:
           go-version: '1.26.x'
           cache: true
-      - name: Set up Hooversion
-        if: inputs.rebuild_tag == ''
-        uses: openhoo/hooversion/actions/setup@528576f6fbc6136ec5f76ac53bf81d3e04aca4b3 # v1.0.6
+      - name: Prepare protected-branch release
+        if: >-
+          inputs.rebuild_tag == '' &&
+          (github.event_name == 'workflow_dispatch' || !startsWith(github.event.workflow_run.head_commit.message, 'chore(release):'))
+        uses: openhoo/hooversion/actions/prepare-release@d536bb45b5c2dbf9a17c866c0fe48f54216a1673 # v1.0.7
         with:
           version: ${{ env.HOOVERSION_VERSION }}
-      - name: Configure release git author
-        if: inputs.rebuild_tag == ''
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - name: Release
-        id: release
-        if: inputs.rebuild_tag == ''
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: hooversion release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Finalize protected-branch release
+        id: finalize
+        if: >-
+          inputs.rebuild_tag == '' &&
+          github.event_name == 'workflow_run' &&
+          startsWith(github.event.workflow_run.head_commit.message, 'chore(release):')
+        uses: openhoo/hooversion/actions/release@d536bb45b5c2dbf9a17c866c0fe48f54216a1673 # v1.0.7
+        with:
+          version: ${{ env.HOOVERSION_VERSION }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Resolve rebuild target
         id: rebuild
         if: inputs.rebuild_tag != ''

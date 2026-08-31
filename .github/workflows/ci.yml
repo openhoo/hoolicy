@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  HOOVERSION_VERSION: 1.0.6
+  HOOVERSION_VERSION: 1.0.7
 
 jobs:
   commitlint:
@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Set up Hooversion
-        uses: openhoo/hooversion/actions/setup@528576f6fbc6136ec5f76ac53bf81d3e04aca4b3 # v1.0.6
+        uses: openhoo/hooversion/actions/setup@d536bb45b5c2dbf9a17c866c0fe48f54216a1673 # v1.0.7
         with:
           version: ${{ env.HOOVERSION_VERSION }}
       - name: Lint commits
