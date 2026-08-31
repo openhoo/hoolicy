@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  HOOVERSION_VERSION: 1.0.3
+  HOOVERSION_VERSION: 1.0.6
 
 jobs:
   commitlint:
@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Set up Hooversion
-        uses: openhoo/hooversion/actions/setup@4aa43b4d775c7b03d196b06381013f4601467c57 # v1.0.3
+        uses: openhoo/hooversion/actions/setup@528576f6fbc6136ec5f76ac53bf81d3e04aca4b3 # v1.0.6
         with:
           version: ${{ env.HOOVERSION_VERSION }}
       - name: Lint commits
@@ -99,22 +99,32 @@ jobs:
         with:
           executable: ./dist/hoolicy
       - name: Scan with Hooray
-        uses: openhoo/hooray/actions/scan@d06c0948b4747995e2ef755cb6260d07f75c1b14 # v0.6.2
+        uses: openhoo/hooray/actions/scan@5446c51a79d115048601d3f42d6a9127b49fb322 # v0.6.3
         with:
-          version: 0.6.2
+          version: 0.6.3
           policy: hooray-policy.yaml
           format: table
           output: ""
       - name: Analyze with Hoonarqube
-        uses: openhoo/hoonarqube/actions/analyze@79e847af3edebc70685aaf90d3db7cdfcb557e97 # v0.2.2
+        uses: openhoo/hoonarqube/actions/analyze@0ed50de75e6e8c097c44e6b50a16f6d8817acedf # v0.2.3
         with:
-          version: 0.2.2
+          version: 0.2.3
           paths: |
             cmd
             internal
             sdk
           output: ${{ runner.temp }}/hoonarqube.json
           fail-on: none
+
+      - name: Set up HooNeedsUpdates
+        uses: openhoo/hooneedsupdates/actions/setup@4a833fd00dafc8fb017d5cabec0c38dddba4bc70 # v0.1.1
+        with:
+          version: 0.1.1
+
+      - name: Audit dependency freshness
+        run: hooneedsupdates scan --fail-on unresolved .
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Validate JSON schemas
         run: jq empty schemas/*.json schemas/v1/*.json
       - name: Reproducible cross-platform archives

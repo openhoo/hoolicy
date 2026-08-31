@@ -5,7 +5,7 @@ Use immutable action revisions in consuming repositories.
 ```yaml
 - uses: openhoo/hoolicy/actions/check@<full-commit-sha>
   with:
-    version: 0.2.2
+    version: 0.2.4
 ```
 
 `actions/setup` downloads the release archive and `SHA256SUMS`, verifies the

@@ -91,7 +91,6 @@ func TestCommandsRejectUnexpectedArguments(t *testing.T) {
 		{"list", "--config", path, "extra"},
 	}
 	for _, args := range tests {
-		args := args
 		t.Run(args[0], func(t *testing.T) {
 			app, _, stderr := testApplication(t)
 			if code := app.run(context.Background(), args); code != 2 || !strings.Contains(stderr.String(), "does not accept positional arguments") {
@@ -115,7 +114,6 @@ func TestCommandHelpExitsSuccessfully(t *testing.T) {
 		{"pack", "-h"}, {"pack", "init", "-h"}, {"pack", "add", "-h"}, {"pack", "update", "-h"}, {"pack", "verify", "-h"}, {"pack", "snapshot", "-h"}, {"pack", "compare", "-h"}, {"pack", "catalog", "-h"}, {"pack", "catalog", "publish", "-h"}, {"pack", "catalog", "pull", "-h"}, {"pack", "catalog", "verify", "-h"}, {"pack", "catalog", "resolve", "-h"},
 	}
 	for _, args := range commands {
-		args := args
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			app, _, stderr := testApplication(t)
 			if code := app.run(context.Background(), args); code != 0 {
