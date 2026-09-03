@@ -24,6 +24,7 @@ type Options struct {
 	Now               time.Time
 	BaseSHA           string
 	MergeRequestTitle string
+	Branch            string
 	ToolVersion       string
 	GitContext        *sdk.GitContext
 }
@@ -162,7 +163,7 @@ func (e *Engine) Check(ctx context.Context, project *config.Project, options Opt
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	repo, err := repository.Open(project.Root, repository.Options{BaseSHA: options.BaseSHA, MergeRequestTitle: options.MergeRequestTitle, GitContext: options.GitContext})
+	repo, err := repository.Open(project.Root, repository.Options{BaseSHA: options.BaseSHA, MergeRequestTitle: options.MergeRequestTitle, Branch: options.Branch, GitContext: options.GitContext})
 	if err != nil {
 		return nil, err
 	}
@@ -673,6 +674,12 @@ func sortFindings(findings []sdk.Finding) {
 		}
 		return left.Fingerprint < right.Fingerprint
 	})
+}
+
+// ProjectDigest computes the policy identity for a validated active rule set.
+// Callers that need the active rules should obtain them through Validate first.
+func ProjectDigest(project *config.Project, rules []sdk.Rule) (string, error) {
+	return projectDigest(project, rules)
 }
 
 func projectDigest(project *config.Project, rules []sdk.Rule) (string, error) {

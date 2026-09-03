@@ -10,6 +10,86 @@
       "findings": []
     },
     {
+      "name": "bounded Compose build with pinned image passes",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "build-only Compose service keeps runtime checks without image policy",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs a non-root user and read_only filesystem",
+          "key": "service:app:security",
+          "fingerprint": "01ac9c2a66c089ac38e7f0cce71d8aa06f4a3ae4c20744d721da184c04f9abca",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs CPU and memory limits",
+          "key": "service:app:limits",
+          "fingerprint": "4a032ccdc152ed0c038d28f8384f66ca39c02e297288afbf79052fa510ad7450",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "mapping build-only Compose service fails image policy",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs a non-root user and read_only filesystem",
+          "key": "service:app:security",
+          "fingerprint": "01ac9c2a66c089ac38e7f0cce71d8aa06f4a3ae4c20744d721da184c04f9abca",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs CPU and memory limits",
+          "key": "service:app:limits",
+          "fingerprint": "4a032ccdc152ed0c038d28f8384f66ca39c02e297288afbf79052fa510ad7450",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app image is unverifiable because it is built locally",
+          "key": "service:app:image",
+          "fingerprint": "ec5cb06129ff5498a56249968b2763b44f426d26abb2c293b3e9cf738247bc19",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
       "name": "malformed Compose YAML fails closed",
       "ruleId": "deployment-invariants.compose",
       "outcome": "error",
@@ -126,6 +206,49 @@
           "line": 1,
           "column": 1,
           "message": "Deployment violates reviewed image, resource, or security invariants: registry docker.io is not allowed",
+          "key": "service:app:image",
+          "fingerprint": "ec5cb06129ff5498a56249968b2763b44f426d26abb2c293b3e9cf738247bc19",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "string build-only Compose service fails all policies",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs a non-root user and read_only filesystem",
+          "key": "service:app:security",
+          "fingerprint": "01ac9c2a66c089ac38e7f0cce71d8aa06f4a3ae4c20744d721da184c04f9abca",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs CPU and memory limits",
+          "key": "service:app:limits",
+          "fingerprint": "4a032ccdc152ed0c038d28f8384f66ca39c02e297288afbf79052fa510ad7450",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app image is unverifiable because it is built locally",
           "key": "service:app:image",
           "fingerprint": "ec5cb06129ff5498a56249968b2763b44f426d26abb2c293b3e9cf738247bc19",
           "waived": false,

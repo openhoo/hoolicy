@@ -20,6 +20,8 @@ type ciWorkflowSpec struct {
 
 var fullCommitRef = regexp.MustCompile(`^[0-9a-f]{40}$`)
 var sha256Ref = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+var untrustedGitHubExpression = regexp.MustCompile(`\$\{\{\s*github\s*(?:(?:\.\s*event|\[\s*['"]event['"]\s*\])(?:\s*(?:\.\s*[A-Za-z0-9_-]+|\[\s*['"][A-Za-z0-9_-]+['"]\s*\]))+|\.\s*head_ref\b)`)
+var untrustedPullRequestExpression = regexp.MustCompile(`github\s*\.\s*(?:event\s*\.\s*pull_request\s*\.\s*head|head_ref)\b`)
 
 func (CIWorkflowSecurity) Validate(rule sdk.Rule) error {
 	if err := requireFiles(rule); err != nil {
@@ -114,7 +116,13 @@ func inspectGitHubWorkflow(rule sdk.Rule, path string, root map[string]any, allo
 			add("Job "+jobName+" must be an object", "job:"+jobName+":invalid")
 			continue
 		}
-		_, reusableWorkflow := job["uses"].(string)
+		uses, reusableWorkflow := job["uses"].(string)
+		if reusableWorkflow && !strings.HasPrefix(uses, "./.github/workflows/") {
+			_, ref, found := strings.Cut(uses, "@")
+			if !found || !fullCommitRef.MatchString(ref) {
+				add("Reusable workflow "+uses+" is not pinned to an immutable commit", "job:"+jobName+":uses")
+			}
+		}
 		if requireTimeout && !reusableWorkflow {
 			if _, exists := job["timeout-minutes"]; !exists {
 				add("Job "+jobName+" has no timeout-minutes", "job:"+jobName+":timeout")
@@ -147,7 +155,7 @@ func inspectGitHubWorkflow(rule sdk.Rule, path string, root map[string]any, allo
 					add("pull_request_target checks out untrusted pull-request code", fmt.Sprintf("job:%s:step:%d:privileged-checkout", jobName, index))
 				}
 			}
-			if script, ok := step["run"].(string); ok && (strings.Contains(script, "${{ github.event.") || strings.Contains(script, "${{ github.head_ref")) {
+			if script, ok := step["run"].(string); ok && untrustedGitHubExpression.MatchString(script) {
 				add("Run script interpolates untrusted GitHub event data directly", fmt.Sprintf("job:%s:step:%d:interpolation", jobName, index))
 			}
 		}
@@ -236,7 +244,7 @@ func inspectGitLabWorkflow(rule sdk.Rule, path string, root map[string]any, requ
 func containsUntrustedPullRequestValue(value any) bool {
 	switch current := value.(type) {
 	case string:
-		return strings.Contains(current, "github.event.pull_request.head") || strings.Contains(current, "github.head_ref")
+		return untrustedPullRequestExpression.MatchString(current)
 	case map[string]any:
 		for _, child := range current {
 			if containsUntrustedPullRequestValue(child) {

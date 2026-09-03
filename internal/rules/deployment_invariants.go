@@ -156,10 +156,21 @@ func inspectComposeDeployment(rule sdk.Rule, path string, root map[string]any, s
 			continue
 		}
 		image, _ := service["image"].(string)
-		if image == "" {
+		buildService := false
+		switch build := service["build"].(type) {
+		case string:
+			buildService = strings.TrimSpace(build) != ""
+		case map[string]any:
+			buildService = true
+		}
+		if image == "" && !buildService {
 			continue
 		}
-		if problem := deploymentImageProblem(image, spec); problem != "" {
+		if image == "" {
+			if spec.RequireImmutableImages || len(spec.ApprovedRegistries) > 0 {
+				findings = append(findings, finding(rule, message+": service "+name+" image is unverifiable because it is built locally", path, "service:"+name+":image", 1, 1))
+			}
+		} else if problem := deploymentImageProblem(image, spec); problem != "" {
 			findings = append(findings, finding(rule, message+": "+problem, path, "service:"+name+":image", 1, 1))
 		}
 		if spec.RequireResourceLimits {

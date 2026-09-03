@@ -39,11 +39,26 @@ else
 fi
 
 base_url="https://github.com/openhoo/hoolicy/releases/download/v${version}"
+signature_identity="https://github.com/openhoo/hoolicy/.github/workflows/release.yml@refs/heads/main"
+signature_issuer="https://token.actions.githubusercontent.com"
 download_dir="$(mktemp -d "${RUNNER_TEMP}/hoolicy-download.XXXXXXXX")"
 archive="${download_dir}/${archive_name}"
 checksums="${download_dir}/SHA256SUMS"
+archive_bundle="${archive}.sigstore.json"
+checksums_bundle="${checksums}.sigstore.json"
 curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 --output "$archive" "${base_url}/${archive_name}"
 curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 --output "$checksums" "${base_url}/SHA256SUMS"
+curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 --output "$archive_bundle" "${base_url}/${archive_name}.sigstore.json"
+curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 --output "$checksums_bundle" "${base_url}/SHA256SUMS.sigstore.json"
+
+if ! command -v cosign >/dev/null 2>&1; then
+  echo "::error::Pinned Cosign verifier is unavailable."
+  exit 1
+fi
+cosign verify-blob "$archive" --bundle "$archive_bundle" \
+  --certificate-identity "$signature_identity" --certificate-oidc-issuer "$signature_issuer"
+cosign verify-blob "$checksums" --bundle "$checksums_bundle" \
+  --certificate-identity "$signature_identity" --certificate-oidc-issuer "$signature_issuer"
 
 expected="$(awk -v name="$archive_name" '$2 == name { print $1 }' "$checksums")"
 if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]]; then

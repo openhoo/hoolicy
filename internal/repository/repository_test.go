@@ -373,6 +373,9 @@ func TestOpenRevisionReadsCompleteHistoricalSnapshot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("new\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Remove(filepath.Join(root, "tracked.txt")); err != nil {
+		t.Fatal(err)
+	}
 	repo, err := OpenRevision(root, base, Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -381,11 +384,71 @@ func TestOpenRevisionReadsCompleteHistoricalSnapshot(t *testing.T) {
 	if len(files) != 1 || files[0].Path != "tracked.txt" || string(files[0].Data) != "before\n" || files[0].Mode&0o111 == 0 {
 		t.Fatalf("unexpected revision files: %#v", files)
 	}
+	file, err := repo.Read("tracked.txt")
+	if err != nil || string(file.Data) != "before\n" {
+		t.Fatalf("historical read failed after worktree deletion: %#v %v", file, err)
+	}
 	if repo.Git().Commit != base || repo.Git().Dirty {
 		t.Fatalf("unexpected revision Git context: %#v", repo.Git())
 	}
 	if _, err := OpenRevision(root, "--all", Options{}); err == nil || !strings.Contains(err.Error(), "unsafe revision") {
 		t.Fatalf("expected unsafe revision rejection, got %v", err)
+	}
+}
+
+func TestOpenRevisionRejectsUnsafeGitTreePath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot create a filename containing a backslash")
+	}
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	unsafeName := `unsafe\name`
+	if err := os.WriteFile(filepath.Join(root, unsafeName), []byte("unsafe\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", unsafeName)
+	runGit(t, root, "commit", "-m", "test: unsafe tree path")
+	revision := runGit(t, root, "rev-parse", "HEAD")
+	if _, err := OpenRevision(root, revision, Options{}); err == nil || !strings.Contains(err.Error(), "unsafe Git tree path") {
+		t.Fatalf("unsafe Git tree path accepted: %v", err)
+	}
+}
+
+func TestOpenRevisionIgnoresUnsafeSiblingOutsideScope(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot create a filename containing a backslash")
+	}
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	if err := os.WriteFile(filepath.Join(project, "tracked.txt"), []byte("tracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sibling := filepath.Join(root, "sibling")
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unsafeName := `unsafe\name`
+	if err := os.WriteFile(filepath.Join(sibling, unsafeName), []byte("unsafe\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "project/tracked.txt", "sibling/unsafe\\name")
+	runGit(t, root, "commit", "-m", "test: scoped unsafe tree path")
+	revision := runGit(t, root, "rev-parse", "HEAD")
+	repo, err := OpenRevision(project, revision, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := repo.AllFiles()
+	if len(files) != 1 || files[0].Path != "tracked.txt" || string(files[0].Data) != "tracked\n" {
+		t.Fatalf("unexpected scoped revision files: %#v", files)
 	}
 }
 

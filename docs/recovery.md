@@ -2,7 +2,7 @@
 
 ## Bad pack release
 
-Keep current lock and vendor directory. Run `hoolicy pack update <name>` without `--apply` against last known-good digest, review rule/severity/parameter/control changes, then apply and run `validate`, pack fixtures, and full `check`. Never edit a digest to fit local bytes.
+Restore the reviewed pack reference, its matching `hoolicy.lock` entry, and the `.hoolicy/vendor/<name>` tree together from the last known-good version-control revision. Review that three-way restoration, then run `hoolicy validate`, the restored pack fixtures, and `hoolicy check`; recovery is offline. `hoolicy pack update` has no digest selector and refuses semantic-release downgrades, so changing only the reference or retaining a newer lock is not a supported rollback.
 
 ## Compromised publisher identity
 

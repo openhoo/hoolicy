@@ -38,3 +38,16 @@ func TestPortablePathsRejectWindowsAndBackslashForms(t *testing.T) {
 		}
 	}
 }
+
+func TestRelativeDoesNotTouchFilesystem(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{"committed.txt", "nested/../committed.txt"} {
+		clean, err := Relative(path)
+		if err != nil || clean != "committed.txt" {
+			t.Fatalf("Relative(%q) = %q, %v", path, clean, err)
+		}
+	}
+	if _, err := Relative("../missing.txt"); err == nil {
+		t.Fatal("Relative accepted traversal")
+	}
+}

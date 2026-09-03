@@ -1,0 +1,22 @@
+{
+  "reportVersion": 1,
+  "tool": {"name": "hoolicy", "version": "0.1.2"},
+  "project": "demo",
+  "generatedAt": "2026-08-28T12:00:00Z",
+  "configDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "git": {"branch": "main", "commit": "0123456789012345678901234567890123456789", "commits": [], "mergeRequestTitle": "", "dirty": false},
+  "failOn": "error",
+  "findings": [
+    {
+      "ruleId": "demo.required",
+      "title": "Required file",
+      "message": "README.md is missing",
+      "remediation": "Add README.md",
+      "severity": "error",
+      "location": {"path": "README.md", "line": 1, "column": 1},
+      "key": "required",
+      "fingerprint": "43e66b410cf59159af4848914890606d3283f9c44da18efdaaa8a34dde979bce"
+    }
+  ],
+  "summary": {"rules": 1, "errors": 1, "warnings": 0, "info": 0, "waived": 0, "blocking": 1}
+}

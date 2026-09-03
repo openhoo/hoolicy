@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -181,15 +182,28 @@ func TestEvidenceCreateAndVerifyWithoutCIUI(t *testing.T) {
 			t.Fatalf("git %v: %v: %s", args, err, output)
 		}
 	}
+	runCLICommand(t, root, "git", "checkout", "--detach", "-q", "HEAD")
 	output := filepath.Join(t.TempDir(), "evidence.json")
 	app, stdout, stderr := testApplication(t)
-	if code := app.run(context.Background(), []string{"evidence", "--config", configPath, "--output", output}); code != 0 || !strings.Contains(stdout.String(), "Wrote verifiable evidence") {
+	if code := app.run(context.Background(), []string{"evidence", "--config", configPath, "--branch", "feature", "--output", output}); code != 0 || !strings.Contains(stdout.String(), "Wrote verifiable evidence") {
 		t.Fatalf("create code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	bundle, err := evidence.Load(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Decision.Git.Branch != "feature" {
+		t.Fatalf("evidence branch=%q, want feature", bundle.Decision.Git.Branch)
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := app.run(context.Background(), []string{"evidence", "verify", "--config", configPath, output}); code != 0 || !strings.Contains(stdout.String(), "Verified evidence bundle") {
+	if code := app.run(context.Background(), []string{"evidence", "verify", "--config", configPath, "--branch", "feature", output}); code != 0 || !strings.Contains(stdout.String(), "Verified evidence bundle") {
 		t.Fatalf("verify code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := app.run(context.Background(), []string{"evidence", "verify", "--config", configPath, "--branch", "other", output}); code != 2 || !strings.Contains(stderr.String(), "policy decision no longer reproduces") {
+		t.Fatalf("wrong branch code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 
@@ -281,6 +295,91 @@ func TestInventoryAndReadOnlyServiceUseSameEngineContract(t *testing.T) {
 	}
 }
 
+func TestInventoryPropagatesDetachedBranchContext(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, configPath, `version: 1
+project: demo
+rules:
+  - id: demo.branch
+    title: Branch probe
+    description: Requires the configured branch context.
+    rationale: Detached jobs need explicit source branch metadata.
+    remediation: Pass the source branch to the check.
+    severity: error
+    kind: test.branch
+`)
+	runCLICommand(t, root, "git", "init", "-q", "-b", "main")
+	runCLICommand(t, root, "git", "config", "user.name", "Hoolicy Tests")
+	runCLICommand(t, root, "git", "config", "user.email", "tests@hoolicy.invalid")
+	runCLICommand(t, root, "git", "add", config.DefaultFilename)
+	runCLICommand(t, root, "git", "commit", "-qm", "test: inventory branch")
+	runCLICommand(t, root, "git", "checkout", "--detach", "-q", "HEAD")
+
+	app, stdout, stderr := testApplication(t)
+	if err := app.registry.Register("test.branch", branchProbeKind{want: "feature"}); err != nil {
+		t.Fatal(err)
+	}
+	if code := app.run(context.Background(), []string{"inventory", "--config", configPath, "--branch", "feature"}); code != 0 {
+		t.Fatalf("inventory with branch code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := app.run(context.Background(), []string{"inventory", "--config", configPath}); code != 2 || !strings.Contains(stderr.String(), "branch context") {
+		t.Fatalf("inventory without branch code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestReadOnlyServicePropagatesDetachedBranchContext(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, configPath, `version: 1
+project: demo
+rules:
+  - id: repository.git-naming
+    title: Git names are conventional
+    description: Branches use the repository convention.
+    rationale: Consistent names keep automation predictable.
+    remediation: Rename the branch to match the convention.
+    severity: error
+    kind: git.naming
+    spec:
+      branchPattern: "^(feat|fix)/[a-z0-9]+$"
+`)
+	runCLICommand(t, root, "git", "init", "-q", "-b", "main")
+	runCLICommand(t, root, "git", "config", "user.name", "Hoolicy Tests")
+	runCLICommand(t, root, "git", "config", "user.email", "tests@hoolicy.invalid")
+	runCLICommand(t, root, "git", "add", config.DefaultFilename)
+	runCLICommand(t, root, "git", "commit", "-qm", "test: read-only branch")
+	runCLICommand(t, root, "git", "checkout", "--detach", "-q", "HEAD")
+	t.Setenv("HOOLICY_BRANCH", "invalid_branch")
+
+	app, _, _ := testApplication(t)
+	recorder := httptest.NewRecorder()
+	app.readOnlyHandler(configPath).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/check", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var decision engine.Report
+	if err := json.Unmarshal(recorder.Body.Bytes(), &decision); err != nil {
+		t.Fatal(err)
+	}
+	if decision.Git.Branch != "invalid_branch" {
+		t.Fatalf("detached branch=%q, want invalid_branch", decision.Git.Branch)
+	}
+	found := false
+	for _, finding := range decision.Findings {
+		if finding.RuleID == "repository.git-naming" && strings.Contains(finding.Message, `branch "invalid_branch"`) {
+			found = true
+			break
+		}
+	}
+	if !found || decision.Summary.Blocking != 1 {
+		t.Fatalf("branch finding missing: blocking=%d findings=%#v", decision.Summary.Blocking, decision.Findings)
+	}
+}
+
 func TestReadOnlyServiceReturnsCleanErrorWhenResponseCannotBeEncoded(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -350,11 +449,22 @@ func TestFailedAttestationSigningPublishesNoFinalFiles(t *testing.T) {
 func TestReportMigrationIsPreviewFirst(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, configPath, "version: 1\nproject: demo\nfailOn: error\nrules: []\n")
+	project, err := config.LoadProject(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := report.LegacyProjectDigest(project, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(root, "report.json")
-	original := `{"reportVersion":1,"configDigest":"sha256:` + strings.Repeat("a", 64) + `","findings":[]}` + "\n"
+	original := `{"reportVersion":1,"tool":{"name":"hoolicy","version":"0.1.2"},"project":"demo","generatedAt":"2026-08-28T12:00:00Z","configDigest":"` + digest + `","git":{"branch":"","commit":"","commits":[],"mergeRequestTitle":"","dirty":false},"failOn":"error","findings":[],"summary":{"rules":0,"errors":0,"warnings":0,"info":0,"waived":0,"blocking":0}}` + "\n"
 	writeCLIFile(t, path, original)
 	app, stdout, stderr := testApplication(t)
-	if code := app.run(context.Background(), []string{"migrate", "report", path}); code != 0 || !strings.Contains(stdout.String(), "No files changed") {
+	args := []string{"migrate", "report", "--config", configPath, path}
+	if code := app.run(context.Background(), args); code != 0 || !strings.Contains(stdout.String(), "No files changed") {
 		t.Fatalf("preview code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	unchanged, err := os.ReadFile(path)
@@ -363,7 +473,7 @@ func TestReportMigrationIsPreviewFirst(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := app.run(context.Background(), []string{"migrate", "report", "--apply", path}); code != 0 {
+	if code := app.run(context.Background(), []string{"migrate", "report", "--config", configPath, "--apply", path}); code != 0 {
 		t.Fatalf("apply code=%d stderr=%q", code, stderr.String())
 	}
 	migrated, err := report.LoadJSON(path)
@@ -710,6 +820,53 @@ rules:
 	}
 }
 
+func TestPackAddDoesNotApplyInvalidRemotePack(t *testing.T) {
+	t.Parallel()
+	remote := t.TempDir()
+	runCLICommand(t, remote, "git", "init", "-q", "-b", "main")
+	runCLICommand(t, remote, "git", "config", "user.name", "Hoolicy Tests")
+	runCLICommand(t, remote, "git", "config", "user.email", "tests@hoolicy.invalid")
+	writeCLIFile(t, filepath.Join(remote, "pack.yaml"), `version: 1
+name: broken
+release: 1.0.0
+description: Broken remote pack.
+rules:
+  - id: broken.unknown
+    title: Unknown rule
+    description: Uses an unregistered rule kind.
+    rationale: Invalid policy must not be activated.
+    remediation: Correct the rule kind.
+    severity: error
+    kind: unknown
+    files: [README.md]
+    spec: {}
+`)
+	runCLICommand(t, remote, "git", "add", "pack.yaml")
+	runCLICommand(t, remote, "git", "commit", "-qm", "test: invalid remote pack")
+
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, configPath, "version: 1\nproject: demo\nrules: []\n")
+	app, _, stderr := testApplication(t)
+	args := []string{"pack", "add", "--config", configPath, "--git", remote, "--ref", "main", "broken"}
+	if code := app.run(context.Background(), args); code != 2 || !strings.Contains(stderr.String(), "added pack is invalid") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, config.DefaultLockfile)); !os.IsNotExist(err) {
+		t.Fatalf("invalid remote pack applied lockfile: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".hoolicy", "vendor", "broken")); !os.IsNotExist(err) {
+		t.Fatalf("invalid remote pack applied vendor tree: %v", err)
+	}
+	project, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(project), "broken") {
+		t.Fatalf("invalid remote pack was saved:\n%s", project)
+	}
+}
+
 func TestPackUpdatePrunesLockAfterLastRemotePackWasRemoved(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -861,6 +1018,57 @@ func TestCheckOutputDoesNotFollowSymlink(t *testing.T) {
 	}
 }
 
+func TestDetachedBranchContextPropagatesToWaiverAndBaselines(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, configPath, `version: 1
+project: demo
+rules:
+  - id: repository.git-naming
+    title: Git names are conventional
+    description: Branches use the repository convention.
+    rationale: Consistent names keep automation predictable.
+    remediation: Rename the branch to match the convention.
+    severity: error
+    kind: git.naming
+    spec:
+      branchPattern: "^(feat|fix)/[a-z0-9]+$"
+`)
+	runCLICommand(t, root, "git", "init", "-q", "-b", "main")
+	runCLICommand(t, root, "git", "config", "user.name", "Hoolicy Tests")
+	runCLICommand(t, root, "git", "config", "user.email", "tests@hoolicy.invalid")
+	runCLICommand(t, root, "git", "add", config.DefaultFilename)
+	runCLICommand(t, root, "git", "commit", "-qm", "test: detached branch")
+	runCLICommand(t, root, "git", "checkout", "--detach", "-q", "HEAD")
+	t.Setenv("HOOLICY_BRANCH", "feat/ok")
+	app, stdout, stderr := testApplication(t)
+	project, err := config.LoadProject(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err := app.engine.Check(context.Background(), project, engine.Options{Branch: "invalid_branch", ToolVersion: "test"})
+	if err != nil || len(decision.Findings) != 1 {
+		t.Fatalf("decision=%#v err=%v", decision, err)
+	}
+	fingerprint := decision.Findings[0].Fingerprint
+	waiverArgs := []string{"waiver", "create", "--config", configPath, "--branch", "invalid_branch", "--fingerprint", fingerprint, "--owner", "team@example.com", "--ticket", "https://issues.example.com/DEMO-1", "--reason", "Temporary exception while reviewed remediation is delivered.", "--expires", time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02")}
+	if code := app.run(context.Background(), waiverArgs); code != 0 || !strings.Contains(stdout.String(), "No files changed") {
+		t.Fatalf("waiver code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if code := app.run(context.Background(), []string{"baseline", "create", "--config", configPath, "--branch", "invalid_branch", "--apply"}); code != 0 {
+		t.Fatalf("baseline create code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if code := app.run(context.Background(), []string{"baseline", "prune", "--config", configPath, "--branch", "invalid_branch", "--apply"}); code != 0 {
+		t.Fatalf("baseline prune code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	baseline, err := config.LoadBaseline(filepath.Join(root, config.DefaultBaseline))
+	if err != nil || len(baseline.Entries) != 1 {
+		t.Fatalf("baseline=%#v err=%v", baseline, err)
+	}
+}
+
 func testApplication(t *testing.T) (application, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 	registry := sdk.NewRegistry()
@@ -878,6 +1086,19 @@ func testApplication(t *testing.T) (application, *bytes.Buffer, *bytes.Buffer) {
 type invalidJSONRuleKind struct{}
 
 func (invalidJSONRuleKind) Validate(sdk.Rule) error { return nil }
+
+type branchProbeKind struct {
+	want string
+}
+
+func (branchProbeKind) Validate(sdk.Rule) error { return nil }
+
+func (kind branchProbeKind) Evaluate(_ context.Context, input sdk.EvalContext, _ sdk.Rule) ([]sdk.Finding, error) {
+	if input.Repository.Git().Branch != kind.want {
+		return nil, fmt.Errorf("branch context %q does not match %q", input.Repository.Git().Branch, kind.want)
+	}
+	return nil, nil
+}
 
 func (invalidJSONRuleKind) Evaluate(context.Context, sdk.EvalContext, sdk.Rule) ([]sdk.Finding, error) {
 	return []sdk.Finding{{Message: "invalid property", Properties: map[string]any{"channel": make(chan struct{})}}}, nil

@@ -259,6 +259,7 @@ func (a application) check(ctx context.Context, args []string) int {
 	format := flags.String("format", "text", "text, json, sarif, junit, github, or gitlab-codequality")
 	output := flags.String("output", "", "write report to file")
 	base := flags.String("base", envFirst("HOOLICY_BASE_SHA", "CI_MERGE_REQUEST_DIFF_BASE_SHA"), "base commit for commit-range checks")
+	branch := flags.String("branch", envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "source branch for detached checkouts")
 	mrTitle := flags.String("merge-request-title", envFirst("HOOLICY_MERGE_REQUEST_TITLE", "CI_MERGE_REQUEST_TITLE"), "merge request title")
 	failOn := flags.String("fail-on", "", "use an equal or stricter failure threshold")
 	if err := flags.Parse(args); err != nil {
@@ -285,7 +286,7 @@ func (a application) check(ctx context.Context, args []string) int {
 			return a.fail(fmt.Errorf("--fail-on may not weaken project threshold %s", project.FailOn))
 		}
 	}
-	result, err := a.engine.Check(ctx, project, engine.Options{BaseSHA: *base, MergeRequestTitle: *mrTitle, ToolVersion: a.info.Version})
+	result, err := a.engine.Check(ctx, project, engine.Options{BaseSHA: *base, Branch: *branch, MergeRequestTitle: *mrTitle, ToolVersion: a.info.Version})
 	if err != nil {
 		return a.fail(err)
 	}
@@ -312,6 +313,7 @@ func (a application) fix(ctx context.Context, args []string) int {
 	configPath := flags.String("config", "", "configuration path")
 	apply := flags.Bool("apply", false, "apply the exact previewed safe fixes")
 	base := flags.String("base", envFirst("HOOLICY_BASE_SHA", "CI_MERGE_REQUEST_DIFF_BASE_SHA"), "base commit")
+	branch := flags.String("branch", envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "source branch for detached checkouts")
 	mrTitle := flags.String("merge-request-title", envFirst("HOOLICY_MERGE_REQUEST_TITLE", "CI_MERGE_REQUEST_TITLE"), "merge request title")
 	if err := flags.Parse(args); err != nil {
 		return flagErrorCode(err)
@@ -320,7 +322,7 @@ func (a application) fix(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	result, err := a.engine.Check(ctx, project, engine.Options{BaseSHA: *base, MergeRequestTitle: *mrTitle, ToolVersion: a.info.Version})
+	result, err := a.engine.Check(ctx, project, engine.Options{BaseSHA: *base, Branch: *branch, MergeRequestTitle: *mrTitle, ToolVersion: a.info.Version})
 	if err != nil {
 		return a.fail(err)
 	}
@@ -462,6 +464,7 @@ func (a application) waiver(ctx context.Context, args []string) int {
 	flags := flag.NewFlagSet("waiver create", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
+	branch := flags.String("branch", envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "source branch for detached checkouts")
 	fingerprint := flags.String("fingerprint", "", "exact finding fingerprint")
 	id := flags.String("id", "", "waiver ID; defaults from rule and fingerprint")
 	owner := flags.String("owner", "", "accountable owner")
@@ -484,7 +487,7 @@ func (a application) waiver(ctx context.Context, args []string) int {
 		return a.fail(err)
 	}
 	now := time.Now().UTC()
-	decision, err := a.engine.Check(ctx, project, engine.Options{Now: now, ToolVersion: a.info.Version})
+	decision, err := a.engine.Check(ctx, project, engine.Options{Now: now, Branch: *branch, ToolVersion: a.info.Version})
 	if err != nil {
 		return a.fail(err)
 	}
@@ -584,6 +587,7 @@ func (a application) inventory(ctx context.Context, args []string) int {
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
 	output := flags.String("output", "", "write JSON inventory to file")
+	branch := flags.String("branch", envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "source branch for detached checkouts")
 	if err := flags.Parse(args); err != nil {
 		return flagErrorCode(err)
 	}
@@ -594,7 +598,7 @@ func (a application) inventory(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	inventory, err := a.buildInventory(ctx, project)
+	inventory, err := a.buildInventory(ctx, project, *branch)
 	if err != nil {
 		return a.fail(err)
 	}
@@ -613,12 +617,12 @@ func (a application) inventory(ctx context.Context, args []string) int {
 	return 0
 }
 
-func (a application) buildInventory(ctx context.Context, project *config.Project) (*policyInventory, error) {
+func (a application) buildInventory(ctx context.Context, project *config.Project, branch string) (*policyInventory, error) {
 	rules, err := a.engine.Validate(project)
 	if err != nil {
 		return nil, err
 	}
-	decision, err := a.engine.Check(ctx, project, engine.Options{ToolVersion: a.info.Version})
+	decision, err := a.engine.Check(ctx, project, engine.Options{Branch: branch, ToolVersion: a.info.Version})
 	if err != nil {
 		return nil, err
 	}
@@ -771,7 +775,7 @@ func (a application) readOnlyHandler(configPath string) http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		decision, err := a.engine.Check(request.Context(), project, engine.Options{ToolVersion: a.info.Version})
+		decision, err := a.engine.Check(request.Context(), project, engine.Options{Branch: envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), ToolVersion: a.info.Version})
 		if err != nil {
 			return nil, err
 		}
@@ -782,7 +786,7 @@ func (a application) readOnlyHandler(configPath string) http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		inventory, err := a.buildInventory(request.Context(), project)
+		inventory, err := a.buildInventory(request.Context(), project, envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"))
 		if err != nil {
 			return nil, err
 		}
@@ -793,7 +797,7 @@ func (a application) readOnlyHandler(configPath string) http.Handler {
 
 func (a application) migrate(args []string) int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(a.stdout, "Usage: hoolicy migrate report [--output path] [--apply] <report.json>")
+		fmt.Fprintln(a.stdout, "Usage: hoolicy migrate report [--config path] [--output path] [--apply] <report.json>")
 		return 0
 	}
 	if args[0] != "report" {
@@ -801,13 +805,14 @@ func (a application) migrate(args []string) int {
 	}
 	flags := flag.NewFlagSet("migrate report", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
+	configPath := flags.String("config", "", "matching historical project configuration")
 	output := flags.String("output", "", "migration target; defaults to input")
 	apply := flags.Bool("apply", false, "write the reviewed migration")
 	if err := flags.Parse(args[1:]); err != nil {
 		return flagErrorCode(err)
 	}
 	if flags.NArg() != 1 {
-		return a.fail(errors.New("usage: hoolicy migrate report [--output path] [--apply] <report.json>"))
+		return a.fail(errors.New("usage: hoolicy migrate report [--config path] [--output path] [--apply] <report.json>"))
 	}
 	inputPath := flags.Arg(0)
 	input, err := report.LoadJSON(inputPath)
@@ -818,25 +823,27 @@ func (a application) migrate(args []string) int {
 		fmt.Fprintln(a.stdout, "Report already uses current version 2. No migration needed.")
 		return 0
 	}
-	before := input.ReportVersion
-	input.ReportVersion = 2
-	if input.PolicyDigest == "" {
-		input.PolicyDigest = input.ConfigDigest
+	project, err := loadProject(*configPath)
+	if err != nil {
+		return a.fail(fmt.Errorf("historical project configuration: %w", err))
 	}
-	if input.Findings == nil {
-		input.Findings = []sdk.Finding{}
+	rules, err := a.engine.Validate(project)
+	if err != nil {
+		return a.fail(fmt.Errorf("historical project policy: %w", err))
 	}
-	if input.Waivers == nil {
-		input.Waivers = []config.Waiver{}
+	digest, err := report.LegacyProjectDigest(project, rules)
+	if err != nil {
+		return a.fail(fmt.Errorf("historical project digest: %w", err))
 	}
-	if input.Metrics.Rules == nil {
-		input.Metrics.Rules = []engine.RuleMetric{}
-	}
-	var encoded bytes.Buffer
-	if err := report.Write(&encoded, "json", input, false); err != nil {
+	migrated, err := report.MigrateJSON(inputPath, project, rules, digest)
+	if err != nil {
 		return a.fail(err)
 	}
-	fmt.Fprintf(a.stdout, "Migration preview: report version %d to 2.\n", before)
+	var encoded bytes.Buffer
+	if err := report.Write(&encoded, "json", migrated, false); err != nil {
+		return a.fail(err)
+	}
+	fmt.Fprintf(a.stdout, "Migration preview: report version %d to 2.\n", input.ReportVersion)
 	if !*apply {
 		_, _ = a.stdout.Write(encoded.Bytes())
 		fmt.Fprintln(a.stdout, "No files changed. Re-run with --apply after review.")
@@ -859,6 +866,7 @@ func (a application) evidenceCreate(ctx context.Context, args []string) int {
 	configPath := flags.String("config", "", "configuration path")
 	output := flags.String("output", "hoolicy-evidence.json", "evidence bundle output")
 	base := flags.String("base", envFirst("HOOLICY_BASE_SHA", "CI_MERGE_REQUEST_DIFF_BASE_SHA"), "base revision")
+	branch := flags.String("branch", envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "source branch for detached checkouts")
 	attestation := flags.String("attestation", "", "optional in-toto statement output")
 	signatureBundle := flags.String("signature-bundle", "", "Sigstore verification bundle output")
 	signKey := flags.String("sign-key", "", "Cosign private key or KMS URI")
@@ -883,7 +891,7 @@ func (a application) evidenceCreate(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	decision, err := a.engine.Check(ctx, project, engine.Options{BaseSHA: *base, ToolVersion: a.info.Version})
+	decision, err := a.engine.Check(ctx, project, engine.Options{BaseSHA: *base, Branch: *branch, ToolVersion: a.info.Version})
 	if err != nil {
 		return a.fail(err)
 	}
@@ -971,6 +979,7 @@ func (a application) evidenceVerify(ctx context.Context, args []string) int {
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
 	attestation := flags.String("attestation", "", "in-toto statement to verify")
+	branch := flags.String("branch", envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "source branch for detached checkouts")
 	signatureBundle := flags.String("signature-bundle", "", "Sigstore bundle")
 	key := flags.String("key", "", "Cosign public key or KMS URI")
 	identity := flags.String("identity", "", "expected keyless certificate identity")
@@ -998,7 +1007,7 @@ func (a application) evidenceVerify(ctx context.Context, args []string) int {
 	if bundle.Decision != nil && bundle.Decision.Comparison != nil {
 		base = bundle.Decision.Comparison.BaseRevision
 	}
-	current, err := a.engine.Check(ctx, project, engine.Options{Now: bundle.CreatedAt, BaseSHA: base, ToolVersion: bundle.Tool.Version})
+	current, err := a.engine.Check(ctx, project, engine.Options{Now: bundle.CreatedAt, BaseSHA: base, Branch: *branch, ToolVersion: bundle.Tool.Version})
 	if err != nil {
 		return a.fail(err)
 	}
@@ -1137,6 +1146,7 @@ func (a application) baselineCreate(ctx context.Context, args []string) int {
 	flags := flag.NewFlagSet("baseline create", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
+	branch := flags.String("branch", envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "source branch for detached checkouts")
 	apply := flags.Bool("apply", false, "write the exact previewed baseline")
 	replace := flags.Bool("replace", false, "replace an existing baseline")
 	if err := flags.Parse(args); err != nil {
@@ -1158,7 +1168,7 @@ func (a application) baselineCreate(ctx context.Context, args []string) int {
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return a.fail(err)
 	}
-	result, err := a.engine.Check(ctx, project, engine.Options{ToolVersion: a.info.Version})
+	result, err := a.engine.Check(ctx, project, engine.Options{Branch: *branch, ToolVersion: a.info.Version})
 	if err != nil {
 		return a.fail(err)
 	}
@@ -1195,6 +1205,7 @@ func (a application) baselinePrune(ctx context.Context, args []string) int {
 	flags := flag.NewFlagSet("baseline prune", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
+	branch := flags.String("branch", envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "source branch for detached checkouts")
 	apply := flags.Bool("apply", false, "write the exact previewed pruned baseline")
 	if err := flags.Parse(args); err != nil {
 		return flagErrorCode(err)
@@ -1214,7 +1225,7 @@ func (a application) baselinePrune(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	result, err := a.engine.Check(ctx, project, engine.Options{ToolVersion: a.info.Version})
+	result, err := a.engine.Check(ctx, project, engine.Options{Branch: *branch, ToolVersion: a.info.Version})
 	if err != nil {
 		return a.fail(err)
 	}
@@ -1281,6 +1292,7 @@ func (a application) doctor(ctx context.Context, args []string) int {
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
 	base := flags.String("base", envFirst("HOOLICY_BASE_SHA", "CI_MERGE_REQUEST_DIFF_BASE_SHA"), "base revision expected in CI")
+	branch := flags.String("branch", envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "source branch for detached checkouts")
 	if err := flags.Parse(args); err != nil {
 		return flagErrorCode(err)
 	}
@@ -1301,7 +1313,7 @@ func (a application) doctor(ctx context.Context, args []string) int {
 		return a.fail(fmt.Errorf("packs and compatibility: %w", err))
 	}
 	fmt.Fprintf(a.stdout, "OK packs-and-compatibility %d active rules; lock integrity verified\n", len(rules))
-	repo, err := repository.Open(project.Root, repository.Options{BaseSHA: *base})
+	repo, err := repository.Open(project.Root, repository.Options{BaseSHA: *base, Branch: *branch})
 	if err != nil {
 		return a.fail(fmt.Errorf("git context: %w", err))
 	}
@@ -1360,7 +1372,7 @@ func (a application) doctor(ctx context.Context, args []string) int {
 			fmt.Fprintf(a.stdout, "WARN ignored-target %s matches %s\n", path, strings.Join(ignoredTargets[path], ","))
 		}
 	}
-	if _, err := a.engine.Check(ctx, project, engine.Options{BaseSHA: *base, ToolVersion: a.info.Version}); err != nil {
+	if _, err := a.engine.Check(ctx, project, engine.Options{BaseSHA: *base, Branch: *branch, ToolVersion: a.info.Version}); err != nil {
 		if strings.Contains(err.Error(), "unsupported document format") {
 			return a.fail(fmt.Errorf("unsupported file types: %w", err))
 		}
@@ -1832,7 +1844,7 @@ func (a application) packPublish(ctx context.Context, args []string) int {
 		comparison = comparePackRules(previous, pack)
 		left, leftErr := policytest.BuildSnapshot(ctx, *previousPath, a.registry)
 		if leftErr == nil {
-			comparison.BehaviorChanged = compareSnapshotCases(left, snapshot)
+			comparison.BehaviorChanged = mergePackChangeItems(comparison.BehaviorChanged, compareSnapshotCases(left, snapshot))
 		}
 	}
 	compatibilityData, _ := json.MarshalIndent(comparison, "", "  ")
@@ -2060,10 +2072,10 @@ func (a application) packCompare(ctx context.Context, args []string) int {
 	leftSnapshot, leftErr := policytest.BuildSnapshot(ctx, flags.Arg(0), a.registry)
 	rightSnapshot, rightErr := policytest.BuildSnapshot(ctx, flags.Arg(1), a.registry)
 	if leftErr == nil && rightErr == nil {
-		comparison.BehaviorChanged = compareSnapshotCases(leftSnapshot, rightSnapshot)
+		comparison.BehaviorChanged = mergePackChangeItems(comparison.BehaviorChanged, compareSnapshotCases(leftSnapshot, rightSnapshot))
 	}
 	if (leftErr == nil) != (rightErr == nil) {
-		comparison.BehaviorChanged = append(comparison.BehaviorChanged, "fixture suite availability changed")
+		comparison.BehaviorChanged = mergePackChangeItems(comparison.BehaviorChanged, []string{"fixture suite availability changed"})
 	}
 	if *format == "json" {
 		data, _ := json.MarshalIndent(comparison, "", "  ")
@@ -2105,9 +2117,32 @@ func (a application) packCompare(ctx context.Context, args []string) int {
 func emptyPackComparison(previous, current string) packComparison {
 	return packComparison{Previous: previous, Current: current, Added: []string{}, Removed: []string{}, Renamed: []string{}, SeverityChanged: []string{}, BehaviorChanged: []string{}, ParametersChanged: []string{}, ControlsChanged: []string{}, MetadataChanged: []string{}}
 }
+func jsonEqual(left, right any) bool {
+	leftData, leftErr := json.Marshal(left)
+	rightData, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftData, rightData)
+}
 
+func mergePackChangeItems(existing, additions []string) []string {
+	values := make(map[string]struct{}, len(existing)+len(additions))
+	for _, item := range existing {
+		values[item] = struct{}{}
+	}
+	for _, item := range additions {
+		values[item] = struct{}{}
+	}
+	merged := make([]string, 0, len(values))
+	for item := range values {
+		merged = append(merged, item)
+	}
+	sort.Strings(merged)
+	return merged
+}
 func comparePackRules(previous, current *config.Pack) packComparison {
 	result := emptyPackComparison(previous.Release, current.Release)
+	if previous.Description != current.Description {
+		result.MetadataChanged = append(result.MetadataChanged, "description changed")
+	}
 	if previous.Maturity != current.Maturity {
 		result.MetadataChanged = append(result.MetadataChanged, "maturity "+previous.Maturity+" -> "+current.Maturity)
 	}
@@ -2137,6 +2172,27 @@ func comparePackRules(previous, current *config.Pack) packComparison {
 			newControls, _ := json.Marshal(rule.Controls)
 			if !bytes.Equal(oldControls, newControls) {
 				result.ControlsChanged = append(result.ControlsChanged, id)
+			}
+			for name, changed := range map[string]bool{
+				"kind":         old.Kind != rule.Kind,
+				"files":        !jsonEqual(old.Files, rule.Files),
+				"exclude":      !jsonEqual(old.Exclude, rule.Exclude),
+				"dependencies": !jsonEqual(old.Dependencies, rule.Dependencies),
+				"spec":         !jsonEqual(old.Spec, rule.Spec),
+			} {
+				if changed {
+					result.BehaviorChanged = append(result.BehaviorChanged, id+" "+name+" changed")
+				}
+			}
+			for name, changed := range map[string]bool{
+				"title":       old.Title != rule.Title,
+				"description": old.Description != rule.Description,
+				"rationale":   old.Rationale != rule.Rationale,
+				"remediation": old.Remediation != rule.Remediation,
+			} {
+				if changed {
+					result.MetadataChanged = append(result.MetadataChanged, id+" "+name+" changed")
+				}
 			}
 			continue
 		}
@@ -2186,6 +2242,7 @@ func comparePackRules(previous, current *config.Pack) packComparison {
 	sort.Strings(result.Removed)
 	sort.Strings(result.Renamed)
 	sort.Strings(result.SeverityChanged)
+	sort.Strings(result.BehaviorChanged)
 	sort.Strings(result.ParametersChanged)
 	sort.Strings(result.ControlsChanged)
 	sort.Strings(result.MetadataChanged)
@@ -2251,16 +2308,32 @@ func (a application) packAdd(args []string) int {
 		return a.fail(err)
 	}
 	if reference.Git != "" || reference.OCI != "" {
-		if _, err := packs.UpdateLock(project, []string{name}, a.info.Version); err != nil {
+		plan, err := packs.PrepareUpdate(project, []string{name}, a.info.Version)
+		if err != nil {
+			return a.fail(err)
+		}
+		defer plan.Cleanup()
+		previewProject, cleanup, err := packUpdatePreviewProject(project)
+		if err != nil {
+			return a.fail(err)
+		}
+		defer cleanup()
+		if err := plan.Materialize(previewProject.Root); err != nil {
+			return a.fail(err)
+		}
+		if _, err := a.engine.Validate(previewProject); err != nil {
+			return a.fail(fmt.Errorf("added pack is invalid: %w", err))
+		}
+		if err := plan.Apply(); err != nil {
 			return a.fail(err)
 		}
 	} else {
 		if _, err := config.LoadPack(filepath.Join(project.Root, filepath.FromSlash(reference.Path))); err != nil {
 			return a.fail(err)
 		}
-	}
-	if _, err := a.engine.Validate(project); err != nil {
-		return a.fail(fmt.Errorf("added pack is invalid: %w", err))
+		if _, err := a.engine.Validate(project); err != nil {
+			return a.fail(fmt.Errorf("added pack is invalid: %w", err))
+		}
 	}
 	if err := config.SaveProject(project.Path, *project); err != nil {
 		return a.fail(err)
@@ -2289,36 +2362,40 @@ func (a application) packUpdate(args []string) int {
 			}
 		}
 	}
-	pruneOnly := false
-	if len(names) == 0 {
+	pruneOnly := len(names) == 0
+	if pruneOnly {
 		lockPath := filepath.Join(project.Root, config.DefaultLockfile)
 		if _, err := os.Lstat(lockPath); errors.Is(err, os.ErrNotExist) {
 			return a.fail(fmt.Errorf("no remote packs selected"))
 		} else if err != nil {
 			return a.fail(err)
 		}
-		pruneOnly = true
 	}
 	sort.Strings(names)
+	plan, err := packs.PrepareUpdate(project, names, a.info.Version)
+	if err != nil {
+		return a.fail(err)
+	}
+	defer plan.Cleanup()
 	previewProject, cleanup, err := packUpdatePreviewProject(project)
 	if err != nil {
 		return a.fail(err)
 	}
 	defer cleanup()
-	previewLock, err := packs.UpdateLock(previewProject, names, a.info.Version)
-	if err != nil {
+	if err := plan.Materialize(previewProject.Root); err != nil {
 		return a.fail(err)
 	}
-	writePackUpdateReview(a.stdout, project, previewProject, previewLock, names)
+	previewLock := plan.Lock()
+	if _, err := a.engine.Validate(previewProject); err != nil {
+		return a.fail(fmt.Errorf("updated packs are invalid: %w", err))
+	}
+	writePackUpdateReview(a.stdout, project, previewProject, &previewLock, names)
 	if !*apply {
 		fmt.Fprintln(a.stdout, "Preview only. Re-run with --apply after reviewing rule, parameter, control, severity, and digest changes.")
 		return 0
 	}
-	if _, err := packs.UpdateLock(project, names, a.info.Version); err != nil {
+	if err := plan.Apply(); err != nil {
 		return a.fail(err)
-	}
-	if _, err := a.engine.Validate(project); err != nil {
-		return a.fail(fmt.Errorf("updated packs are invalid: %w", err))
 	}
 	if pruneOnly {
 		fmt.Fprintf(a.stdout, "Pruned stale pack entries from %s; no remote packs are configured.\n", config.DefaultLockfile)
@@ -2357,6 +2434,14 @@ func packUpdatePreviewProject(project *config.Project) (*config.Project, func(),
 	if lock, err := config.LoadLock(filepath.Join(project.Root, config.DefaultLockfile)); err == nil {
 		for _, entry := range lock.Packs {
 			if err := copyRelative(entry.Vendor); err != nil {
+				cleanup()
+				return nil, func() {}, err
+			}
+		}
+	}
+	for _, reference := range project.Packs {
+		if reference.Path != "" {
+			if err := copyRelative(reference.Path); err != nil {
 				cleanup()
 				return nil, func() {}, err
 			}
@@ -2489,6 +2574,9 @@ func writePackUpdateReview(writer io.Writer, currentProject, previewProject *con
 				}
 				for _, item := range comparison.SeverityChanged {
 					fmt.Fprintf(writer, "SEVERITY %s\n", item)
+				}
+				for _, item := range comparison.BehaviorChanged {
+					fmt.Fprintf(writer, "BEHAVIOR %s\n", item)
 				}
 				for _, item := range comparison.ParametersChanged {
 					fmt.Fprintf(writer, "PARAMETER %s\n", item)
