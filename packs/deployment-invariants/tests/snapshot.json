@@ -4,13 +4,13 @@
   "release": "0.1.0",
   "cases": [
     {
-      "name": "bounded Compose service passes",
+      "name": "bounded Compose build with pinned image passes",
       "ruleId": "deployment-invariants.compose",
       "outcome": "pass",
       "findings": []
     },
     {
-      "name": "bounded Compose build with pinned image passes",
+      "name": "bounded Compose service passes",
       "ruleId": "deployment-invariants.compose",
       "outcome": "pass",
       "findings": []
@@ -45,6 +45,13 @@
           "hasFix": false
         }
       ]
+    },
+    {
+      "name": "malformed Compose YAML fails closed",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule deployment-invariants.compose: compose.yaml: yaml: line 1: did not find expected ',' or ']'"
     },
     {
       "name": "mapping build-only Compose service fails image policy",
@@ -88,13 +95,6 @@
           "hasFix": false
         }
       ]
-    },
-    {
-      "name": "malformed Compose YAML fails closed",
-      "ruleId": "deployment-invariants.compose",
-      "outcome": "error",
-      "findings": [],
-      "error": "rule deployment-invariants.compose: compose.yaml: yaml: line 1: did not find expected ',' or ']'"
     },
     {
       "name": "narrow development deployment exclusion is explicit",
