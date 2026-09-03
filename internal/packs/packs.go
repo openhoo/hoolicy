@@ -257,6 +257,13 @@ type acquiredPack struct {
 func (pack *acquiredPack) cleanup() {
 	_ = os.RemoveAll(pack.staged)
 }
+func newStagingDir(root, vendor, name string) (string, error) {
+	parent := filepath.Dir(vendor)
+	if info, err := os.Stat(parent); err == nil && info.IsDir() {
+		return os.MkdirTemp(parent, "."+name+"-stage-*")
+	}
+	return os.MkdirTemp(root, ".hoolicy-pack-stage-*")
+}
 
 func acquire(project *config.Project, name string, toolVersions ...string) (*acquiredPack, error) {
 	var reference *config.PackRef
@@ -336,11 +343,7 @@ func acquireGit(project *config.Project, reference config.PackRef, toolVersion s
 	if err != nil {
 		return nil, err
 	}
-	vendorParent := filepath.Dir(vendor)
-	if err := os.MkdirAll(vendorParent, 0o755); err != nil {
-		return nil, err
-	}
-	staged, err := os.MkdirTemp(vendorParent, "."+reference.Name+"-stage-*")
+	staged, err := newStagingDir(project.Root, vendor, reference.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -371,11 +374,7 @@ func acquireOCI(project *config.Project, reference config.PackRef, toolVersion s
 	if err != nil {
 		return nil, err
 	}
-	parent := filepath.Dir(vendor)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return nil, err
-	}
-	staged, err := os.MkdirTemp(parent, "."+reference.Name+"-oci-stage-*")
+	staged, err := newStagingDir(project.Root, vendor, reference.Name+"-oci")
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +413,80 @@ func acquireOCI(project *config.Project, reference config.PackRef, toolVersion s
 	}, nil
 }
 
-func UpdateLock(project *config.Project, names []string, toolVersions ...string) (*config.Lock, error) {
+// UpdatePlan retains the exact acquired pack bytes and lock that were
+// reviewed. Applying it never re-resolves mutable Git or OCI references.
+type UpdatePlan struct {
+	projectRoot  string
+	lock         config.Lock
+	acquired     []*acquiredPack
+	removalPaths []string
+	applied      bool
+	cleaned      bool
+}
+
+func (plan *UpdatePlan) Lock() config.Lock {
+	lock := plan.lock
+	lock.Packs = append([]config.LockedPack(nil), plan.lock.Packs...)
+	return lock
+}
+
+func (plan *UpdatePlan) Materialize(root string) error {
+	if plan.cleaned {
+		return errors.New("pack update plan has been cleaned up")
+	}
+	for _, pack := range plan.acquired {
+		target := filepath.Join(root, filepath.FromSlash(pack.locked.Vendor))
+		if err := os.RemoveAll(target); err != nil {
+			return err
+		}
+		if err := copyTree(pack.staged, target); err != nil {
+			return err
+		}
+	}
+	for _, relative := range plan.removalPaths {
+		if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(relative))); err != nil {
+			return err
+		}
+	}
+	return config.SaveLock(filepath.Join(root, config.DefaultLockfile), plan.lock)
+}
+
+func (plan *UpdatePlan) Apply() error {
+	if plan.cleaned {
+		return errors.New("pack update plan has been cleaned up")
+	}
+	if plan.applied {
+		return errors.New("pack update plan has already been applied")
+	}
+	lockPath := filepath.Join(plan.projectRoot, config.DefaultLockfile)
+	if err := installAcquired(plan.acquired, plan.removalAbsolutePaths(), func() error {
+		return config.SaveLock(lockPath, plan.lock)
+	}); err != nil {
+		return err
+	}
+	plan.applied = true
+	return nil
+}
+
+func (plan *UpdatePlan) removalAbsolutePaths() []string {
+	paths := make([]string, 0, len(plan.removalPaths))
+	for _, relative := range plan.removalPaths {
+		paths = append(paths, filepath.Join(plan.projectRoot, filepath.FromSlash(relative)))
+	}
+	return paths
+}
+
+func (plan *UpdatePlan) Cleanup() {
+	if plan.cleaned {
+		return
+	}
+	for _, pack := range plan.acquired {
+		pack.cleanup()
+	}
+	plan.cleaned = true
+}
+
+func PrepareUpdate(project *config.Project, names []string, toolVersions ...string) (*UpdatePlan, error) {
 	remote := make(map[string]bool)
 	for _, reference := range project.Packs {
 		if reference.Git != "" || reference.OCI != "" {
@@ -439,7 +511,7 @@ func UpdateLock(project *config.Project, names []string, toolVersions ...string)
 		return nil, err
 	}
 	byName := make(map[string]config.LockedPack)
-	staleVendors := make([]string, 0)
+	removals := make([]string, 0)
 	for _, entry := range lock.Packs {
 		if remote[entry.Name] {
 			byName[entry.Name] = entry
@@ -463,23 +535,22 @@ func UpdateLock(project *config.Project, names []string, toolVersions ...string)
 		if !info.IsDir() {
 			return nil, fmt.Errorf("stale pack %s vendor is not a directory", entry.Name)
 		}
-		staleVendors = append(staleVendors, vendor)
+		removals = append(removals, entry.Vendor)
 	}
-	acquired := make([]*acquiredPack, 0, len(names))
-	defer func() {
-		for _, pack := range acquired {
-			pack.cleanup()
-		}
-	}()
+	plan := &UpdatePlan{projectRoot: project.Root, acquired: make([]*acquiredPack, 0, len(names)), removalPaths: removals}
+	fail := func(err error) (*UpdatePlan, error) {
+		plan.Cleanup()
+		return nil, err
+	}
 	for _, name := range names {
 		pack, err := acquire(project, name, toolVersions...)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
-		acquired = append(acquired, pack)
+		plan.acquired = append(plan.acquired, pack)
 		entry := pack.locked
 		if previous, exists := byName[name]; exists && releaseLess(entry.Release, previous.Release) {
-			return nil, fmt.Errorf("pack %s downgrade from %s to %s is forbidden", name, previous.Release, entry.Release)
+			return fail(fmt.Errorf("pack %s downgrade from %s to %s is forbidden", name, previous.Release, entry.Release))
 		}
 		byName[name] = entry
 	}
@@ -487,10 +558,22 @@ func UpdateLock(project *config.Project, names []string, toolVersions ...string)
 	for _, entry := range byName {
 		lock.Packs = append(lock.Packs, entry)
 	}
-	if err := installAcquired(acquired, staleVendors, func() error { return config.SaveLock(lockPath, *lock) }); err != nil {
+	sort.Slice(lock.Packs, func(i, j int) bool { return lock.Packs[i].Name < lock.Packs[j].Name })
+	plan.lock = *lock
+	return plan, nil
+}
+
+func UpdateLock(project *config.Project, names []string, toolVersions ...string) (*config.Lock, error) {
+	plan, err := PrepareUpdate(project, names, toolVersions...)
+	if err != nil {
 		return nil, err
 	}
-	return lock, nil
+	defer plan.Cleanup()
+	if err := plan.Apply(); err != nil {
+		return nil, err
+	}
+	lock := plan.Lock()
+	return &lock, nil
 }
 
 type installedPack struct {
@@ -548,6 +631,9 @@ func installAcquired(packs []*acquiredPack, removals []string, commit func() err
 		removed = append(removed, removedPack{vendor: vendor, backup: reserved})
 	}
 	for _, pack := range packs {
+		if err := os.MkdirAll(filepath.Dir(pack.vendor), 0o755); err != nil {
+			return rollback(err)
+		}
 		state := installedPack{pack: pack}
 		if _, err := os.Lstat(pack.vendor); err == nil {
 			reserved, reserveErr := os.MkdirTemp(filepath.Dir(pack.vendor), "."+filepath.Base(pack.vendor)+"-backup-*")

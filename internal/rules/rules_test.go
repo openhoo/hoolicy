@@ -50,6 +50,46 @@ func TestGenericRuleKinds(t *testing.T) {
 	}
 }
 
+func TestGitHubRunExpressionDetectionToleratesWhitespace(t *testing.T) {
+	t.Parallel()
+	rule := baseRule("demo.workflow", "ci.workflow-security", []string{"workflow.yml"}, map[string]any{"provider": "github"})
+	tests := []struct {
+		name   string
+		script string
+		want   bool
+	}{
+		{name: "standard", script: "echo '${{ github.event.pull_request.title }}'", want: true},
+		{name: "expression whitespace", script: "echo '${{\n  github . event . pull_request . title\n}}'", want: true},
+		{name: "bracket property access", script: `echo "${{ github.event['pull_request']['title'] }}"`, want: true},
+		{name: "mixed property access", script: `echo "${{ github['event']['pull_request'].title }}"`, want: true},
+		{name: "head ref", script: "echo '${{ github.head_ref }}'", want: true},
+		{name: "trusted output", script: "echo '${{ needs.build.outputs.value }}'", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := map[string]any{
+				"permissions": "read-all",
+				"jobs": map[string]any{
+					"build": map[string]any{
+						"steps": []any{map[string]any{"run": test.script}},
+					},
+				},
+			}
+			findings := inspectGitHubWorkflow(rule, "workflow.yml", root, nil, false)
+			found := false
+			for _, finding := range findings {
+				if strings.Contains(finding.Message, "untrusted GitHub event data") {
+					found = true
+					break
+				}
+			}
+			if found != test.want {
+				t.Fatalf("script %q detected=%v, want %v; findings=%#v", test.script, found, test.want, findings)
+			}
+		})
+	}
+}
+
 func TestRuleValidationRejectsDisabledNumericConstraints(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

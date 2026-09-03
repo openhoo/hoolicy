@@ -20,14 +20,26 @@ func Writable(root, path string) (string, string, error) {
 	return resolve(root, path, true)
 }
 
-func resolve(root, path string, allowMissing bool) (string, string, error) {
+// Relative validates and cleans a repository-relative path without touching
+// the filesystem. It is useful for immutable snapshots whose source tree may
+// no longer exist in the live worktree.
+func Relative(path string) (string, error) {
 	if filepath.IsAbs(path) || strings.HasPrefix(path, "/") || strings.Contains(path, "\\") || hasWindowsVolume(path) {
-		return "", "", fmt.Errorf("absolute path is forbidden: %s", path)
+		return "", fmt.Errorf("absolute path is forbidden: %s", path)
 	}
 	clean := filepath.Clean(filepath.FromSlash(path))
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("path escapes repository root: %s", path)
+		return "", fmt.Errorf("path escapes repository root: %s", path)
 	}
+	return filepath.ToSlash(clean), nil
+}
+
+func resolve(root, path string, allowMissing bool) (string, string, error) {
+	clean, err := Relative(path)
+	if err != nil {
+		return "", "", err
+	}
+	cleanOS := filepath.FromSlash(clean)
 	absoluteRoot, err := filepath.Abs(root)
 	if err != nil {
 		return "", "", err
@@ -40,7 +52,7 @@ func resolve(root, path string, allowMissing bool) (string, string, error) {
 		return "", "", fmt.Errorf("%w: %s", ErrSymlink, absoluteRoot)
 	}
 	current := absoluteRoot
-	parts := strings.Split(clean, string(filepath.Separator))
+	parts := strings.Split(cleanOS, string(filepath.Separator))
 	for index, part := range parts {
 		current = filepath.Join(current, part)
 		info, statErr := os.Lstat(current)
@@ -60,7 +72,7 @@ func resolve(root, path string, allowMissing bool) (string, string, error) {
 			return "", "", fmt.Errorf("path component is not a directory: %s", filepath.ToSlash(filepath.Join(parts[:index+1]...)))
 		}
 	}
-	return filepath.ToSlash(clean), current, nil
+	return clean, current, nil
 }
 
 func hasWindowsVolume(path string) bool {

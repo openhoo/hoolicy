@@ -83,6 +83,66 @@ cases:
             deploy:
               resources:
                 limits: {cpus: '0.5', memory: 256M}
+  - name: bounded Compose build with pinned image passes
+    rule: deployment-invariants.compose
+    outcome: pass
+    files:
+      compose.yaml: |
+        services:
+          app:
+            build: .
+            image: registry.example.com/app@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+            user: '1000'
+            read_only: true
+            deploy:
+              resources:
+                limits: {cpus: '0.5', memory: 256M}
+  - name: string build-only Compose service fails all policies
+    rule: deployment-invariants.compose
+    outcome: fail
+    findingCount: 3
+    files:
+      compose.yaml: |
+        services:
+          app:
+            build: .
+    expect:
+      - ruleId: deployment-invariants.compose
+        key: service:app:image
+      - ruleId: deployment-invariants.compose
+        key: service:app:limits
+      - ruleId: deployment-invariants.compose
+        key: service:app:security
+  - name: mapping build-only Compose service fails image policy
+    rule: deployment-invariants.compose
+    outcome: fail
+    files:
+      compose.yaml: |
+        services:
+          app:
+            build:
+              context: .
+              dockerfile: Dockerfile
+    expect:
+      - ruleId: deployment-invariants.compose
+        key: service:app:image
+  - name: build-only Compose service keeps runtime checks without image policy
+    rule: deployment-invariants.compose
+    outcome: fail
+    parameters:
+      approved_registries: []
+      require_immutable_images: false
+    findingCount: 2
+    files:
+      compose.yaml: |
+        services:
+          app:
+            build: .
+    expect:
+      - ruleId: deployment-invariants.compose
+        key: service:app:limits
+      - ruleId: deployment-invariants.compose
+        key: service:app:security
   - name: root mutable Compose service fails
     rule: deployment-invariants.compose
     outcome: fail

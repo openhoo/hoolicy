@@ -272,6 +272,7 @@ type decisionContractRecord struct {
 	ConfigDigest  string
 	PolicyDigest  string
 	Revision      string
+	Branch        string
 	Dirty         bool
 	FailOn        sdk.Severity
 	Findings      []sdk.Finding
@@ -286,7 +287,7 @@ type decisionContractRecord struct {
 func decisionContract(report *engine.Report, controls []ControlRecord) decisionContractRecord {
 	return decisionContractRecord{
 		ReportVersion: report.ReportVersion, Tool: report.Tool, Project: report.Project, GeneratedAt: report.GeneratedAt,
-		ConfigDigest: report.ConfigDigest, PolicyDigest: report.PolicyDigest, Revision: report.Git.Commit, Dirty: report.Git.Dirty,
+		ConfigDigest: report.ConfigDigest, PolicyDigest: report.PolicyDigest, Revision: report.Git.Commit, Branch: report.Git.Branch, Dirty: report.Git.Dirty,
 		FailOn: report.FailOn, Findings: report.Findings, Waivers: report.Waivers, Changes: report.Changes, Baseline: report.Baseline,
 		Comparison: report.Comparison, Summary: report.Summary, Controls: controls,
 	}
@@ -971,11 +972,13 @@ type junitSuites struct {
 	XMLName    xml.Name        `xml:"testsuites"`
 	Tests      int             `xml:"tests,attr"`
 	Failures   int             `xml:"failures,attr"`
+	Errors     int             `xml:"errors,attr"`
 	Timestamp  string          `xml:"timestamp,attr"`
 	Properties []junitProperty `xml:"properties>property"`
 	Suites     []struct {
 		Tests      int             `xml:"tests,attr"`
 		Failures   int             `xml:"failures,attr"`
+		Errors     int             `xml:"errors,attr"`
 		Timestamp  string          `xml:"timestamp,attr"`
 		Properties []junitProperty `xml:"properties>property"`
 	} `xml:"testsuite"`
@@ -998,22 +1001,33 @@ func inspectJUnit(data []byte) (time.Time, map[string]int, []junitProperty, erro
 		return time.Time{}, nil, nil, errors.New("JUnit root must be testsuites")
 	}
 	properties := append([]junitProperty(nil), suites.Properties...)
-	tests, failures := suites.Tests, suites.Failures
+	tests, failures, errorsCount := suites.Tests, suites.Failures, suites.Errors
 	timestamp := suites.Timestamp
+	if suites.Tests < 0 || suites.Failures < 0 || suites.Errors < 0 || suites.Failures > suites.Tests || suites.Errors > suites.Tests-suites.Failures {
+		return time.Time{}, nil, nil, errors.New("JUnit test and failure counts are invalid")
+	}
 	for _, suite := range suites.Suites {
-		if suite.Tests < 0 || suite.Failures < 0 {
+		if suite.Tests < 0 || suite.Failures < 0 || suite.Errors < 0 {
 			return time.Time{}, nil, nil, errors.New("JUnit counts must not be negative")
 		}
+		if suite.Failures > suite.Tests || suite.Errors > suite.Tests-suite.Failures {
+			return time.Time{}, nil, nil, errors.New("JUnit test and failure counts are invalid")
+		}
 		if suites.Tests == 0 {
-			tests += suite.Tests
-			failures += suite.Failures
+			nextTests, testsOK := checkedJUnitAdd(tests, suite.Tests)
+			nextFailures, failuresOK := checkedJUnitAdd(failures, suite.Failures)
+			nextErrors, errorsOK := checkedJUnitAdd(errorsCount, suite.Errors)
+			if !testsOK || !failuresOK || !errorsOK {
+				return time.Time{}, nil, nil, errors.New("JUnit count overflow while aggregating suites")
+			}
+			tests, failures, errorsCount = nextTests, nextFailures, nextErrors
 		}
 		properties = append(properties, suite.Properties...)
 		if timestamp == "" {
 			timestamp = suite.Timestamp
 		}
 	}
-	if tests < 0 || failures < 0 || failures > tests {
+	if tests < 0 || failures < 0 || errorsCount < 0 || failures > tests || errorsCount > tests-failures {
 		return time.Time{}, nil, nil, errors.New("JUnit test and failure counts are invalid")
 	}
 	var generated time.Time
@@ -1024,7 +1038,14 @@ func inspectJUnit(data []byte) (time.Time, map[string]int, []junitProperty, erro
 			return time.Time{}, nil, nil, errors.New("JUnit timestamp must be RFC3339")
 		}
 	}
-	return generated, map[string]int{"items": tests, "failures": failures}, properties, nil
+	return generated, map[string]int{"items": tests, "failures": failures + errorsCount}, properties, nil
+}
+
+func checkedJUnitAdd(total, value int) (int, bool) {
+	if total > int(^uint(0)>>1)-value {
+		return 0, false
+	}
+	return total + value, true
 }
 
 func propertyMatches(properties []junitProperty, name, value string) bool {

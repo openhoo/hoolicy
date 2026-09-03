@@ -29,6 +29,239 @@ func TestLoadJSONRejectsOversizedInput(t *testing.T) {
 	}
 }
 
+func TestMigrateJSONPreservesV1FingerprintForWaiverScope(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	waiverPath := filepath.Join(root, config.DefaultWaivers)
+	if err := os.MkdirAll(filepath.Dir(waiverPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("version: 1\nproject: demo\nfailOn: error\nwaivers: .hoolicy/waivers.yaml\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rule := sdk.Rule{ID: "demo.required", Title: "Required file", Description: "A required file.", Rationale: "The repository needs this file.", Remediation: "Add README.md.", Severity: sdk.SeverityError, Kind: "files"}
+	project := &config.Project{Version: 1, Project: "demo", FailOn: sdk.SeverityError, Root: root, Path: configPath, Waivers: ".hoolicy/waivers.yaml"}
+	waivedFinding := sdk.Finding{RuleID: rule.ID, Title: rule.Title, Message: "README.md is missing", Remediation: rule.Remediation, Severity: rule.Severity, Location: sdk.Location{Path: "README.md", Line: 1, Column: 1}, Key: "required"}
+	waivedFinding.Fingerprint = legacyFindingFingerprint(waivedFinding)
+	unwaivedFinding := sdk.Finding{RuleID: rule.ID, Title: rule.Title, Message: "LICENSE is missing", Remediation: rule.Remediation, Severity: rule.Severity, Location: sdk.Location{Path: "LICENSE", Line: 1, Column: 1}, Key: "required"}
+	unwaivedFinding.Fingerprint = legacyFindingFingerprint(unwaivedFinding)
+	waiverData := "version: 1\nwaivers:\n  - id: demo.review\n    rule: demo.required\n    fingerprints:\n      - " + waivedFinding.Fingerprint + "\n    reason: Temporary exception while reviewed remediation is delivered.\n    owner: team@example.com\n    ticket: https://issues.example.com/DEMO-1\n    created: 2026-08-01\n    expires: 2026-09-01\n"
+	if err := os.WriteFile(waiverPath, []byte(waiverData), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, config.DefaultEvidence), []byte("evidence policy input\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	input := legacyReport{
+		ReportVersion: 1, Tool: engine.Tool{Name: "hoolicy", Version: "0.1.2"}, Project: "demo",
+		GeneratedAt: time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC), ConfigDigest: "",
+		Git: sdk.GitContext{CommitSubjects: []sdk.Commit{}}, FailOn: sdk.SeverityError,
+		Findings: []legacyFinding{
+			{RuleID: waivedFinding.RuleID, Title: waivedFinding.Title, Message: waivedFinding.Message, Remediation: waivedFinding.Remediation, Severity: waivedFinding.Severity, Location: waivedFinding.Location, Key: waivedFinding.Key, Fingerprint: waivedFinding.Fingerprint, Waived: true, WaiverID: "demo.review"},
+			{RuleID: unwaivedFinding.RuleID, Title: unwaivedFinding.Title, Message: unwaivedFinding.Message, Remediation: unwaivedFinding.Remediation, Severity: unwaivedFinding.Severity, Location: unwaivedFinding.Location, Key: unwaivedFinding.Key, Fingerprint: unwaivedFinding.Fingerprint},
+		},
+		Summary: legacySummary{Rules: 1, Errors: 2, Waived: 1, Blocking: 1},
+	}
+	digest, err := LegacyProjectDigest(project, []sdk.Rule{rule})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ConfigDigest = digest
+	reportPath := filepath.Join(root, "report.json")
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reportPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := MigrateJSON(reportPath, project, []sdk.Rule{rule}, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if migrated.PolicyDigest == migrated.ConfigDigest {
+		t.Fatal("migration reused the historical config digest as the v2 policy digest")
+	}
+	if len(migrated.Findings) != 2 {
+		t.Fatalf("unexpected migrated findings: %#v", migrated.Findings)
+	}
+	foundWaived := false
+	for _, finding := range migrated.Findings {
+		if finding.Waived && finding.State == sdk.FindingWaived && finding.WaiverID == "demo.review" {
+			foundWaived = true
+			if finding.Fingerprint == waivedFinding.Fingerprint {
+				t.Fatal("migration did not derive the v2 finding identity")
+			}
+		}
+	}
+	if !foundWaived {
+		t.Fatalf("historical waiver was not restored: %#v", migrated.Findings)
+	}
+	if migrated.Summary != (engine.Summary{Rules: 1, Errors: 2, New: 1, Waived: 1, Blocking: 1}) {
+		t.Fatalf("unexpected migrated summary: %#v", migrated.Summary)
+	}
+}
+
+func TestMigrateJSONPreservesExpiredWaiverFinding(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	waiverPath := filepath.Join(root, config.DefaultWaivers)
+	if err := os.MkdirAll(filepath.Dir(waiverPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("version: 1\nproject: demo\nfailOn: error\nwaivers: .hoolicy/waivers.yaml\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(waiverPath, []byte("version: 1\nwaivers:\n  - id: demo.expired\n    rule: demo.required\n    fingerprints:\n      - "+strings.Repeat("a", 64)+"\n    reason: Temporary exception while reviewed remediation is delivered.\n    owner: team@example.com\n    ticket: https://issues.example.com/DEMO-2\n    created: 2026-08-01\n    expires: 2026-09-01\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{Version: 1, Project: "demo", FailOn: sdk.SeverityError, Root: root, Path: configPath, Waivers: ".hoolicy/waivers.yaml"}
+	generatedAt := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	expected := historicalWaiverFinding(project, "Invalid waiver demo.expired: waiver is expired", "demo.expired")
+	input := legacyReport{
+		ReportVersion: 1, Tool: engine.Tool{Name: "hoolicy", Version: "0.1.2"}, Project: "demo",
+		GeneratedAt: generatedAt, Git: sdk.GitContext{CommitSubjects: []sdk.Commit{}}, FailOn: sdk.SeverityError,
+		Findings: []legacyFinding{{RuleID: expected.RuleID, Title: expected.Title, Message: expected.Message, Remediation: expected.Remediation, Severity: expected.Severity, Location: expected.Location, Key: expected.Key, Fingerprint: expected.Fingerprint}},
+		Summary:  legacySummary{Rules: 0, Errors: 1, Blocking: 1},
+	}
+	digest, err := LegacyProjectDigest(project, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ConfigDigest = digest
+	reportPath := filepath.Join(root, "report.json")
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reportPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := MigrateJSON(reportPath, project, nil, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrated.Findings) != 1 || len(migrated.Waivers) != 0 || !strings.Contains(migrated.Findings[0].Message, "waiver is expired") {
+		t.Fatalf("expired waiver migration lost lifecycle finding: %#v", migrated)
+	}
+}
+
+func TestMigrateJSONPreservesDuplicateWaiverFindings(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	waiverPath := filepath.Join(root, config.DefaultWaivers)
+	if err := os.MkdirAll(filepath.Dir(waiverPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("version: 1\nproject: demo\nfailOn: error\nwaivers: .hoolicy/waivers.yaml\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waiver := "    rule: demo.required\n    fingerprints:\n      - " + strings.Repeat("a", 64) + "\n    reason: Temporary exception while reviewed remediation is delivered.\n    owner: team@example.com\n    ticket: https://issues.example.com/DEMO-3\n    created: 2026-08-01\n    expires: 2026-09-01\n"
+	if err := os.WriteFile(waiverPath, []byte("version: 1\nwaivers:\n  - id: demo.duplicate\n"+waiver+"  - id: demo.duplicate\n"+waiver), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{Version: 1, Project: "demo", FailOn: sdk.SeverityError, Root: root, Path: configPath, Waivers: ".hoolicy/waivers.yaml"}
+	generatedAt := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	invalid := historicalWaiverFinding(project, "Invalid waiver demo.duplicate: waiver is expired", "demo.duplicate")
+	duplicate := historicalWaiverFinding(project, "Duplicate waiver ID: demo.duplicate", "demo.duplicate")
+	input := legacyReport{
+		ReportVersion: 1, Tool: engine.Tool{Name: "hoolicy", Version: "0.1.2"}, Project: "demo",
+		GeneratedAt: generatedAt, Git: sdk.GitContext{CommitSubjects: []sdk.Commit{}}, FailOn: sdk.SeverityError,
+		Findings: []legacyFinding{
+			{RuleID: invalid.RuleID, Title: invalid.Title, Message: invalid.Message, Remediation: invalid.Remediation, Severity: invalid.Severity, Location: invalid.Location, Key: invalid.Key, Fingerprint: invalid.Fingerprint},
+			{RuleID: duplicate.RuleID, Title: duplicate.Title, Message: duplicate.Message, Remediation: duplicate.Remediation, Severity: duplicate.Severity, Location: duplicate.Location, Key: duplicate.Key, Fingerprint: duplicate.Fingerprint},
+		},
+		Summary: legacySummary{Rules: 0, Errors: 2, Blocking: 2},
+	}
+	digest, err := LegacyProjectDigest(project, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ConfigDigest = digest
+	reportPath := filepath.Join(root, "report.json")
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reportPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := MigrateJSON(reportPath, project, nil, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrated.Findings) != 2 || len(migrated.Waivers) != 0 {
+		t.Fatalf("duplicate waiver migration lost lifecycle findings: %#v", migrated)
+	}
+	messages := migrated.Findings[0].Message + "\n" + migrated.Findings[1].Message
+	if !strings.Contains(messages, "waiver is expired") || !strings.Contains(messages, "Duplicate waiver ID") {
+		t.Fatalf("duplicate waiver lifecycle findings missing: %#v", migrated.Findings)
+	}
+}
+
+func TestLegacyProjectDigestExcludesEvidence(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	if err := os.WriteFile(configPath, []byte("version: 1\nproject: demo\nfailOn: error\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{Version: 1, Project: "demo", FailOn: sdk.SeverityError, Root: root, Path: configPath, Waivers: config.DefaultWaivers, Evidence: config.DefaultEvidence}
+	rules := []sdk.Rule{{ID: "demo.required", Title: "Required", Description: "A required file.", Rationale: "The repository needs this file.", Remediation: "Add README.md.", Severity: sdk.SeverityError, Kind: "files"}}
+	legacy, err := LegacyProjectDigest(project, rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(root, config.DefaultEvidence)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, config.DefaultEvidence), []byte("version: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	current, err := engine.ProjectDigest(project, rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy == current {
+		t.Fatalf("v1 digest changed when evidence was added: %s", legacy)
+	}
+}
+
+func TestMigrateJSONRejectsIncompleteV1Envelope(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	if err := os.WriteFile(configPath, []byte("version: 1\nproject: demo\nfailOn: error\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.Project{Version: 1, Project: "demo", FailOn: sdk.SeverityError, Root: root, Path: configPath, Waivers: config.DefaultWaivers}
+	reportPath := filepath.Join(root, "report.json")
+	if err := os.WriteFile(reportPath, []byte(`{"reportVersion":1,"failOn":"error","configDigest":"sha256:`+strings.Repeat("a", 64)+`","findings":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MigrateJSON(reportPath, project, nil, "sha256:"+strings.Repeat("a", 64)); err == nil || !strings.Contains(err.Error(), "missing required v1 field") {
+		t.Fatalf("incomplete v1 envelope accepted: %v", err)
+	}
+}
+
+func TestValidateV2RejectsMissingGitCollections(t *testing.T) {
+	t.Parallel()
+	project := &config.Project{Project: "demo"}
+	input := &engine.Report{
+		ReportVersion: 2, Tool: engine.Tool{Name: "hoolicy", Version: "test"}, Project: "demo",
+		GeneratedAt:  time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC),
+		ConfigDigest: "sha256:" + strings.Repeat("a", 64), PolicyDigest: "sha256:" + strings.Repeat("b", 64),
+		FailOn: sdk.SeverityError, Findings: []sdk.Finding{}, Waivers: []config.Waiver{},
+		Metrics: engine.EvaluationMetrics{Rules: []engine.RuleMetric{}},
+	}
+	if err := ValidateV2(input, project, nil); err == nil {
+		t.Fatal("v2 report with nil git commits accepted")
+	}
+}
+
 func TestReportFormats(t *testing.T) {
 	t.Parallel()
 	rule := sdk.Rule{ID: "demo.rule", Title: "Demo rule", Remediation: "Fix it.", Severity: sdk.SeverityError}
@@ -187,5 +420,77 @@ func TestGitHubSummaryEscapesUntrustedMarkup(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "<script>") || strings.Contains(output.String(), "<img") || !strings.Contains(output.String(), "&lt;script&gt;") {
 		t.Fatalf("untrusted markup reached GitHub summary: %s", output.String())
+	}
+}
+
+func TestHistoricalWaiverLoadFailuresBecomeLifecycleFindings(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	project := &config.Project{Project: "demo", Root: root, Waivers: ".hoolicy/waivers.yaml"}
+	path := filepath.Join(root, project.Waivers)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("version: 2\nwaivers: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waivers, lifecycle, err := loadHistoricalWaivers(project, time.Now().UTC(), nil)
+	if err != nil || len(waivers) != 0 || len(lifecycle) != 1 || !strings.Contains(lifecycle[0].Message, "version must be 1") {
+		t.Fatalf("wrong-version waiver load: waivers=%#v lifecycle=%#v err=%v", waivers, lifecycle, err)
+	}
+	target := filepath.Join(root, "target.yaml")
+	if err := os.WriteFile(target, []byte("version: 1\nwaivers: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	waivers, lifecycle, err = loadHistoricalWaivers(project, time.Now().UTC(), nil)
+	if err != nil || len(waivers) != 0 || len(lifecycle) != 1 || !strings.Contains(lifecycle[0].Message, "Waiver path is unsafe") {
+		t.Fatalf("unsafe waiver load: waivers=%#v lifecycle=%#v err=%v", waivers, lifecycle, err)
+	}
+}
+
+func TestHistoricalWaiverMigrationPreservesLegacyScopes(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	finding := sdk.Finding{RuleID: "demo.rule", Fingerprint: strings.Repeat("a", 64), Location: sdk.Location{Path: "foo/bar"}}
+	for _, path := range []string{`foo\bar`, "**/**"} {
+		waiver := config.Waiver{ID: "demo.review", Rule: finding.RuleID, Paths: []string{path}, Reason: "A sufficiently detailed historical reason.", Owner: "team@example.com", Ticket: "https://issues.example.com/DEMO-1", Created: config.Date{Time: now.AddDate(0, 0, -1)}, Expires: config.Date{Time: now.AddDate(0, 0, 10)}}
+		if err := validateLegacyWaiver(waiver, now); err != nil {
+			t.Fatalf("legacy path %q rejected: %v", path, err)
+		}
+		migrated, keep := migrateHistoricalWaiver(waiver, []sdk.Finding{finding}, now)
+		if !keep || len(migrated.Paths) != 0 || !containsString(migrated.Fingerprints, finding.Fingerprint) {
+			t.Fatalf("legacy path %q not preserved safely: %#v keep=%v", path, migrated, keep)
+		}
+	}
+}
+
+func TestHistoricalWaiverReplayUsesFinalFileOrder(t *testing.T) {
+	t.Parallel()
+	finding := sdk.Finding{RuleID: "demo.rule", Fingerprint: strings.Repeat("a", 64)}
+	first := config.Waiver{ID: "demo.first", Rule: finding.RuleID, Fingerprints: []string{finding.Fingerprint}}
+	last := config.Waiver{ID: "demo.last", Rule: finding.RuleID, Fingerprints: []string{finding.Fingerprint}}
+	state := replayHistoricalWaiverState([]sdk.Finding{finding}, []historicalWaiver{{legacy: first}, {legacy: last}})
+	if got := state[finding.Fingerprint]; !got.waived || got.waiverID != "demo.last" {
+		t.Fatalf("replayed waiver state=%#v, want final file entry", got)
+	}
+}
+
+func TestHistoricalWaiverFindingsAreOrderIndependent(t *testing.T) {
+	t.Parallel()
+	project := &config.Project{Project: "demo", Waivers: ".hoolicy/waivers.yaml"}
+	stale := historicalWaiverFinding(project, "Stale waiver matches no current finding: demo.review", "demo.review")
+	duplicate := historicalWaiverFinding(project, "Duplicate waiver ID: demo.review", "demo.review")
+	findings := []legacyFinding{
+		{RuleID: stale.RuleID, Title: stale.Title, Message: stale.Message, Remediation: stale.Remediation, Severity: stale.Severity, Location: stale.Location, Key: stale.Key, Fingerprint: stale.Fingerprint},
+		{RuleID: duplicate.RuleID, Title: duplicate.Title, Message: duplicate.Message, Remediation: duplicate.Remediation, Severity: duplicate.Severity, Location: duplicate.Location, Key: duplicate.Key, Fingerprint: duplicate.Fingerprint},
+	}
+	if err := verifyHistoricalWaiverFindings(findings, []sdk.Finding{duplicate, stale}); err != nil {
+		t.Fatal(err)
 	}
 }

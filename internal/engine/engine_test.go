@@ -603,6 +603,60 @@ func benchmarkEngineCheck(b *testing.B, files int) {
 	}
 }
 
+func TestGitComparisonReportsDeletedDirectReadInputAsNew(t *testing.T) {
+	root := t.TempDir()
+	engineGit(t, root, "init", "-b", "main")
+	engineGit(t, root, "config", "user.name", "Hoolicy Test")
+	engineGit(t, root, "config", "user.email", "hoolicy@example.com")
+	projectPath := filepath.Join(root, config.DefaultFilename)
+	writeEngineFile(t, projectPath, `version: 1
+project: demo
+failOn: error
+rules:
+  - id: demo.direct-read
+    title: Required historical input
+    description: Reads one required input directly.
+    rationale: Deleted inputs must be reported.
+    remediation: Restore the required input.
+    severity: error
+    kind: test.direct-read
+    spec: {}
+`)
+	writeEngineFile(t, filepath.Join(root, "required.txt"), "committed\n")
+	engineGit(t, root, "add", ".")
+	engineGit(t, root, "commit", "-m", "test: direct read base")
+	base := engineGit(t, root, "rev-parse", "HEAD")
+	if err := os.Remove(filepath.Join(root, "required.txt")); err != nil {
+		t.Fatal(err)
+	}
+	project, err := config.LoadProject(projectPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := sdk.NewRegistry()
+	if err := registry.Register("test.direct-read", directReadKind{}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.New(registry).Check(context.Background(), project, engine.Options{ToolVersion: "test", BaseSHA: base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Findings) != 1 || result.Findings[0].State != sdk.FindingNew || result.Summary.Blocking != 1 {
+		t.Fatalf("deleted direct-read input was not blocking new: %#v", result)
+	}
+}
+
+type directReadKind struct{}
+
+func (directReadKind) Validate(sdk.Rule) error { return nil }
+
+func (directReadKind) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Rule) ([]sdk.Finding, error) {
+	if _, err := input.Repository.Read("required.txt"); err == nil {
+		return nil, nil
+	}
+	return []sdk.Finding{{Message: "required input is missing", Location: sdk.Location{Path: "required.txt"}, Key: "required"}}, nil
+}
+
 func BenchmarkEngineAdversarialLimit(b *testing.B) {
 	root := b.TempDir()
 	writeEngineFile(b, filepath.Join(root, "oversized.json"), strings.Repeat("x", 64<<10))

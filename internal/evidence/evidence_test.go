@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -101,6 +102,11 @@ rules:
 	if err := evidence.Verify(project, loaded, current, ruleSet, now); err != nil {
 		t.Fatal(err)
 	}
+	current.Git.Branch = "different-branch"
+	if err := evidence.Verify(project, loaded, current, ruleSet, now); err == nil || !strings.Contains(err.Error(), "policy decision no longer reproduces") {
+		t.Fatalf("branch context change accepted: %v", err)
+	}
+	current.Git.Branch = git.Branch
 	storedFindings := loaded.Decision.Findings
 	currentFindings := current.Findings
 	invalidFinding := sdk.Finding{
@@ -208,6 +214,86 @@ func TestExternalAdaptersRequireSchemaAndDefinedSubjectBinding(t *testing.T) {
 	failedSpec := evidence.ExternalSpec{ID: "failed-vsa", Type: "provenance", SHA256: sha(failedVSA), SubjectDigest: subject, RequiredProducer: "https://verifier.example/v1"}
 	if _, err := evidence.InspectExternalBytes(failedSpec, failedVSA, now); err == nil || !strings.Contains(err.Error(), "failures") {
 		t.Fatalf("failed VSA accepted: %v", err)
+	}
+}
+
+func TestJUnitErrorAccounting(t *testing.T) {
+	t.Parallel()
+	subject := "sha256:" + strings.Repeat("e", 64)
+	maxInt := strconv.Itoa(int(^uint(0) >> 1))
+	tests := []struct {
+		name, body, wantError string
+		wantFailures          int
+	}{
+		{
+			name:      "root errors count toward failures",
+			body:      `<testsuites tests="1" failures="0" errors="1"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="0" errors="0"/></testsuites>`,
+			wantError: "failures",
+		},
+		{
+			name:      "child errors count toward failures",
+			body:      `<testsuites><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="0" errors="1"/></testsuites>`,
+			wantError: "failures",
+		},
+		{
+			name: "child count overflow rejects",
+			body: `<testsuites><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties>` +
+				`<testsuite tests="` + maxInt + `" failures="0" errors="` + maxInt + `"/>` +
+				`<testsuite tests="` + maxInt + `" failures="0" errors="` + maxInt + `"/>` +
+				`<testsuite tests="3" failures="0" errors="2"/></testsuites>`,
+			wantError: "overflow",
+		},
+		{
+			name:         "zero errors pass",
+			body:         `<testsuites tests="1" failures="0" errors="0"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="0" errors="0"/></testsuites>`,
+			wantFailures: 0,
+		},
+		{
+			name:         "root totals remain authoritative",
+			body:         `<testsuites tests="1" failures="0" errors="0"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="0" errors="1"/></testsuites>`,
+			wantFailures: 0,
+		},
+		{
+			name:      "negative root errors reject",
+			body:      `<testsuites tests="1" failures="0" errors="-1"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="0" errors="0"/></testsuites>`,
+			wantError: "invalid",
+		},
+		{
+			name:      "negative root errors cannot cancel child errors",
+			body:      `<testsuites tests="0" failures="0" errors="-1"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="0" errors="1"/></testsuites>`,
+			wantError: "invalid",
+		},
+		{
+			name:      "negative child errors reject",
+			body:      `<testsuites><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="0" errors="-1"/></testsuites>`,
+			wantError: "negative",
+		},
+		{
+			name:      "root failures plus errors exceed tests",
+			body:      `<testsuites tests="1" failures="1" errors="1"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="0" errors="0"/></testsuites>`,
+			wantError: "invalid",
+		},
+		{
+			name:      "child failures plus errors exceed tests",
+			body:      `<testsuites><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="1" errors="1"/></testsuites>`,
+			wantError: "invalid",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			data := []byte(test.body)
+			spec := evidence.ExternalSpec{ID: test.name, Type: "junit", SHA256: sha(data), SubjectDigest: subject, MaximumFailures: 0}
+			record, err := evidence.InspectExternalBytes(spec, data, time.Now())
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("JUnit report accepted or returned wrong error: %v", err)
+				}
+				return
+			}
+			if err != nil || record.Metrics["failures"] != test.wantFailures {
+				t.Fatalf("record=%#v err=%v", record, err)
+			}
+		})
 	}
 }
 

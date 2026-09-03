@@ -30,6 +30,7 @@ import (
 type Options struct {
 	BaseSHA           string
 	MergeRequestTitle string
+	Branch            string
 	GitContext        *sdk.GitContext
 }
 
@@ -207,7 +208,17 @@ func OpenRevision(root, revision string, options Options) (*Repository, error) {
 	defer iterator.Close()
 	if err := iterator.ForEach(func(file *object.File) error {
 		path, included := scopedGitPath(filepath.ToSlash(file.Name), scope)
-		if !included || path == ".git" || strings.HasPrefix(path, ".git/") || strings.HasPrefix(path, ".hoolicy/vendor/") {
+		if !included {
+			return nil
+		}
+		path, pathErr := safepath.Relative(path)
+		if pathErr != nil {
+			if scope == "." {
+				return fmt.Errorf("unsafe Git tree path %q: %w", file.Name, pathErr)
+			}
+			return fmt.Errorf("unsafe snapshot path %q: %w", path, pathErr)
+		}
+		if path == ".git" || strings.HasPrefix(path, ".git/") || strings.HasPrefix(path, ".hoolicy/vendor/") {
 			return nil
 		}
 		mode, err := file.Mode.ToOSFileMode()
@@ -269,7 +280,7 @@ func (r *Repository) Match(include, exclude []string) ([]sdk.File, error) {
 }
 
 func (r *Repository) Read(path string) (sdk.File, error) {
-	clean, _, err := safePath(r.root, path)
+	clean, err := safepath.Relative(path)
 	if err != nil {
 		return sdk.File{}, err
 	}
@@ -575,6 +586,9 @@ func inspectGit(root string, options Options) (sdk.GitContext, error) {
 	if options.BaseSHA != "" && (strings.TrimSpace(options.BaseSHA) != options.BaseSHA || strings.HasPrefix(options.BaseSHA, "-") || strings.ContainsAny(options.BaseSHA, "\x00\r\n")) {
 		return sdk.GitContext{}, fmt.Errorf("inspect Git repository: unsafe base revision %q", options.BaseSHA)
 	}
+	if options.Branch != "" && (strings.TrimSpace(options.Branch) != options.Branch || strings.HasPrefix(options.Branch, "-") || strings.ContainsAny(options.Branch, "\x00\r\n")) {
+		return sdk.GitContext{}, fmt.Errorf("inspect Git repository: unsafe branch %q", options.Branch)
+	}
 	context, err := inspectGitCLI(root, options)
 	if err == nil {
 		return context, nil
@@ -610,6 +624,9 @@ func inspectGitCLI(root string, options Options) (sdk.GitContext, error) {
 		case line != "" && !strings.HasPrefix(line, "# "):
 			context.Dirty = true
 		}
+	}
+	if context.Branch == "" {
+		context.Branch = options.Branch
 	}
 	if options.BaseSHA != "" && context.Commit != "" {
 		output, err := gitOutput(root, "log", "--format=%H%x00%s", "-z", options.BaseSHA+".."+context.Commit)
@@ -653,6 +670,9 @@ func inspectGitGo(root string, options Options) (sdk.GitContext, error) {
 	symbolicHead, err := repository.Reference(plumbing.HEAD, false)
 	if err == nil && symbolicHead.Type() == plumbing.SymbolicReference && symbolicHead.Target().IsBranch() {
 		context.Branch = symbolicHead.Target().Short()
+	}
+	if context.Branch == "" {
+		context.Branch = options.Branch
 	}
 	head, err := repository.Head()
 	if errors.Is(err, plumbing.ErrReferenceNotFound) {

@@ -77,6 +77,73 @@ cases:
     expect:
       - ruleId: ci-workflow-security.github
         messageContains: untrusted pull-request code
+  - name: pinned remote reusable workflow passes
+    rule: ci-workflow-security.github
+    outcome: pass
+    files:
+      .github/workflows/caller.yml: |
+        on: push
+        permissions:
+          contents: read
+        jobs:
+          call:
+            uses: vendor/reusable/.github/workflows/ci.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: branch-pinned remote reusable workflow fails
+    rule: ci-workflow-security.github
+    outcome: fail
+    files:
+      .github/workflows/caller.yml: |
+        on: push
+        permissions:
+          contents: read
+        jobs:
+          call:
+            uses: vendor/reusable/.github/workflows/ci.yml@main
+    expect:
+      - ruleId: ci-workflow-security.github
+        key: job:call:uses
+  - name: tag-pinned remote reusable workflow fails
+    rule: ci-workflow-security.github
+    outcome: fail
+    files:
+      .github/workflows/caller.yml: |
+        on: push
+        permissions:
+          contents: read
+        jobs:
+          call:
+            uses: vendor/reusable/.github/workflows/ci.yml@v1
+    expect:
+      - ruleId: ci-workflow-security.github
+        key: job:call:uses
+  - name: remote reusable workflow without ref fails
+    rule: ci-workflow-security.github
+    outcome: fail
+    files:
+      .github/workflows/caller.yml: |
+        on: push
+        permissions:
+          contents: read
+        jobs:
+          call:
+            uses: vendor/reusable/.github/workflows/ci.yml
+    expect:
+      - ruleId: ci-workflow-security.github
+        key: job:call:uses
+  - name: expression remote reusable workflow fails
+    rule: ci-workflow-security.github
+    outcome: fail
+    files:
+      .github/workflows/caller.yml: |
+        on: push
+        permissions:
+          contents: read
+        jobs:
+          call:
+            uses: '${{ inputs.workflow }}'
+    expect:
+      - ruleId: ci-workflow-security.github
+        key: job:call:uses
   - name: malformed GitHub workflow fails closed
     rule: ci-workflow-security.github
     outcome: error
