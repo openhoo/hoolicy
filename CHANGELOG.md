@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 (2026-09-03)
+
+### Bug Fixes
+
+- **policy:** preserve lifecycle and path safety (3730945)
+- **policy:** allow generated release branches (7de6ba4)
+
+### Other Changes
+
+- **ci:** update Hoostack tool pins (#19) (ad4fb19)
+- **ci:** update HooNeedsUpdates to v0.3.0 (269737d)
+
 ## 0.3.0 (2026-08-31)
 
 ### Features
