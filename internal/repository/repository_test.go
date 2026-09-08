@@ -299,6 +299,7 @@ func TestRepositoryPureGoFallbackSupportsUnreadableIndex(t *testing.T) {
 func TestRepositoryPureGoFallbackSupportsLinkedWorktree(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "core.autocrlf", "false")
 	runGit(t, root, "config", "user.name", "Hoolicy Test")
 	runGit(t, root, "config", "user.email", "hoolicy@example.com")
 	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("tracked\n"), 0o644); err != nil {
