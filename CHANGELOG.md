@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.2 (2026-09-08)
+
+### Bug Fixes
+
+- **reports:** harden GitHub and GitLab compatibility (3714dc8)
+
+### Other Changes
+
+- **ci:** converge released tool pins (c0fbd65)
+
 ## 0.3.1 (2026-09-03)
 
 ### Bug Fixes
