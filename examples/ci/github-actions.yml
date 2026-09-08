@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   policy:
@@ -31,12 +32,23 @@ jobs:
           HOOLICY_MERGE_REQUEST_TITLE: ${{ github.event.pull_request.title }}
         run: |
           status=0
+          sarif_status=0
+          summary_status=0
           hoolicy check --format json --output hoolicy-report.json || status=$?
-          hoolicy check --format github --output hoolicy-summary.md || true
+          hoolicy check --format sarif --output hoolicy.sarif || sarif_status=$?
+          hoolicy check --format github --output hoolicy-summary.md || summary_status=$?
           test ! -f hoolicy-summary.md || cat hoolicy-summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$status" -lt "$sarif_status" ]]; then status="$sarif_status"; fi
+          if [[ "$status" -lt "$summary_status" ]]; then status="$summary_status"; fi
           exit "$status"
+      - if: ${{ always() && hashFiles('hoolicy.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          sarif_file: hoolicy.sarif
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: hoolicy-report
-          path: hoolicy-report.json
+          path: |
+            hoolicy-report.json
+            hoolicy.sarif

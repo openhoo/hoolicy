@@ -51,4 +51,4 @@ hoolicy report diff before.json after.json
 hoolicy report diff --format json before.json after.json
 ```
 
-CI examples cover [GitHub Actions](../examples/ci/github-actions.yml) and [GitLab CI](../examples/ci/gitlab-ci.yml). GitLab output follows its Code Quality subset: one JSON array with repository-relative locations and supported severities.
+CI examples cover [GitHub Actions](../examples/ci/github-actions.yml) and [GitLab CI](../examples/ci/gitlab-ci.yml). GitHub SARIF output is uploaded with `github/codeql-action/upload-sarif`; GitLab output follows its Code Quality subset: one deterministic JSON array with repository-relative locations, positive lines, and supported severities. Unlocatable findings are omitted from that array because GitLab requires a real path, while the policy check still fails normally. Both report writers emit valid empty collections and retain the check exit contract (`0` pass, `1` blocking finding, `2` operational failure).
