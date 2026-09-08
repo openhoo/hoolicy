@@ -6,6 +6,7 @@ require (
 	cel.dev/cel-go v0.32.0
 	github.com/BurntSushi/toml v1.6.0
 	github.com/cucumber/gherkin/go/v30 v30.1.3
+	github.com/cucumber/gherkin/go/v42 v42.0.1
 	github.com/cucumber/messages/go/v24 v24.1.0
 	github.com/go-git/go-billy/v5 v5.9.0
 	github.com/go-git/go-git/v5 v5.19.2
