@@ -72,6 +72,21 @@ hoolicy pack       Add, update, or verify vendored packs
 ```
 
 Reports: human text, JSON, SARIF 2.1.0, JUnit XML, GitHub step summaries, and GitLab Code Quality. Exit codes: `0` passed, `1` a new policy finding met `failOn`, `2` configuration or execution error.
+### Native CI report contracts
+
+`check` keeps its normal output and exit status when a machine report is selected. Use `--output` so the report file contains only the selected format:
+
+```sh
+hoolicy check --format sarif --output hoolicy.sarif
+hoolicy check --format gitlab-codequality --output gl-code-quality-report.json
+```
+
+`sarif` emits SARIF 2.1.0 with one run, stable rule IDs and fingerprints, deterministic result ordering, and repository-relative percent-encoded artifact URIs. Missing or unsafe locations are omitted rather than emitted as absolute or traversing paths. Empty checks still emit valid empty `rules` and `results` arrays.
+
+`gitlab-codequality` emits exactly one deterministic JSON array. Each emitted finding has `description`, `check_name`, `fingerprint`, `severity` (`info`, `minor`, or `major`), and a repository-relative `location` with a positive line. Findings with missing or unsafe locations are omitted because GitLab requires a real `location.path`; the policy check still returns its normal blocking status. An empty check (including one with only unlocatable findings) emits `[]`. Finding messages and remediation remain JSON data and are not interpreted as markup by the writer.
+
+Both native formats preserve policy semantics: `0` means no blocking findings, `1` means a finding met `failOn`, and `2` means configuration, evaluation, or report-output failure. See the [GitHub Actions and GitLab CI examples](examples/ci/) for native forge upload/consumption.
+
 
 Existing repositories can adopt policy without hiding debt. `hoolicy baseline create` previews an exact, digest-bound baseline; `--apply` writes it. Full checks continue to report existing findings while blocking only new or materially changed findings. See [baseline adoption and CI](docs/adoption.md).
 

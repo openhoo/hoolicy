@@ -67,6 +67,52 @@ rules:
 		t.Fatalf("strict check code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
+func TestCheckNativeReportsPreservePolicyExitStatus(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, configPath, `version: 1
+project: forge
+failOn: error
+rules:
+  - id: forge.required
+    title: Required file
+    description: Requires a file for the native report test.
+    rationale: The test must exercise a blocking finding.
+    remediation: Add required.txt.
+    severity: error
+    kind: files
+    files: [required.txt]
+    spec:
+      mode: require
+      message: required.txt is missing
+`)
+	for _, format := range []string{"sarif", "gitlab-codequality"} {
+		t.Run(format, func(t *testing.T) {
+			outputPath := filepath.Join(root, format+".json")
+			app, stdout, stderr := testApplication(t)
+			if code := app.run(context.Background(), []string{"check", "--config", configPath, "--format", format, "--output", outputPath}); code != 1 {
+				t.Fatalf("format=%s code=%d stdout=%q stderr=%q", format, code, stdout.String(), stderr.String())
+			}
+			data, err := os.ReadFile(outputPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var value any
+			if err := json.Unmarshal(data, &value); err != nil {
+				t.Fatalf("format=%s invalid JSON: %v", format, err)
+			}
+			if format == "sarif" {
+				object, ok := value.(map[string]any)
+				if !ok || object["version"] != "2.1.0" {
+					t.Fatalf("unexpected SARIF output: %#v", value)
+				}
+			} else if _, ok := value.([]any); !ok {
+				t.Fatalf("unexpected GitLab output: %#v", value)
+			}
+		})
+	}
+}
 
 func TestFailOnCannotWeakenProjectPolicy(t *testing.T) {
 	t.Parallel()

@@ -312,6 +312,201 @@ func TestReportFormats(t *testing.T) {
 		t.Fatal("expected unknown format error")
 	}
 }
+func TestNativeReportsAreDeterministicAndCanonical(t *testing.T) {
+	t.Parallel()
+	findings := []sdk.Finding{
+		{
+			RuleID: "demo.z", Title: "Z rule", Message: "line <one>\nline two\x1b", Remediation: "Fix <this>",
+			Severity: sdk.SeverityError, Location: sdk.Location{Path: "./unsafe dir/<file>.yaml", Line: 2, Column: 3},
+			State: sdk.FindingNew, Fingerprint: strings.Repeat("b", 64),
+		},
+		{
+			RuleID: "demo.a", Title: "A rule", Message: "outside", Remediation: "Review it",
+			Severity: sdk.SeverityWarning, Location: sdk.Location{Path: "../outside.yaml"},
+			State: sdk.FindingExisting,
+		},
+	}
+	inputs := []*engine.Report{
+		{Tool: engine.Tool{Name: "hoolicy", Version: "test"}, Findings: findings},
+		{Tool: engine.Tool{Name: "hoolicy", Version: "test"}, Findings: []sdk.Finding{findings[1], findings[0]}},
+	}
+	for _, format := range []string{"sarif", "gitlab-codequality"} {
+		t.Run(format, func(t *testing.T) {
+			var first, second bytes.Buffer
+			if err := Write(&first, format, inputs[0], false); err != nil {
+				t.Fatal(err)
+			}
+			if err := Write(&second, format, inputs[1], false); err != nil {
+				t.Fatal(err)
+			}
+			if first.String() != second.String() {
+				t.Fatalf("format %s depends on finding input order:\n%s\n---\n%s", format, first.String(), second.String())
+			}
+			if bytes.HasPrefix(first.Bytes(), []byte{0xef, 0xbb, 0xbf}) {
+				t.Fatalf("format %s emitted a UTF-8 BOM", format)
+			}
+			if format == "sarif" {
+				var value sarifLog
+				if err := json.Unmarshal(first.Bytes(), &value); err != nil {
+					t.Fatal(err)
+				}
+				if len(value.Runs) != 1 || len(value.Runs[0].Results) != 2 {
+					t.Fatalf("unexpected SARIF run: %#v", value)
+				}
+				var unsafe, outside sarifResult
+				for _, result := range value.Runs[0].Results {
+					switch result.RuleID {
+					case "demo.z":
+						unsafe = result
+					case "demo.a":
+						outside = result
+					}
+				}
+				if len(unsafe.Locations) != 1 || unsafe.Locations[0].PhysicalLocation.ArtifactLocation.URI != "unsafe%20dir/%3Cfile%3E.yaml" {
+					t.Fatalf("SARIF path was not a relative escaped URI: %#v", unsafe.Locations)
+				}
+				if unsafe.Message.Text != "line <one>\nline two\x1b" || unsafe.PartialFingerprints["hoolicy/v1"] != strings.Repeat("b", 64) {
+					t.Fatalf("SARIF finding data changed: %#v", unsafe)
+				}
+				if len(outside.Locations) != 0 || len(outside.PartialFingerprints["hoolicy/v1"]) != 64 {
+					t.Fatalf("SARIF unsafe path or fingerprint was not handled: %#v", outside)
+				}
+			} else {
+				var value []gitLabFinding
+				if err := json.Unmarshal(first.Bytes(), &value); err != nil {
+					t.Fatal(err)
+				}
+				if len(value) != 1 || value[0].CheckName != "demo.z" || value[0].Location.Path != "unsafe dir/<file>.yaml" || value[0].Location.Lines.Begin != 2 {
+					t.Fatalf("GitLab path/order contract failed: %#v", value)
+				}
+				if !strings.Contains(value[0].Description, "line <one>\nline two\x1b") {
+					t.Fatalf("GitLab finding data changed: %#v", value[0])
+				}
+				if value[0].Fingerprint != strings.Repeat("b", 64) {
+					t.Fatalf("GitLab fingerprints are not stable: %#v", value)
+				}
+			}
+		})
+	}
+}
+
+func TestNativeReportPathsRejectUnsafeInputsAndEscapeColon(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		path string
+		want string
+		ok   bool
+	}{
+		{name: "relative", path: "./src/main.go", want: "src/main.go", ok: true},
+		{name: "raw colon filename", path: "reports:2026/report.yaml", want: "reports:2026/report.yaml", ok: true},
+		{name: "uri scheme", path: "https://example.com/report.yaml"},
+		{name: "file uri", path: "file:///tmp/report.yaml"},
+		{name: "drive path", path: `C:\repo\report.yaml`},
+		{name: "control character", path: "safe/\x00report.yaml"},
+		{name: "outside", path: "../report.yaml"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := reportRelativePath(test.path)
+			if got != test.want || ok != test.ok {
+				t.Fatalf("reportRelativePath(%q)=(%q, %v), want (%q, %v)", test.path, got, ok, test.want, test.ok)
+			}
+		})
+	}
+	if got, ok := sarifPath("reports:2026/report.yaml"); !ok || got != "reports%3A2026/report.yaml" {
+		t.Fatalf("sarifPath did not escape a raw colon: %q, %v", got, ok)
+	}
+
+	findings := []sdk.Finding{
+		{RuleID: "demo.colon", Message: "colon", Fingerprint: strings.Repeat("a", 64), Location: sdk.Location{Path: "reports:2026/report.yaml", Line: 1}},
+		{RuleID: "demo.uri", Message: "uri", Fingerprint: strings.Repeat("b", 64), Location: sdk.Location{Path: "https://example.com/report.yaml", Line: 1}},
+		{RuleID: "demo.control", Message: "control", Fingerprint: strings.Repeat("c", 64), Location: sdk.Location{Path: "safe/\x00report.yaml", Line: 1}},
+	}
+	input := &engine.Report{Tool: engine.Tool{Name: "hoolicy", Version: "test"}, Findings: findings}
+	var sarif bytes.Buffer
+	if err := Write(&sarif, "sarif", input, false); err != nil {
+		t.Fatal(err)
+	}
+	var log sarifLog
+	if err := json.Unmarshal(sarif.Bytes(), &log); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range log.Runs[0].Results {
+		switch result.RuleID {
+		case "demo.colon":
+			if len(result.Locations) != 1 || result.Locations[0].PhysicalLocation.ArtifactLocation.URI != "reports%3A2026/report.yaml" {
+				t.Fatalf("colon SARIF location=%#v", result.Locations)
+			}
+		case "demo.uri", "demo.control":
+			if len(result.Locations) != 0 {
+				t.Fatalf("unsafe SARIF location for %s=%#v", result.RuleID, result.Locations)
+			}
+		}
+	}
+	var gitlab bytes.Buffer
+	if err := Write(&gitlab, "gitlab-codequality", input, false); err != nil {
+		t.Fatal(err)
+	}
+	var codeQuality []gitLabFinding
+	if err := json.Unmarshal(gitlab.Bytes(), &codeQuality); err != nil {
+		t.Fatal(err)
+	}
+	if len(codeQuality) != 1 || codeQuality[0].Location.Path != "reports:2026/report.yaml" {
+		t.Fatalf("unsafe GitLab locations were not omitted: %#v", codeQuality)
+	}
+}
+
+func TestFallbackFingerprintIsStableAndPreservesSDKIdentity(t *testing.T) {
+	t.Parallel()
+	rule := sdk.Rule{ID: "demo.rule", Title: "Demo", Remediation: "Fix it.", Severity: sdk.SeverityError}
+	finding := sdk.Finding{Workspace: "workspace", Message: "first", Location: sdk.Location{Path: "./demo.yaml", Line: 2, Column: 3}, Key: "key"}
+	finding.Finalize(rule)
+	provided := finding
+	providedFingerprint := provided.Fingerprint
+	provided.Fingerprint = ""
+	if got := findingFingerprint(provided); got != providedFingerprint {
+		t.Fatalf("fallback fingerprint=%s, want SDK identity %s", got, providedFingerprint)
+	}
+	changed := provided
+	changed.Message = "changed"
+	changed.State = sdk.FindingExisting
+	changed.Waived = true
+	changed.WaiverID = "reviewed"
+	if got := findingFingerprint(changed); got != providedFingerprint {
+		t.Fatalf("fallback fingerprint changed with finding state/content: %s != %s", got, providedFingerprint)
+	}
+	if got := findingFingerprint(finding); got != finding.Fingerprint {
+		t.Fatalf("valid SDK fingerprint changed: %s != %s", got, finding.Fingerprint)
+	}
+}
+
+func TestNativeReportsEmitEmptyCollections(t *testing.T) {
+	t.Parallel()
+	input := &engine.Report{Tool: engine.Tool{Name: "hoolicy", Version: "test"}, Findings: []sdk.Finding{}}
+	var sarif bytes.Buffer
+	if err := Write(&sarif, "sarif", input, false); err != nil {
+		t.Fatal(err)
+	}
+	var log sarifLog
+	if err := json.Unmarshal(sarif.Bytes(), &log); err != nil {
+		t.Fatal(err)
+	}
+	if len(log.Runs) != 1 || log.Runs[0].Results == nil || len(log.Runs[0].Results) != 0 || log.Runs[0].Tool.Driver.Rules == nil || len(log.Runs[0].Tool.Driver.Rules) != 0 {
+		t.Fatalf("empty SARIF report was not represented by empty arrays: %#v", log)
+	}
+	var gitlab bytes.Buffer
+	if err := Write(&gitlab, "gitlab-codequality", input, false); err != nil {
+		t.Fatal(err)
+	}
+	var findings []gitLabFinding
+	if err := json.Unmarshal(gitlab.Bytes(), &findings); err != nil {
+		t.Fatal(err)
+	}
+	if findings == nil || len(findings) != 0 {
+		t.Fatalf("empty GitLab report was not an empty array: %s", gitlab.String())
+	}
+}
 
 func TestGitLabCodeQualityIncludesWaiverStateAndIdentity(t *testing.T) {
 	t.Parallel()

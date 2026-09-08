@@ -101,6 +101,169 @@ func shortFingerprint(value string) string {
 	return value
 }
 
+func sortedFindings(findings []sdk.Finding) []sdk.Finding {
+	sorted := append([]sdk.Finding(nil), findings...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return findingLess(sorted[i], sorted[j])
+	})
+	return sorted
+}
+
+func findingLess(left, right sdk.Finding) bool {
+	if left.RuleID != right.RuleID {
+		return left.RuleID < right.RuleID
+	}
+	leftFingerprint, rightFingerprint := findingFingerprint(left), findingFingerprint(right)
+	if leftFingerprint != rightFingerprint {
+		return leftFingerprint < rightFingerprint
+	}
+	fields := [][2]string{
+		{left.Fingerprint, right.Fingerprint},
+		{left.Title, right.Title},
+		{left.Location.Path, right.Location.Path},
+		{left.Message, right.Message},
+		{left.Remediation, right.Remediation},
+		{string(left.Severity), string(right.Severity)},
+		{string(left.State), string(right.State)},
+		{left.StateSource, right.StateSource},
+		{left.WaiverID, right.WaiverID},
+		{left.Workspace, right.Workspace},
+		{left.Owner, right.Owner},
+		{left.Key, right.Key},
+		{left.PolicyDigest, right.PolicyDigest},
+		{left.FindingDigest, right.FindingDigest},
+		{left.Pack, right.Pack},
+		{findingSortKey(left), findingSortKey(right)},
+	}
+	for _, field := range fields {
+		if field[0] != field[1] {
+			return field[0] < field[1]
+		}
+	}
+	if left.Location.Line != right.Location.Line {
+		return left.Location.Line < right.Location.Line
+	}
+	if left.Location.Column != right.Location.Column {
+		return left.Location.Column < right.Location.Column
+	}
+	if left.Waived != right.Waived {
+		return !left.Waived
+	}
+	return false
+}
+
+func findingSortKey(item sdk.Finding) string {
+	data, err := json.Marshal(item)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func findingFingerprint(item sdk.Finding) string {
+	if fingerprintPattern.MatchString(item.Fingerprint) {
+		return item.Fingerprint
+	}
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		item.RuleID,
+		item.Workspace,
+		filepath.ToSlash(filepath.Clean(item.Location.Path)),
+		fmt.Sprintf("%d:%d", item.Location.Line, item.Location.Column),
+		item.Key,
+	}, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
+// reportRelativePath accepts only paths that identify a location inside the
+// checked repository. Invalid or missing locations are omitted from native
+// forge location output because the forge contracts require a real relative path.
+func reportRelativePath(value string) (string, bool) {
+	for _, character := range value {
+		if unicode.IsControl(character) {
+			return "", false
+		}
+	}
+	value = strings.ReplaceAll(value, `\`, "/")
+	if value == "" || strings.HasPrefix(value, "/") || hasWindowsVolume(value) {
+		return "", false
+	}
+	parts := strings.Split(value, "/")
+	clean := make([]string, 0, len(parts))
+	for _, part := range parts {
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			if len(clean) == 0 {
+				return "", false
+			}
+			clean = clean[:len(clean)-1]
+		default:
+			clean = append(clean, part)
+		}
+	}
+	if len(clean) == 0 {
+		return "", false
+	}
+	relative := strings.Join(clean, "/")
+	if hasPseudoURI(relative) {
+		return "", false
+	}
+	return relative, true
+}
+
+func hasPseudoURI(value string) bool {
+	colon := strings.IndexByte(value, ':')
+	if colon <= 0 {
+		return false
+	}
+	if slash := strings.IndexByte(value, '/'); slash >= 0 && slash < colon {
+		return false
+	}
+	scheme := value[:colon]
+	if !isURIScheme(scheme) {
+		return false
+	}
+	if len(scheme) == 1 {
+		return true
+	}
+	rest := value[colon+1:]
+	if strings.HasPrefix(rest, "/") || strings.HasPrefix(rest, "?") || strings.HasPrefix(rest, "#") {
+		return true
+	}
+	switch strings.ToLower(scheme) {
+	case "blob", "data", "file", "ftp", "ftps", "git", "http", "https", "mailto", "oci", "ssh", "svn", "urn", "ws", "wss":
+		return true
+	default:
+		return false
+	}
+}
+
+func isURIScheme(value string) bool {
+	if value == "" || !((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) {
+		return false
+	}
+	for _, character := range value[1:] {
+		if !((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') || character == '+' || character == '-' || character == '.') {
+			return false
+		}
+	}
+	return true
+}
+
+func hasWindowsVolume(value string) bool {
+	return len(value) >= 2 && ((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) && value[1] == ':'
+}
+
+func sarifPath(value string) (string, bool) {
+	relative, ok := reportRelativePath(value)
+	if !ok {
+		return "", false
+	}
+	escaped := (&url.URL{Path: relative}).EscapedPath()
+	return strings.ReplaceAll(escaped, ":", "%3A"), true
+}
+
 func singleLine(value string) string {
 	return strings.TrimSpace(strings.Map(func(character rune) rune {
 		if character == '\n' || character == '\r' || character == '\t' {
@@ -152,8 +315,10 @@ type sarifResult struct {
 	RuleID              string             `json:"ruleId"`
 	Level               string             `json:"level"`
 	Message             sarifMessage       `json:"message"`
+	BaselineState       string             `json:"baselineState,omitempty"`
 	Locations           []sarifLocation    `json:"locations,omitempty"`
 	PartialFingerprints map[string]string  `json:"partialFingerprints"`
+	Properties          map[string]string  `json:"properties,omitempty"`
 	Suppressions        []sarifSuppression `json:"suppressions,omitempty"`
 }
 type sarifMessage struct {
@@ -164,7 +329,7 @@ type sarifLocation struct {
 }
 type sarifPhysical struct {
 	ArtifactLocation sarifArtifact `json:"artifactLocation"`
-	Region           sarifRegion   `json:"region,omitempty"`
+	Region           *sarifRegion  `json:"region,omitempty"`
 }
 type sarifArtifact struct {
 	URI string `json:"uri"`
@@ -179,21 +344,57 @@ type sarifSuppression struct {
 }
 
 func writeSARIF(writer io.Writer, input *engine.Report) error {
+	findings := sortedFindings(input.Findings)
 	rules := map[string]sarifRule{}
-	results := make([]sarifResult, 0, len(input.Findings))
-	for _, item := range input.Findings {
-		rules[item.RuleID] = sarifRule{ID: item.RuleID, Name: item.Title, ShortDescription: sarifMessage{Text: item.Title}, Help: sarifMessage{Text: item.Remediation}}
+	results := make([]sarifResult, 0, len(findings))
+	for _, item := range findings {
+		if _, exists := rules[item.RuleID]; !exists {
+			rules[item.RuleID] = sarifRule{ID: item.RuleID, Name: item.Title, ShortDescription: sarifMessage{Text: item.Title}, Help: sarifMessage{Text: item.Remediation}}
+		}
 		level := "note"
 		if item.Severity == sdk.SeverityError {
 			level = "error"
 		} else if item.Severity == sdk.SeverityWarning {
 			level = "warning"
 		}
-		result := sarifResult{RuleID: item.RuleID, Level: level, Message: sarifMessage{Text: item.Message}, PartialFingerprints: map[string]string{"hoolicy/v1": item.Fingerprint}}
-		if item.Location.Path != "" {
-			result.Locations = []sarifLocation{{PhysicalLocation: sarifPhysical{ArtifactLocation: sarifArtifact{URI: filepath.ToSlash(item.Location.Path)}, Region: sarifRegion{StartLine: item.Location.Line, StartColumn: item.Location.Column}}}}
+		state := string(item.State)
+		if state == "" {
+			if item.Waived {
+				state = string(sdk.FindingWaived)
+			} else {
+				state = string(sdk.FindingNew)
+			}
 		}
-		if item.Waived {
+		properties := map[string]string{"hoolicy.state": state}
+		if item.StateSource != "" {
+			properties["hoolicy.stateSource"] = item.StateSource
+		}
+		if item.WaiverID != "" {
+			properties["hoolicy.waiverId"] = item.WaiverID
+		}
+		result := sarifResult{
+			RuleID: item.RuleID, Level: level, Message: sarifMessage{Text: item.Message},
+			PartialFingerprints: map[string]string{"hoolicy/v1": findingFingerprint(item)},
+			Properties:          properties,
+		}
+		switch state {
+		case string(sdk.FindingNew):
+			result.BaselineState = "new"
+		case string(sdk.FindingExisting), string(sdk.FindingWaived):
+			result.BaselineState = "unchanged"
+		}
+		if uri, ok := sarifPath(item.Location.Path); ok {
+			physical := sarifPhysical{ArtifactLocation: sarifArtifact{URI: uri}}
+			if item.Location.Line > 0 {
+				region := &sarifRegion{StartLine: item.Location.Line}
+				if item.Location.Column > 0 {
+					region.StartColumn = item.Location.Column
+				}
+				physical.Region = region
+			}
+			result.Locations = []sarifLocation{{PhysicalLocation: physical}}
+		}
+		if item.Waived || state == string(sdk.FindingWaived) {
 			result.Suppressions = []sarifSuppression{{Kind: "external", Justification: "Hoolicy waiver " + item.WaiverID}}
 		}
 		results = append(results, result)
@@ -343,11 +544,12 @@ type gitLabLines struct {
 }
 
 func writeGitLabCodeQuality(writer io.Writer, input *engine.Report) error {
-	findings := make([]gitLabFinding, 0, len(input.Findings))
-	for _, item := range input.Findings {
-		path := strings.TrimPrefix(filepath.ToSlash(item.Location.Path), "./")
-		if path == "" {
-			path = "hoolicy.yaml"
+	sorted := sortedFindings(input.Findings)
+	findings := make([]gitLabFinding, 0, len(sorted))
+	for _, item := range sorted {
+		path, ok := reportRelativePath(item.Location.Path)
+		if !ok {
+			continue
 		}
 		line := item.Location.Line
 		if line < 1 {
@@ -362,15 +564,19 @@ func writeGitLabCodeQuality(writer io.Writer, input *engine.Report) error {
 		}
 		state := string(item.State)
 		if state == "" {
-			state = string(sdk.FindingNew)
+			if item.Waived {
+				state = string(sdk.FindingWaived)
+			} else {
+				state = string(sdk.FindingNew)
+			}
 		}
 		description := "State: " + state + ". " + item.Message + " Remediation: " + item.Remediation
-		if item.Waived {
+		if item.Waived || state == string(sdk.FindingWaived) {
 			description += " Waiver: " + item.WaiverID
 		}
 		findings = append(findings, gitLabFinding{
 			Description: description,
-			CheckName:   item.RuleID, Fingerprint: item.Fingerprint, Severity: severity,
+			CheckName:   item.RuleID, Fingerprint: findingFingerprint(item), Severity: severity,
 			Location: gitLabLocation{Path: path, Lines: gitLabLines{Begin: line}},
 		})
 	}
@@ -1318,13 +1524,6 @@ func fallbackDigest(input *engine.Report) string {
 		return input.PolicyDigest
 	}
 	return input.ConfigDigest
-}
-
-func findingLess(left, right sdk.Finding) bool {
-	if left.RuleID != right.RuleID {
-		return left.RuleID < right.RuleID
-	}
-	return left.Fingerprint < right.Fingerprint
 }
 
 func WriteDiff(writer io.Writer, format string, diff Diff) error {
