@@ -99,7 +99,7 @@ jobs:
         with:
           executable: ./dist/hoolicy
       - name: Scan with Hooray
-        uses: openhoo/hooray/actions/scan@f2b28d71398749142f4d9366b0427369f3af6e02 # v0.6.5
+        uses: openhoo/hooray/actions/scan@26aeb8cc43bb82248b4287037cac038185a2682d # v0.6.6
         with:
           version: 0.6.5
           policy: hooray-policy.yaml
