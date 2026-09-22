@@ -104,6 +104,7 @@ func TestRuleValidationRejectsDisabledNumericConstraints(t *testing.T) {
 		{name: "unrelated create path", kind: Files{}, rule: baseRule("demo.files", "files", []string{"README.md"}, map[string]any{"mode": "require", "create": map[string]any{"path": "SECURITY.md", "content": "unsafe"}})},
 		{name: "traversing create path", kind: Files{}, rule: baseRule("demo.files", "files", []string{"**/*"}, map[string]any{"mode": "require", "create": map[string]any{"path": "../outside", "content": "unsafe"}})},
 		{name: "negative title maximum", kind: GitNaming{}, rule: baseRule("demo.git", "git.naming", nil, map[string]any{"mergeRequestTitleMaximum": -1})},
+		{name: "negative commit subject maximum", kind: GitNaming{}, rule: baseRule("demo.git", "git.naming", nil, map[string]any{"commitSubjectMaximum": -1})},
 		{name: "orphan branch allowlist", kind: GitNaming{}, rule: baseRule("demo.git", "git.naming", nil, map[string]any{"commitPattern": ".+", "allowedBranches": []any{"main"}})},
 		{name: "negative scenarios", kind: GherkinRequirements{}, rule: baseRule("demo.gherkin", "gherkin.requirements", []string{"*.feature"}, map[string]any{"minimumScenarios": -1})},
 		{name: "traversing manifest path", kind: ManifestConsistency{}, rule: baseRule("demo.manifest", "manifest.consistency", nil, map[string]any{"authoritative": map[string]any{"path": "../source.json", "pointer": "/version"}, "targets": []any{map[string]any{"path": "target.json", "pointer": "/version"}}})},

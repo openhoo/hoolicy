@@ -60,7 +60,7 @@ spec:
 
 ### `git.naming`
 
-Checks `branchPattern`, `allowedBranches`, `commitPattern`, `mergeRequestTitlePattern`, and `mergeRequestTitleMaximum`. Commit-range checks use `--base` or supported CI environment variables.
+Checks `branchPattern`, `allowedBranches`, `commitPattern`, `commitSubjectMaximum`, `mergeRequestTitlePattern`, and `mergeRequestTitleMaximum`. Commit-range checks use `--base` or supported CI environment variables.
 
 ### `manifest.consistency`
 
