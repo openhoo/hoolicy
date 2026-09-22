@@ -5,6 +5,7 @@ parameters:
   merge_request_title_pattern: '^(Draft: )?(feat|fix|docs|ci|chore)(\([a-z0-9][a-z0-9-]*\))?!?: .+$'
   allowed_branches: [main, develop]
   merge_request_title_maximum: 100
+  commit_subject_maximum: 100
 cases:
   - name: conventional Git names pass
     rule: repository.git-naming
@@ -36,3 +37,28 @@ cases:
         messageContains: branch
         waived: false
         hasFix: false
+  - name: commit subject at the limit passes
+    rule: repository.git-naming
+    outcome: pass
+    commits:
+      - sha: 0000000000000000000000000000000000000100
+        subject: 'feat: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  - name: commit subject over the limit fails
+    rule: repository.git-naming
+    outcome: fail
+    commits:
+      - sha: 0000000000000000000000000000000000000101
+        subject: 'feat: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    expect:
+      - key: commit-length:0000000000000000000000000000000000000101
+        messageContains: exceeds 100 characters
+        waived: false
+        hasFix: false
+  - name: unbounded commit subject passes
+    rule: repository.git-naming
+    outcome: pass
+    parameters:
+      commit_subject_maximum: 0
+    commits:
+      - sha: 0000000000000000000000000000000000000101
+        subject: 'feat: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'

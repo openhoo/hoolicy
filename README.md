@@ -115,6 +115,7 @@ packs:
       merge_request_title_pattern: '^(Draft: )?(feat|fix|chore)(\([a-z0-9-]+\))?!?: .+$'
       allowed_branches: [main]
       merge_request_title_maximum: 100
+      commit_subject_maximum: 100
 ```
 
 Run `hoolicy pack update repository` once. It resolves the Git ref, vendors the exact pack, and writes `hoolicy.lock` with commit and content digest. Later `validate` and `check` operate offline and fail on tampering.

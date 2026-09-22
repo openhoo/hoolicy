@@ -16,6 +16,7 @@ type gitNamingSpec struct {
 	BranchPattern            string   `yaml:"branchPattern,omitempty"`
 	AllowedBranches          []string `yaml:"allowedBranches,omitempty"`
 	CommitPattern            string   `yaml:"commitPattern,omitempty"`
+	CommitSubjectMaximum     int      `yaml:"commitSubjectMaximum,omitempty"`
 	MergeRequestTitlePattern string   `yaml:"mergeRequestTitlePattern,omitempty"`
 	MergeRequestTitleMaximum int      `yaml:"mergeRequestTitleMaximum,omitempty"`
 	Message                  string   `yaml:"message"`
@@ -26,8 +27,11 @@ func (GitNaming) Validate(rule sdk.Rule) error {
 	if err := decodeSpec(rule, &spec); err != nil {
 		return err
 	}
-	if spec.BranchPattern == "" && spec.CommitPattern == "" && spec.MergeRequestTitlePattern == "" && spec.MergeRequestTitleMaximum == 0 {
+	if spec.BranchPattern == "" && spec.CommitPattern == "" && spec.CommitSubjectMaximum == 0 && spec.MergeRequestTitlePattern == "" && spec.MergeRequestTitleMaximum == 0 {
 		return fmt.Errorf("rule %s: git.naming needs at least one pattern", rule.ID)
+	}
+	if spec.CommitSubjectMaximum < 0 {
+		return fmt.Errorf("rule %s: commitSubjectMaximum must not be negative", rule.ID)
 	}
 	if spec.MergeRequestTitleMaximum < 0 {
 		return fmt.Errorf("rule %s: mergeRequestTitleMaximum must not be negative", rule.ID)
@@ -62,11 +66,17 @@ func (GitNaming) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Rul
 			findings = append(findings, finding(rule, fmt.Sprintf("%s: branch %q", message, git.Branch), "", "branch:"+git.Branch, 0, 0))
 		}
 	}
-	if spec.CommitPattern != "" {
-		expression := regexp.MustCompile(spec.CommitPattern)
+	if spec.CommitPattern != "" || spec.CommitSubjectMaximum > 0 {
+		var expression *regexp.Regexp
+		if spec.CommitPattern != "" {
+			expression = regexp.MustCompile(spec.CommitPattern)
+		}
 		for _, commit := range git.CommitSubjects {
-			if !expression.MatchString(commit.Subject) {
+			if expression != nil && !expression.MatchString(commit.Subject) {
 				findings = append(findings, finding(rule, fmt.Sprintf("%s: commit %.12s %q", message, commit.SHA, commit.Subject), "", "commit:"+commit.SHA, 0, 0))
+			}
+			if spec.CommitSubjectMaximum > 0 && len([]rune(commit.Subject)) > spec.CommitSubjectMaximum {
+				findings = append(findings, finding(rule, fmt.Sprintf("%s: commit %.12s exceeds %d characters", message, commit.SHA, spec.CommitSubjectMaximum), "", "commit-length:"+commit.SHA, 0, 0))
 			}
 		}
 	}
