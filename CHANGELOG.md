@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 (2026-09-22)
+
+### Features
+
+- **policy:** bound commit subject length in git.naming (#31) (38116ad)
+
 ## 0.3.2 (2026-09-08)
 
 ### Bug Fixes
