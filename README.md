@@ -8,6 +8,30 @@ Understandable policy as code for repositories.
 
 Hoolicy turns repeated repository, compliance, supply-chain, and product-quality checks into strict YAML policies. Simple rules stay simple. Complex structured rules use bounded CEL or a compile-time Go extension. `hoolicy check` never downloads policy code and never executes scripts from a policy pack.
 
+## Agent skills
+
+Two installable skills serve different tasks:
+
+- [`hoolicy-policy`](skills/hoolicy-policy/SKILL.md) helps agents adopt and validate policy in your repository.
+- [`hoolicy-development`](skills/hoolicy-development/SKILL.md) helps agents
+  change and verify hoolicy itself. Repository agents find it through
+  `AGENTS.md` and `.agents/skills`.
+
+Install the user skill from your consuming project's directory:
+
+```bash
+npx skills add openhoo/hoolicy --skill hoolicy-policy
+```
+
+For contributor work, select `--skill hoolicy-development`. Add `--global`
+for use across projects; otherwise installation is project-scoped. The installer
+lets you select your supported coding agent. Skills supply instructions and
+bundled references; install the product separately using the guidance below.
+
+For unpublished changes, pass the local checkout path instead of
+`openhoo/hoolicy`, for example
+`npx skills add ./hoolicy --skill hoolicy-policy` from its parent directory.
+
 ## Quick start
 
 Install a release binary, use the container, or build with Go 1.26+:
