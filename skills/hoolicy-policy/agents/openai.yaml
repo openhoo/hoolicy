@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hoolicy User Guide"
+  short_description: "Adopt and verify Hoolicy repository policies"
+  default_prompt: "Use $hoolicy-policy to set up and verify this workflow in my project."

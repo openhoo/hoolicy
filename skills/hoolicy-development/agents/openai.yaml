@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hoolicy Development"
+  short_description: "Develop and verify Hoolicy source changes"
+  default_prompt: "Use $hoolicy-development to implement and verify this change in the source repository."
