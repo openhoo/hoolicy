@@ -26,6 +26,109 @@ import (
 	"github.com/openhoo/hoolicy/sdk"
 )
 
+type failingCLIWriter struct{}
+
+func (failingCLIWriter) Write([]byte) (int, error) { return 0, errors.New("destination closed") }
+
+func TestCommandsFailWhenOutputCannotBeWritten(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, path, "version: 1\nproject: output\nrules: []\n")
+	for _, args := range [][]string{
+		{"help"}, {"version"}, {"version", "--json"}, {"completion", "bash"},
+		{"validate", "--config", path}, {"check", "--config", path},
+		{"inventory", "--config", path},
+	} {
+		app, _, stderr := testApplication(t)
+		app.stdout = failingCLIWriter{}
+		if code := app.run(context.Background(), args); code != 2 || !strings.Contains(stderr.String(), "destination closed") {
+			t.Errorf("args=%v code=%d stderr=%q", args, code, stderr.String())
+		}
+	}
+	app, _, _ := testApplication(t)
+	app.stderr = failingCLIWriter{}
+	if code := app.run(context.Background(), []string{"check", "-h"}); code != 2 {
+		t.Errorf("failed help output returned %d", code)
+	}
+}
+
+func TestFixDoesNotApplyWhenPreviewCannotBeWritten(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runCLICommand(t, root, "git", "init", "-q", "-b", "main")
+	runCLICommand(t, root, "git", "config", "user.name", "Hoolicy Tests")
+	runCLICommand(t, root, "git", "config", "user.email", "tests@hoolicy.invalid")
+	path := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, path, `version: 1
+project: preview
+rules:
+  - id: preview.required
+    title: Required documentation
+    description: Creates reviewed documentation.
+    rationale: The preview must be visible before writing.
+    remediation: Review the proposed README.
+    severity: error
+    kind: files
+    files: [README.md]
+    spec:
+      mode: require
+      create: {path: README.md, content: "reviewed\n"}
+`)
+	runCLICommand(t, root, "git", "add", ".")
+	runCLICommand(t, root, "git", "commit", "-qm", "test: preview")
+	app, _, stderr := testApplication(t)
+	app.stdout = failingCLIWriter{}
+	if code := app.run(context.Background(), []string{"fix", "--config", path, "--apply"}); code != 2 || !strings.Contains(stderr.String(), "write fix preview") {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "README.md")); !os.IsNotExist(err) {
+		t.Fatalf("failed preview mutated target: %v", err)
+	}
+}
+
+func TestRuleProseCannotEmitTerminalControlSequences(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, path, `version: 1
+project: terminal
+rules:
+  - id: terminal.rule
+    title: "Title\u001b[2J"
+    description: "Description\u001b[2J\nSecond line"
+    rationale: "Reason\u001b[2J"
+    remediation: "Fix\u001b[2J"
+    severity: error
+    kind: files
+    files: [README.md]
+    spec: {mode: require}
+`)
+	for _, command := range []string{"list", "explain"} {
+		app, stdout, stderr := testApplication(t)
+		args := []string{command, "--config", path}
+		if command == "explain" {
+			args = append(args, "terminal.rule")
+		}
+		if code := app.run(context.Background(), args); code != 0 || strings.ContainsRune(stdout.String(), '\x1b') {
+			t.Fatalf("%s: code=%d stdout=%q stderr=%q", command, code, stdout.String(), stderr.String())
+		}
+		if command == "explain" && !strings.Contains(stdout.String(), "\nSecond line") {
+			t.Fatal("multiline prose was flattened")
+		}
+	}
+	app, stdout, stderr := testApplication(t)
+	if code := app.run(context.Background(), []string{"explain", "--config", path, "--format", "json", "terminal.rule"}); code != 0 {
+		t.Fatalf("JSON explain failed: %s", stderr.String())
+	}
+	var value struct {
+		Rule sdk.Rule `json:"rule"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &value); err != nil || !strings.ContainsRune(value.Rule.Title, '\x1b') {
+		t.Fatalf("machine output must preserve data: %v", err)
+	}
+}
+
 func TestValidateListCheckAndThresholdOverride(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -322,6 +425,9 @@ func TestInventoryAndReadOnlyServiceUseSameEngineContract(t *testing.T) {
 	if get.Code != http.StatusOK {
 		t.Fatalf("GET status=%d body=%s", get.Code, get.Body.String())
 	}
+	if get.Header().Get("Cache-Control") != "no-store" || get.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("unsafe response headers: %v", get.Header())
+	}
 	var decision engine.Report
 	if err := json.Unmarshal(get.Body.Bytes(), &decision); err != nil || decision.PolicyDigest != inventory.PolicyDigest {
 		t.Fatalf("decision=%#v err=%v", decision, err)
@@ -330,6 +436,9 @@ func TestInventoryAndReadOnlyServiceUseSameEngineContract(t *testing.T) {
 	handler.ServeHTTP(post, httptest.NewRequest(http.MethodPost, "/v1/check", nil))
 	if post.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("mutation method accepted: %d", post.Code)
+	}
+	if post.Header().Get("Allow") != http.MethodGet {
+		t.Fatalf("missing allowed method: %v", post.Header())
 	}
 	stderr.Reset()
 	if code := app.run(context.Background(), []string{"serve", "--config", configPath, "--listen", "0.0.0.0:8941"}); code != 2 || !strings.Contains(stderr.String(), "loopback") {

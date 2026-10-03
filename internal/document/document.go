@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/BurntSushi/toml"
+	"github.com/openhoo/hoolicy/internal/strictjson"
 	"github.com/openhoo/hoolicy/sdk"
 	"go.yaml.in/yaml/v3"
 )
@@ -51,6 +52,12 @@ func ParseCached(file sdk.File, format string) ([]Document, bool, error) {
 		return nil, false, err
 	}
 	sharedParseCache.Lock()
+	// Another evaluator can finish the same parse while this one is unlocked.
+	// Keep each key in the eviction queue exactly once.
+	if _, exists := sharedParseCache.entries[key]; exists {
+		sharedParseCache.Unlock()
+		return parsed, false, nil
+	}
 	if len(sharedParseCache.order) == parseCacheLimit {
 		delete(sharedParseCache.entries, sharedParseCache.order[0])
 		sharedParseCache.order = append(sharedParseCache.order[:0], sharedParseCache.order[1:]...)
@@ -108,17 +115,8 @@ func parseJSON(file sdk.File) ([]Document, error) {
 	if bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) {
 		data = data[3:]
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		return nil, fmt.Errorf("%s: %w", file.Path, err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("%s: trailing JSON value", file.Path)
-		}
+	value, err := strictjson.Decode(data)
+	if err != nil {
 		return nil, fmt.Errorf("%s: %w", file.Path, err)
 	}
 	return []Document{{Path: file.Path, Line: 1, Column: 1, Data: normalize(value)}}, nil

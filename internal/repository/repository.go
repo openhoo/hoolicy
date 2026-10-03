@@ -2,11 +2,13 @@ package repository
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -28,10 +30,48 @@ import (
 )
 
 type Options struct {
-	BaseSHA           string
-	MergeRequestTitle string
-	Branch            string
-	GitContext        *sdk.GitContext
+	BaseSHA              string
+	MergeRequestTitle    string
+	Branch               string
+	GitContext           *sdk.GitContext
+	Context              context.Context
+	MaximumFiles         int
+	MaximumDocumentBytes int64
+}
+
+func (o Options) context() context.Context {
+	if o.Context != nil {
+		return o.Context
+	}
+	return context.Background()
+}
+
+func (o Options) checkFileLimit(count int) error {
+	if o.MaximumFiles > 0 && count > o.MaximumFiles {
+		return fmt.Errorf("resource budget exceeded: files exceed maximum %d", o.MaximumFiles)
+	}
+	return o.context().Err()
+}
+
+func (o Options) checkSize(path string, size int64) error {
+	if o.MaximumDocumentBytes > 0 && size > o.MaximumDocumentBytes {
+		return fmt.Errorf("resource budget exceeded: %s has %d bytes, maximum is %d", path, size, o.MaximumDocumentBytes)
+	}
+	return o.context().Err()
+}
+
+func (o Options) readFile(path string, reader io.Reader) ([]byte, error) {
+	if o.MaximumDocumentBytes > 0 && o.MaximumDocumentBytes < int64(^uint64(0)>>1) {
+		reader = io.LimitReader(reader, o.MaximumDocumentBytes+1)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	if err := o.checkSize(path, int64(len(data))); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 type Repository struct {
@@ -142,11 +182,14 @@ func (r *cachedRepository) InputCacheHits() int {
 }
 
 func Open(root string, options Options) (*Repository, error) {
+	if err := options.context().Err(); err != nil {
+		return nil, err
+	}
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
-	files, err := discoverFiles(absolute)
+	files, err := discoverFiles(absolute, options)
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +214,9 @@ func Open(root string, options Options) (*Repository, error) {
 // revision. It does not check out files and therefore cannot mutate caller
 // state. Policy still comes from the current, already validated configuration.
 func OpenRevision(root, revision string, options Options) (*Repository, error) {
+	if err := options.context().Err(); err != nil {
+		return nil, err
+	}
 	if revision == "" || strings.TrimSpace(revision) != revision || strings.HasPrefix(revision, "-") || strings.ContainsAny(revision, "\x00\r\n") {
 		return nil, fmt.Errorf("unsafe revision %q", revision)
 	}
@@ -207,6 +253,9 @@ func OpenRevision(root, revision string, options Options) (*Repository, error) {
 	iterator := tree.Files()
 	defer iterator.Close()
 	if err := iterator.ForEach(func(file *object.File) error {
+		if err := options.context().Err(); err != nil {
+			return err
+		}
 		path, included := scopedGitPath(filepath.ToSlash(file.Name), scope)
 		if !included {
 			return nil
@@ -225,11 +274,21 @@ func OpenRevision(root, revision string, options Options) (*Repository, error) {
 		if err != nil || !mode.IsRegular() {
 			return nil
 		}
-		contents, err := file.Contents()
+		if err := options.checkFileLimit(len(files) + 1); err != nil {
+			return err
+		}
+		if err := options.checkSize(path, file.Size); err != nil {
+			return err
+		}
+		reader, err := file.Reader()
 		if err != nil {
 			return err
 		}
-		files = append(files, sdk.File{Path: path, Mode: mode, Data: []byte(contents)})
+		contents, readErr := options.readFile(path, reader)
+		if err := errors.Join(readErr, reader.Close()); err != nil {
+			return err
+		}
+		files = append(files, sdk.File{Path: path, Mode: mode, Data: contents})
 		return nil
 	}); err != nil {
 		return nil, err
@@ -305,9 +364,12 @@ func Subset(base sdk.Repository, patterns []string) (*Repository, error) {
 	return &Repository{root: base.Root(), files: files, byPath: byPath, git: base.Git()}, nil
 }
 
-func discoverFiles(root string) ([]sdk.File, error) {
-	paths, gitErr := gitFileList(root)
+func discoverFiles(root string, options Options) ([]sdk.File, error) {
+	paths, gitErr := gitFileListContext(options.context(), root)
 	if gitErr != nil {
+		if err := options.context().Err(); err != nil {
+			return nil, err
+		}
 		paths, gitErr = goGitFileList(root)
 	}
 	if gitErr != nil {
@@ -316,6 +378,9 @@ func discoverFiles(root string) ([]sdk.File, error) {
 		}
 		paths = nil
 		walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+			if err := options.context().Err(); err != nil {
+				return err
+			}
 			if err != nil {
 				return err
 			}
@@ -338,8 +403,15 @@ func discoverFiles(root string) ([]sdk.File, error) {
 		}
 	}
 	sort.Strings(paths)
-	files := make([]sdk.File, 0, len(paths))
+	capacity := len(paths)
+	if options.MaximumFiles > 0 && capacity > options.MaximumFiles {
+		capacity = options.MaximumFiles
+	}
+	files := make([]sdk.File, 0, capacity)
 	for _, path := range paths {
+		if err := options.context().Err(); err != nil {
+			return nil, err
+		}
 		if path == ".git" || strings.HasPrefix(path, ".git/") || strings.HasPrefix(path, ".hoolicy/vendor/") {
 			continue
 		}
@@ -360,8 +432,28 @@ func discoverFiles(root string) ([]sdk.File, error) {
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
-		data, err := os.ReadFile(absolute)
+		if err := options.checkFileLimit(len(files) + 1); err != nil {
+			return nil, err
+		}
+		if err := options.checkSize(path, info.Size()); err != nil {
+			return nil, err
+		}
+		file, err := os.Open(absolute)
 		if err != nil {
+			return nil, err
+		}
+		opened, statErr := file.Stat()
+		if statErr == nil && (!opened.Mode().IsRegular() || !os.SameFile(info, opened)) {
+			statErr = fmt.Errorf("repository file changed while opening: %s", path)
+		}
+		if statErr == nil {
+			statErr = options.checkSize(path, opened.Size())
+		}
+		if statErr != nil {
+			return nil, errors.Join(statErr, file.Close())
+		}
+		data, readErr := options.readFile(path, file)
+		if err := errors.Join(readErr, file.Close()); err != nil {
 			return nil, err
 		}
 		files = append(files, sdk.File{Path: filepath.ToSlash(path), Mode: info.Mode(), Data: data})
@@ -370,7 +462,11 @@ func discoverFiles(root string) ([]sdk.File, error) {
 }
 
 func gitFileList(root string) ([]string, error) {
-	command := exec.Command("git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	return gitFileListContext(context.Background(), root)
+}
+
+func gitFileListContext(ctx context.Context, root string) ([]string, error) {
+	command := exec.CommandContext(ctx, "git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	output, err := command.Output()
 	if err != nil {
 		return nil, err
@@ -382,7 +478,25 @@ func gitFileList(root string) ([]string, error) {
 			paths = append(paths, filepath.ToSlash(string(entry)))
 		}
 	}
+	// Unmerged index stages can name the same path more than once. A snapshot
+	// must contain one record per canonical repository path.
+	sort.Strings(paths)
+	paths = compactPaths(paths)
 	return paths, nil
+}
+
+func compactPaths(paths []string) []string {
+	if len(paths) == 0 {
+		return paths
+	}
+	n := 1
+	for _, path := range paths[1:] {
+		if path != paths[n-1] {
+			paths[n] = path
+			n++
+		}
+	}
+	return paths[:n]
 }
 
 // IgnoredFiles returns existing Git-ignored files for doctor diagnostics. It

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,85 @@ import (
 
 	"github.com/openhoo/hoolicy/sdk"
 )
+
+func TestSnapshotLimitsApplyToWorktreeAndGitRevision(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	for _, path := range []string{"a.txt", "b.txt"} {
+		if err := os.WriteFile(filepath.Join(root, path), []byte("1234"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-qm", "test: limits")
+	for _, opts := range []Options{{MaximumFiles: 1}, {MaximumDocumentBytes: 3}} {
+		if _, err := Open(root, opts); err == nil || !strings.Contains(err.Error(), "resource budget exceeded") {
+			t.Errorf("worktree limits not enforced: %v", err)
+		}
+		if _, err := OpenRevision(root, "HEAD", opts); err == nil || !strings.Contains(err.Error(), "resource budget exceeded") {
+			t.Errorf("revision limits not enforced: %v", err)
+		}
+	}
+	for _, open := range []func(Options) (*Repository, error){func(opts Options) (*Repository, error) { return Open(root, opts) }, func(opts Options) (*Repository, error) { return OpenRevision(root, "HEAD", opts) }} {
+		if repo, err := open(Options{MaximumFiles: 2, MaximumDocumentBytes: 4}); err != nil || len(repo.AllFiles()) != 2 {
+			t.Fatalf("exact limits must pass: %v", err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := open(Options{Context: ctx}); err != context.Canceled {
+			t.Errorf("cancellation not preserved: %v", err)
+		}
+	}
+}
+
+func TestSnapshotRejectsSparseOversizedFileBeforeReading(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	file, err := os.Create(filepath.Join(root, "large.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(1 << 30); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(root, Options{MaximumDocumentBytes: 1024}); err == nil || !strings.Contains(err.Error(), "large.bin") {
+		t.Fatalf("oversized file accepted: %v", err)
+	}
+}
+
+func TestSnapshotDeduplicatesUnmergedIndexStages(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-qm", "test: conflict snapshot")
+	hash := runGit(t, root, "rev-parse", "HEAD:tracked.txt")
+	runGit(t, root, "update-index", "--force-remove", "tracked.txt")
+	command := exec.Command("git", "-C", root, "update-index", "--index-info")
+	command.Stdin = strings.NewReader("100644 " + hash + " 1\ttracked.txt\n100644 " + hash + " 2\ttracked.txt\n100644 " + hash + " 3\ttracked.txt\n")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("create unmerged stages: %v %s", err, output)
+	}
+	repo, err := Open(root, Options{MaximumFiles: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.AllFiles()) != 1 || repo.AllFiles()[0].Path != "tracked.txt" {
+		t.Fatalf("conflict duplicated snapshot input: %#v", repo.AllFiles())
+	}
+}
 
 func TestGlobMatching(t *testing.T) {
 	t.Parallel()

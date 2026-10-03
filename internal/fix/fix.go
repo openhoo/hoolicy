@@ -46,7 +46,12 @@ func Build(root string, findings []sdk.Finding, selected []string) (*Plan, error
 			continue
 		}
 		for _, edit := range item.Fix.Edits {
-			editsByPath[filepath.ToSlash(edit.Path)] = append(editsByPath[filepath.ToSlash(edit.Path)], edit)
+			clean, err := safepath.Relative(edit.Path)
+			if err != nil {
+				return nil, fmt.Errorf("unsafe fix path: %w", err)
+			}
+			edit.Path = clean
+			editsByPath[clean] = append(editsByPath[clean], edit)
 		}
 	}
 	if len(editsByPath) == 0 {
@@ -102,7 +107,7 @@ func Build(root string, findings []sdk.Finding, selected []string) (*Plan, error
 			if edit.Start < 0 || edit.End < edit.Start || edit.End > len(old) {
 				return nil, fmt.Errorf("%s contains out-of-range edit", clean)
 			}
-			if i > 0 && edits[i-1].End > edit.Start {
+			if i > 0 && (edits[i-1].End > edit.Start || edits[i-1].Start == edit.Start) {
 				return nil, fmt.Errorf("%s contains overlapping edits", clean)
 			}
 		}
@@ -133,7 +138,9 @@ func (p *Plan) Diff() string {
 		if len(file.New) == 0 {
 			newLines = nil
 		}
-		prefix, suffix := sharedContext(oldLines, newLines)
+		oldHasNewline := len(file.Old) == 0 || file.Old[len(file.Old)-1] == '\n'
+		newHasNewline := len(file.New) == 0 || file.New[len(file.New)-1] == '\n'
+		prefix, suffix := sharedContext(oldLines, newLines, oldHasNewline, newHasNewline)
 		start := prefix - 2
 		if start < 0 {
 			start = 0
@@ -146,31 +153,40 @@ func (p *Plan) Diff() string {
 		if newEnd > len(newLines) {
 			newEnd = len(newLines)
 		}
-		output.WriteString(fmt.Sprintf("@@ -%d,%d +%d,%d @@\n", start+1, oldEnd-start, start+1, newEnd-start))
+		oldCount, newCount := oldEnd-start, newEnd-start
+		output.WriteString(fmt.Sprintf("@@ -%d,%d +%d,%d @@\n", diffRangeStart(start, oldCount), oldCount, diffRangeStart(start, newCount), newCount))
 		for i := start; i < prefix; i++ {
-			output.WriteString(" ")
-			output.WriteString(oldLines[i])
-			output.WriteByte('\n')
+			writeDiffLine(&output, ' ', oldLines, i, oldHasNewline)
 		}
 		for i := prefix; i < len(oldLines)-suffix; i++ {
-			output.WriteString("-")
-			output.WriteString(oldLines[i])
-			output.WriteByte('\n')
+			writeDiffLine(&output, '-', oldLines, i, oldHasNewline)
 		}
 		for i := prefix; i < len(newLines)-suffix; i++ {
-			output.WriteString("+")
-			output.WriteString(newLines[i])
-			output.WriteByte('\n')
+			writeDiffLine(&output, '+', newLines, i, newHasNewline)
 		}
 		for i := len(oldLines) - suffix; i < oldEnd; i++ {
 			if i >= 0 && i < len(oldLines) {
-				output.WriteString(" ")
-				output.WriteString(oldLines[i])
-				output.WriteByte('\n')
+				writeDiffLine(&output, ' ', oldLines, i, oldHasNewline)
 			}
 		}
 	}
 	return output.String()
+}
+
+func diffRangeStart(start, count int) int {
+	if count == 0 {
+		return start
+	}
+	return start + 1
+}
+
+func writeDiffLine(output *strings.Builder, prefix byte, lines []string, index int, hasNewline bool) {
+	output.WriteByte(prefix)
+	output.WriteString(lines[index])
+	output.WriteByte('\n')
+	if index == len(lines)-1 && !hasNewline {
+		output.WriteString("\\ No newline at end of file\n")
+	}
 }
 
 func (p *Plan) Apply() (resultErr error) {
@@ -201,9 +217,12 @@ func (p *Plan) stageFile(file FilePlan) (stage stagedFile, resultErr error) {
 	if err != nil {
 		return stage, err
 	}
-	current, readErr := os.ReadFile(target)
+	current, readErr := readRegularTarget(target)
 	if file.Exists && (readErr != nil || !bytes.Equal(current, file.Old)) || !file.Exists && !errors.Is(readErr, os.ErrNotExist) {
 		return stage, fmt.Errorf("%s changed after preview", file.Path)
+	}
+	if err := verifyCleanTarget(p.Root, file.Path); err != nil {
+		return stage, err
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return stage, err
@@ -255,9 +274,12 @@ func (p *Plan) installStages(stages []stagedFile) error {
 			}
 			return rollback(stages[:index], err)
 		}
-		current, readErr := os.ReadFile(entry.target)
+		current, readErr := readRegularTarget(entry.target)
 		if entry.existed && (readErr != nil || !bytes.Equal(current, entry.old)) || !entry.existed && !errors.Is(readErr, os.ErrNotExist) {
 			return rollback(stages[:index], fmt.Errorf("%s changed after staging", entry.path))
+		}
+		if err := verifyCleanTarget(p.Root, entry.path); err != nil {
+			return rollback(stages[:index], err)
 		}
 		if entry.existed {
 			if err := os.Rename(entry.target, entry.backup); err != nil {
@@ -269,6 +291,17 @@ func (p *Plan) installStages(stages []stagedFile) error {
 		}
 	}
 	return nil
+}
+
+func readRegularTarget(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("fix target is not a regular file: %s", path)
+	}
+	return os.ReadFile(path)
 }
 
 func removeBackups(stages []stagedFile) error {
@@ -333,13 +366,18 @@ func reserveName(directory, pattern string) (string, error) {
 	return name, nil
 }
 
-func sharedContext(left, right []string) (int, int) {
+func sharedContext(left, right []string, leftHasNewline, rightHasNewline bool) (int, int) {
+	same := func(leftIndex, rightIndex int) bool {
+		leftTerminated := leftIndex < len(left)-1 || leftHasNewline
+		rightTerminated := rightIndex < len(right)-1 || rightHasNewline
+		return left[leftIndex] == right[rightIndex] && leftTerminated == rightTerminated
+	}
 	prefix := 0
-	for prefix < len(left) && prefix < len(right) && left[prefix] == right[prefix] {
+	for prefix < len(left) && prefix < len(right) && same(prefix, prefix) {
 		prefix++
 	}
 	suffix := 0
-	for suffix < len(left)-prefix && suffix < len(right)-prefix && left[len(left)-1-suffix] == right[len(right)-1-suffix] {
+	for suffix < len(left)-prefix && suffix < len(right)-prefix && same(len(left)-1-suffix, len(right)-1-suffix) {
 		suffix++
 	}
 	return prefix, suffix
@@ -351,6 +389,17 @@ func dirty(root, path string) (bool, error) {
 		return false, fmt.Errorf("cannot verify Git status for %s: %w", path, err)
 	}
 	return dirty, nil
+}
+
+func verifyCleanTarget(root, path string) error {
+	isDirty, err := dirty(root, path)
+	if err != nil {
+		return err
+	}
+	if isDirty {
+		return fmt.Errorf("refusing to fix dirty target file %s", path)
+	}
+	return nil
 }
 func safePath(root, path string) (string, string, error) {
 	clean, absolute, err := safepath.Writable(root, path)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,31 @@ import (
 	"github.com/openhoo/hoolicy/internal/rules"
 	"github.com/openhoo/hoolicy/sdk"
 )
+
+func TestTotalBudgetIncludesRepositoryDiscovery(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX executable to simulate blocked Git discovery")
+	}
+	root := t.TempDir()
+	path := filepath.Join(root, config.DefaultFilename)
+	writeEngineFile(t, path, "version: 1\nproject: discovery\nbudgets:\n  maximumTotalDuration: 20ms\nrules: []\n")
+	project, err := config.LoadProject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexec /bin/sleep 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	started := time.Now()
+	if _, err := engine.New(sdk.NewRegistry()).Check(context.Background(), project, engine.Options{}); err == nil || !strings.Contains(err.Error(), "total execution budget exceeded") || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("discovery escaped total budget: %v", err)
+	}
+	if duration := time.Since(started); duration > 2*time.Second {
+		t.Fatalf("discovery cancellation took %s", duration)
+	}
+}
 
 func TestWaiverLifecycle(t *testing.T) {
 	t.Parallel()

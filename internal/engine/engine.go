@@ -119,6 +119,23 @@ func NewWithVersion(registry *sdk.Registry, version string) *Engine {
 }
 
 func (e *Engine) Validate(project *config.Project) ([]sdk.Rule, error) {
+	rules, err := e.validateRules(project)
+	if err != nil {
+		return nil, err
+	}
+	if len(project.Workspaces) > 0 {
+		repo, err := repository.Open(project.Root, snapshotOptions(context.Background(), project))
+		if err != nil {
+			return nil, fmt.Errorf("validate workspace repository: %w", err)
+		}
+		if _, err := buildWorkspaceScopes(project, repo); err != nil {
+			return nil, err
+		}
+	}
+	return rules, nil
+}
+
+func (e *Engine) validateRules(project *config.Project) ([]sdk.Rule, error) {
 	rules, err := packs.Resolve(project, e.version)
 	if err != nil {
 		return nil, err
@@ -132,23 +149,30 @@ func (e *Engine) Validate(project *config.Project) ([]sdk.Rule, error) {
 			return nil, err
 		}
 	}
-	if len(project.Workspaces) > 0 {
-		repo, err := repository.Open(project.Root, repository.Options{})
-		if err != nil {
-			return nil, fmt.Errorf("validate workspace repository: %w", err)
-		}
-		if _, err := buildWorkspaceScopes(project, repo); err != nil {
-			return nil, err
-		}
-	}
 	return rules, nil
 }
 
-func (e *Engine) Check(ctx context.Context, project *config.Project, options Options) (*Report, error) {
+func (e *Engine) Check(ctx context.Context, project *config.Project, options Options) (result *Report, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	rules, err := e.Validate(project)
+	parent := ctx
+	totalLimit, err := time.ParseDuration(project.Budgets.MaximumTotalDuration)
+	if err != nil || totalLimit <= 0 {
+		return nil, fmt.Errorf("maximumTotalDuration must be a positive duration")
+	}
+	ctx, cancel := context.WithTimeout(ctx, totalLimit)
+	defer cancel()
+	defer func() {
+		if err := parent.Err(); err != nil {
+			result, resultErr = nil, err
+		} else if err := ctx.Err(); err != nil {
+			result, resultErr = nil, fmt.Errorf("total execution budget exceeded: %w", err)
+		}
+	}()
+	// Ownership is checked against the snapshot used for evaluation. Avoid
+	// reading an entire monorepo twice just to validate its workspace scopes.
+	rules, err := e.validateRules(project)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +187,9 @@ func (e *Engine) Check(ctx context.Context, project *config.Project, options Opt
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	repo, err := repository.Open(project.Root, repository.Options{BaseSHA: options.BaseSHA, MergeRequestTitle: options.MergeRequestTitle, Branch: options.Branch, GitContext: options.GitContext})
+	repoOptions := snapshotOptions(ctx, project)
+	repoOptions.BaseSHA, repoOptions.MergeRequestTitle, repoOptions.Branch, repoOptions.GitContext = options.BaseSHA, options.MergeRequestTitle, options.Branch, options.GitContext
+	repo, err := repository.Open(project.Root, repoOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +224,9 @@ func (e *Engine) Check(ctx context.Context, project *config.Project, options Opt
 		_ = baselinePath
 	}
 	if options.BaseSHA != "" {
-		baseRepo, err := repository.OpenRevision(project.Root, options.BaseSHA, repository.Options{MergeRequestTitle: options.MergeRequestTitle})
+		baseOptions := snapshotOptions(ctx, project)
+		baseOptions.MergeRequestTitle = options.MergeRequestTitle
+		baseRepo, err := repository.OpenRevision(project.Root, options.BaseSHA, baseOptions)
 		if err != nil {
 			return nil, fmt.Errorf("compare base revision %s: %w", options.BaseSHA, err)
 		}
@@ -214,6 +242,10 @@ func (e *Engine) Check(ctx context.Context, project *config.Project, options Opt
 	report.Summary = summarize(report.Findings, report.Changes, project.FailOn)
 	report.Summary.Rules = len(rules)
 	return report, nil
+}
+
+func snapshotOptions(ctx context.Context, project *config.Project) repository.Options {
+	return repository.Options{Context: ctx, MaximumFiles: project.Budgets.MaximumFiles, MaximumDocumentBytes: project.Budgets.MaximumDocumentBytes}
 }
 
 func (e *Engine) evaluate(ctx context.Context, project *config.Project, rules []sdk.Rule, repo sdk.Repository, now time.Time, policyDigest string) ([]sdk.Finding, EvaluationMetrics, error) {

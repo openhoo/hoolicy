@@ -212,3 +212,69 @@ cases:
     files:
       .gitlab-ci.yml: "include: [broken\n"
     errorContains: .gitlab-ci.yml
+  - name: pull request target trigger list with bracket checkout fails
+    rule: ci-workflow-security.github
+    outcome: fail
+    parameters:
+      require_job_timeout: false
+    files:
+      .github/workflows/checkout.yml: |
+        on: [push, pull_request_target]
+        permissions: {contents: read}
+        jobs:
+          test:
+            steps:
+              - uses: actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                with:
+                  ref: ${{ github['event']['pull_request']['head']['sha'] }}
+    expect:
+      - ruleId: ci-workflow-security.github
+        key: job:test:step:0:privileged-checkout
+        messageContains: untrusted pull-request code
+  - name: untrusted event in function argument fails
+    rule: ci-workflow-security.github
+    outcome: fail
+    parameters:
+      require_job_timeout: false
+    files:
+      .github/workflows/function.yml: |
+        on: pull_request
+        permissions: {contents: read}
+        jobs:
+          test:
+            steps:
+              - run: echo "${{ toJSON(github.event.pull_request.title) }}"
+    expect:
+      - ruleId: ci-workflow-security.github
+        key: job:test:step:0:interpolation
+  - name: fallback and bracket head reference fail
+    rule: ci-workflow-security.github
+    outcome: fail
+    parameters:
+      require_job_timeout: false
+    files:
+      .github/workflows/fallback.yml: |
+        on: pull_request
+        permissions: {contents: read}
+        jobs:
+          test:
+            steps:
+              - run: echo "${{ inputs.title || github['head_ref'] }}"
+    expect:
+      - ruleId: ci-workflow-security.github
+        key: job:test:step:0:interpolation
+  - name: literal reference text and safe environment handling pass
+    rule: ci-workflow-security.github
+    outcome: pass
+    files:
+      .github/workflows/literals.yml: |
+        on: pull_request
+        permissions: {contents: read}
+        jobs:
+          test:
+            timeout-minutes: 10
+            steps:
+              - run: echo "${{ 'github.event.pull_request.title' }}"
+              - env:
+                  TITLE: ${{ github.event.pull_request.title }}
+                run: printf '%s\n' "$TITLE"

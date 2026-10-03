@@ -87,15 +87,33 @@ hoolicy test       Run pass and fail fixtures for policy packs
 hoolicy baseline   Preview or apply reviewed finding baselines
 hoolicy doctor     Diagnose policy, Git, lock, and CI inputs
 hoolicy report     Compare JSON policy reports by fingerprints and digests
+hoolicy fmt        Normalize policy YAML; --check verifies formatting
+hoolicy lint       Review advisory policy-authoring findings
+hoolicy completion Generate Bash, Zsh, or Fish completion
 hoolicy evidence   Create or verify decision evidence and attestations
 hoolicy waiver     Preview or apply an exact finding-bound waiver
 hoolicy inventory  Emit workspace policy and ownership inventory
 hoolicy serve      Run the optional loopback, GET-only reuse service
 hoolicy migrate    Preview or apply supported format migrations
 hoolicy pack       Add, update, or verify vendored packs
+hoolicy version    Print build information; --json emits structured output
 ```
 
 Reports: human text, JSON, SARIF 2.1.0, JUnit XML, GitHub step summaries, and GitLab Code Quality. Exit codes: `0` passed, `1` a new policy finding met `failOn`, `2` configuration or execution error.
+
+### Choose a workflow
+
+| Goal | Start here | Next step |
+| --- | --- | --- |
+| Adopt policy in a repository | `hoolicy init --project my-service` | Run `check`, then `explain <rule-id>` for remediation |
+| Diagnose unexpected results | `hoolicy doctor` | Inspect active rules with `list` and `explain` |
+| Introduce policy with existing debt | `hoolicy baseline create` | Review the preview before adding `--apply` |
+| Repair supported findings | `hoolicy fix` | Review the exact diff before adding `--apply` |
+| Author a reusable pack | `hoolicy pack init <directory>` | Run `test`, `lint`, and `pack snapshot` |
+| Integrate with CI | `hoolicy check --format sarif --output hoolicy.sarif` | Upload the report and preserve the command's exit status |
+
+Previewed fixes include changes to final newlines and recheck target bytes and Git status before applying. A report-output failure returns `2`, including when a pipe closes or a destination accepts only part of the report.
+
 ### Native CI report contracts
 
 `check` keeps its normal output and exit status when a machine report is selected. Use `--output` so the report file contains only the selected format:

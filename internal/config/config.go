@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/openhoo/hoolicy/internal/repository"
+	"github.com/openhoo/hoolicy/internal/strictjson"
 	"github.com/openhoo/hoolicy/sdk"
 	"go.yaml.in/yaml/v3"
 )
@@ -833,6 +834,9 @@ func LoadLock(path string) (*Lock, error) {
 		return nil, err
 	}
 	var lock Lock
+	if _, err := strictjson.Decode(data); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&lock); err != nil {
@@ -949,6 +953,9 @@ func LoadBaseline(path string) (*BaselineFile, error) {
 		return nil, err
 	}
 	var baseline BaselineFile
+	if _, err := strictjson.Decode(data); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&baseline); err != nil {
@@ -1125,6 +1132,9 @@ func loadStrictJSON(path string, target any) error {
 	data, err := readPolicyFile(path)
 	if err != nil {
 		return err
+	}
+	if _, err := strictjson.Decode(data); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -1503,13 +1513,13 @@ func CompareSemanticVersions(left, right string) (int, error) {
 	if !semverPattern.MatchString(left) || !semverPattern.MatchString(right) {
 		return 0, errors.New("invalid semantic version")
 	}
-	parse := func(value string) ([3]int, []string) {
+	parse := func(value string) ([3]string, []string) {
 		withoutBuild := strings.SplitN(value, "+", 2)[0]
 		parts := strings.SplitN(withoutBuild, "-", 2)
 		core := strings.Split(parts[0], ".")
-		var numbers [3]int
+		var numbers [3]string
 		for index := range numbers {
-			numbers[index], _ = strconv.Atoi(core[index])
+			numbers[index] = core[index]
 		}
 		if len(parts) == 2 {
 			return numbers, strings.Split(parts[1], ".")
@@ -1519,11 +1529,8 @@ func CompareSemanticVersions(left, right string) (int, error) {
 	leftCore, leftPre := parse(left)
 	rightCore, rightPre := parse(right)
 	for index := range leftCore {
-		if leftCore[index] < rightCore[index] {
-			return -1, nil
-		}
-		if leftCore[index] > rightCore[index] {
-			return 1, nil
+		if comparison := compareDecimalIdentifiers(leftCore[index], rightCore[index]); comparison != 0 {
+			return comparison, nil
 		}
 	}
 	if len(leftPre) == 0 && len(rightPre) == 0 {
@@ -1540,16 +1547,16 @@ func CompareSemanticVersions(left, right string) (int, error) {
 		limit = len(rightPre)
 	}
 	for index := range limit {
-		leftNumber, leftErr := strconv.ParseUint(leftPre[index], 10, 64)
-		rightNumber, rightErr := strconv.ParseUint(rightPre[index], 10, 64)
+		leftNumeric := decimalIdentifier(leftPre[index])
+		rightNumeric := decimalIdentifier(rightPre[index])
 		switch {
-		case leftErr == nil && rightErr == nil && leftNumber < rightNumber:
+		case leftNumeric && rightNumeric:
+			if comparison := compareDecimalIdentifiers(leftPre[index], rightPre[index]); comparison != 0 {
+				return comparison, nil
+			}
+		case leftNumeric && !rightNumeric:
 			return -1, nil
-		case leftErr == nil && rightErr == nil && leftNumber > rightNumber:
-			return 1, nil
-		case leftErr == nil && rightErr != nil:
-			return -1, nil
-		case leftErr != nil && rightErr == nil:
+		case !leftNumeric && rightNumeric:
 			return 1, nil
 		case leftPre[index] < rightPre[index]:
 			return -1, nil
@@ -1564,6 +1571,27 @@ func CompareSemanticVersions(left, right string) (int, error) {
 		return 1, nil
 	}
 	return 0, nil
+}
+
+// SemVer numeric identifiers have no size limit and no leading zeroes. Compare
+// decimal lengths and digits directly instead of overflowing machine integers.
+func compareDecimalIdentifiers(left, right string) int {
+	if len(left) < len(right) {
+		return -1
+	}
+	if len(left) > len(right) {
+		return 1
+	}
+	return strings.Compare(left, right)
+}
+
+func decimalIdentifier(value string) bool {
+	for _, digit := range value {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return value != ""
 }
 
 func isGitRoot(path string) bool {

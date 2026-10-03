@@ -18,6 +18,8 @@ hoolicy.yaml + vendored packs + waiver file
 
 Project configuration and packs are untrusted data. Core rule kinds are compiled into the Hoolicy binary. A policy cannot load a shared library, invoke a shell, perform HTTP requests, or register a runtime plugin. CEL receives only normalized repository documents, file metadata, selected Git context, project parameters, and current time.
 
+JSON policy metadata, structured inputs, reports, and evidence reject duplicate object keys, including names written with equivalent Unicode escapes. JSON nesting is limited to 512 levels. This prevents different readers from silently selecting different values from the same input. Terminal rule listings and explanations remove control characters from policy-authored prose; machine-readable output retains the original data.
+
 Explicit pack acquisition and publication are the only network command paths. Git acquisition records commit and deterministic tree digest. OCI acquisition resolves a tag once, verifies the exact digest with local key or identity-plus-issuer trust policy, validates a canonical bounded archive and signed release manifest, then records manifest, pack, and vendor digests. `validate` and `check` only read vendored bytes and verify their lock digest.
 
 Repository reads and fixes reject absolute paths, traversal, symlinks, and non-regular files. Git-ignored content and `.hoolicy/vendor` are excluded from normal repository matching. Direct rule reads remain within the repository boundary.
@@ -44,6 +46,8 @@ Policy violations return exit code `1`. Invalid configuration, pack tampering, p
 ## Safe fixes
 
 Rule kinds may propose byte-range edits with expected file SHA-256. `hoolicy fix` builds a complete plan only when targets are clean and edits do not overlap. Preview is default. `--apply` rechecks every original byte sequence, stages replacements in the target filesystem, atomically renames files, and rolls back already-applied files after a later failure.
+
+Paths are canonicalized before edits are grouped, so aliases cannot create separate plans for one target. Multiple insertions at the same byte offset are rejected as ambiguous. Git status is rechecked after preview and before each replacement, including staged changes whose worktree bytes still match the preview. Diff previews preserve final-newline changes; a failed preview write prevents application.
 
 ## Compile-time extensions
 
