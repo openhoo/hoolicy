@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,39 @@ import (
 	"github.com/openhoo/hoolicy/internal/engine"
 	"github.com/openhoo/hoolicy/sdk"
 )
+
+type brokenWriter struct{ err error }
+
+func (w brokenWriter) Write(data []byte) (int, error) { return 0, w.err }
+
+func TestEveryReportFormatPropagatesWriteFailures(t *testing.T) {
+	t.Parallel()
+	failure := errors.New("report destination closed")
+	for _, format := range []string{"text", "json", "sarif", "junit", "github", "gitlab-codequality"} {
+		for _, input := range []*engine.Report{{}, {Findings: []sdk.Finding{{RuleID: "test.rule", Message: "finding"}}}} {
+			if err := Write(brokenWriter{failure}, format, input, false); !errors.Is(err, failure) {
+				t.Errorf("%s discarded write error: %v", format, err)
+			}
+			if err := Write(brokenWriter{}, format, input, false); !errors.Is(err, io.ErrShortWrite) {
+				t.Errorf("%s accepted short write: %v", format, err)
+			}
+		}
+	}
+	if err := WriteDiff(brokenWriter{failure}, "text", Diff{}); !errors.Is(err, failure) {
+		t.Errorf("report diff discarded write error: %v", err)
+	}
+}
+
+func TestLoadReportRejectsConflictingJSONKeys(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "report.json")
+	if err := os.WriteFile(path, []byte(`{"reportVersion":1,"reportVersion":2}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadJSON(path); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("ambiguous report accepted: %v", err)
+	}
+}
 
 func TestLoadJSONRejectsOversizedInput(t *testing.T) {
 	t.Parallel()

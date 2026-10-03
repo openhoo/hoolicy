@@ -421,3 +421,40 @@ func writeTestFile(t *testing.T, path, body string) {
 		t.Fatal(err)
 	}
 }
+func TestSemanticVersionComparisonDoesNotOverflow(t *testing.T) {
+	t.Parallel()
+	for _, pair := range [][2]string{
+		{"9223372036854775808.0.0", "9223372036854775809.0.0"},
+		{"0.18446744073709551616.0", "0.18446744073709551617.0"},
+		{"0.0.999999999999999999999999999999", "0.0.1000000000000000000000000000000"},
+		{"1.0.0-999999999999999999999999999999", "1.0.0-1000000000000000000000000000000"},
+		{"1.0.0-18446744073709551616", "1.0.0-alpha"},
+	} {
+		if order, err := CompareSemanticVersions(pair[0], pair[1]); err != nil || order != -1 {
+			t.Errorf("%v: order=%d error=%v", pair, order, err)
+		}
+		if order, err := CompareSemanticVersions(pair[1], pair[0]); err != nil || order != 1 {
+			t.Errorf("reversed %v: order=%d error=%v", pair, order, err)
+		}
+	}
+}
+
+func TestJSONPolicyMetadataRejectsDuplicateFields(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, data string
+		load       func(string) error
+	}{
+		{"lock", `{"version":2,"version":1,"packs":[]}`, func(path string) error { _, err := LoadLock(path); return err }},
+		{"baseline", `{"version":2,"version":1}`, func(path string) error { _, err := LoadBaseline(path); return err }},
+		{"catalog", `{"version":2,"version":1}`, func(path string) error { var value map[string]any; return loadStrictJSON(path, &value) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "metadata.json")
+			writeTestFile(t, path, test.data)
+			if err := test.load(path); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+				t.Fatalf("duplicate metadata accepted: %v", err)
+			}
+		})
+	}
+}

@@ -20,8 +20,8 @@ type ciWorkflowSpec struct {
 
 var fullCommitRef = regexp.MustCompile(`^[0-9a-f]{40}$`)
 var sha256Ref = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-var untrustedGitHubExpression = regexp.MustCompile(`\$\{\{\s*github\s*(?:(?:\.\s*event|\[\s*['"]event['"]\s*\])(?:\s*(?:\.\s*[A-Za-z0-9_-]+|\[\s*['"][A-Za-z0-9_-]+['"]\s*\]))+|\.\s*head_ref\b)`)
-var untrustedPullRequestExpression = regexp.MustCompile(`github\s*\.\s*(?:event\s*\.\s*pull_request\s*\.\s*head|head_ref)\b`)
+var githubContextReference = regexp.MustCompile(`(?i)^github((?:\s*(?:\.\s*[A-Za-z_][A-Za-z0-9_-]*|\[\s*['"][A-Za-z_][A-Za-z0-9_-]*['"]\s*\]))+)`)
+var githubPropertyAccess = regexp.MustCompile(`\.\s*([A-Za-z_][A-Za-z0-9_-]*)|\[\s*['"]([A-Za-z_][A-Za-z0-9_-]*)['"]\s*\]`)
 
 func (CIWorkflowSecurity) Validate(rule sdk.Rule) error {
 	if err := requireFiles(rule); err != nil {
@@ -97,7 +97,7 @@ func (CIWorkflowSecurity) Evaluate(_ context.Context, input sdk.EvalContext, rul
 func inspectGitHubWorkflow(rule sdk.Rule, path string, root map[string]any, allowedWrites map[string]bool, requireTimeout bool) []sdk.Finding {
 	var findings []sdk.Finding
 	add := func(message, key string) { findings = append(findings, finding(rule, message, path, key, 1, 1)) }
-	privilegedPullRequest := containsMapKey(root["on"], "pull_request_target") || root["on"] == "pull_request_target"
+	privilegedPullRequest := hasWorkflowTrigger(root["on"], "pull_request_target")
 	if permissions, exists := root["permissions"]; !exists {
 		add("Top-level token permissions are implicit; declare least-privilege permissions", "permissions:missing")
 	} else {
@@ -155,7 +155,7 @@ func inspectGitHubWorkflow(rule sdk.Rule, path string, root map[string]any, allo
 					add("pull_request_target checks out untrusted pull-request code", fmt.Sprintf("job:%s:step:%d:privileged-checkout", jobName, index))
 				}
 			}
-			if script, ok := step["run"].(string); ok && untrustedGitHubExpression.MatchString(script) {
+			if script, ok := step["run"].(string); ok && containsUntrustedGitHubExpression(script) {
 				add("Run script interpolates untrusted GitHub event data directly", fmt.Sprintf("job:%s:step:%d:interpolation", jobName, index))
 			}
 		}
@@ -244,7 +244,11 @@ func inspectGitLabWorkflow(rule sdk.Rule, path string, root map[string]any, requ
 func containsUntrustedPullRequestValue(value any) bool {
 	switch current := value.(type) {
 	case string:
-		return untrustedPullRequestExpression.MatchString(current)
+		for _, path := range githubExpressionReferences(current) {
+			if path[0] == "head_ref" || len(path) >= 3 && path[0] == "event" && path[1] == "pull_request" && path[2] == "head" {
+				return true
+			}
+		}
 	case map[string]any:
 		for _, child := range current {
 			if containsUntrustedPullRequestValue(child) {
@@ -261,13 +265,113 @@ func containsUntrustedPullRequestValue(value any) bool {
 	return false
 }
 
-func containsMapKey(value any, key string) bool {
-	object, ok := value.(map[string]any)
-	if !ok {
-		return false
+func hasWorkflowTrigger(value any, trigger string) bool {
+	switch current := value.(type) {
+	case string:
+		return current == trigger
+	case map[string]any:
+		_, exists := current[trigger]
+		return exists
+	case []any:
+		for _, item := range current {
+			if hasWorkflowTrigger(item, trigger) {
+				return true
+			}
+		}
 	}
-	_, exists := object[key]
-	return exists
+	return false
+}
+
+func containsUntrustedGitHubExpression(value string) bool {
+	for _, path := range githubExpressionReferences(value) {
+		if path[0] == "event" || path[0] == "head_ref" {
+			return true
+		}
+	}
+	return false
+}
+
+// Inspect references throughout an expression, including function arguments
+// and fallbacks. Skip string literals so documentation text is not treated as
+// an evaluated reference; bracket properties remain part of a context chain.
+func githubExpressionReferences(value string) [][]string {
+	var references [][]string
+	for {
+		_, remaining, found := strings.Cut(value, "${{")
+		if !found {
+			return references
+		}
+		end := expressionEnd(remaining)
+		if end < 0 {
+			return references
+		}
+		expression := remaining[:end]
+		value = remaining[end+2:]
+		for index := 0; index < len(expression); {
+			if expression[index] == '\'' || expression[index] == '"' {
+				index = skipExpressionString(expression, index)
+				continue
+			}
+			if expressionIdentifier(expression[index]) {
+				start := index
+				for index < len(expression) && expressionIdentifier(expression[index]) {
+					index++
+				}
+				previous := start - 1
+				for previous >= 0 && strings.ContainsRune(" \t\r\n", rune(expression[previous])) {
+					previous--
+				}
+				if !strings.EqualFold(expression[start:index], "github") || previous >= 0 && expression[previous] == '.' {
+					continue
+				}
+				match := githubContextReference.FindString(expression[start:])
+				if match == "" {
+					continue
+				}
+				var path []string
+				for _, property := range githubPropertyAccess.FindAllStringSubmatch(match, -1) {
+					path = append(path, strings.ToLower(property[1]+property[2]))
+				}
+				references = append(references, path)
+				index = start + len(match)
+				continue
+			}
+			index++
+		}
+	}
+}
+
+func expressionEnd(value string) int {
+	for index := 0; index < len(value); {
+		if value[index] == '\'' || value[index] == '"' {
+			index = skipExpressionString(value, index)
+			continue
+		}
+		if strings.HasPrefix(value[index:], "}}") {
+			return index
+		}
+		index++
+	}
+	return -1
+}
+
+func skipExpressionString(value string, start int) int {
+	quote := value[start]
+	for index := start + 1; index < len(value); index++ {
+		if value[index] != quote {
+			continue
+		}
+		if index+1 < len(value) && value[index+1] == quote {
+			index++
+			continue
+		}
+		return index + 1
+	}
+	return len(value)
+}
+
+func expressionIdentifier(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9' || value == '_' || value == '-'
 }
 
 func asList(value any) []any {

@@ -19,6 +19,7 @@ import (
 	"github.com/openhoo/hoolicy/internal/config"
 	"github.com/openhoo/hoolicy/internal/engine"
 	"github.com/openhoo/hoolicy/internal/safepath"
+	"github.com/openhoo/hoolicy/internal/strictjson"
 	"github.com/openhoo/hoolicy/sdk"
 )
 
@@ -243,6 +244,9 @@ func Marshal(bundle *Bundle) ([]byte, error) {
 func Load(path string) (*Bundle, error) {
 	data, err := readBoundedRegularFile(path, MaxEvidenceFileSize)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := strictjson.Decode(data); err != nil {
 		return nil, err
 	}
 	var bundle Bundle
@@ -592,17 +596,8 @@ func InspectExternalBytes(spec ExternalSpec, data []byte, now time.Time) (Extern
 			return ExternalRecord{}, errors.New("required producer is absent from JUnit hoolicy.producer property")
 		}
 	} else {
-		var value any
-		decoder := json.NewDecoder(bytes.NewReader(data))
-		decoder.UseNumber()
-		if err := decoder.Decode(&value); err != nil {
-			return ExternalRecord{}, err
-		}
-		var extra any
-		if err := decoder.Decode(&extra); err != io.EOF {
-			if err == nil {
-				return ExternalRecord{}, errors.New("exactly one external evidence JSON value is required")
-			}
+		value, err := strictjson.Decode(data)
+		if err != nil {
 			return ExternalRecord{}, err
 		}
 		if err := validateJSONType(spec.Type, value); err != nil {

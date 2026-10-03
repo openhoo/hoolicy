@@ -48,6 +48,31 @@
       ]
     },
     {
+      "name": "fallback and bracket head reference fail",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "ci-workflow-security.github",
+          "severity": "error",
+          "path": ".github/workflows/fallback.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Run script interpolates untrusted GitHub event data directly",
+          "key": "job:test:step:0:interpolation",
+          "fingerprint": "613c820ee931f8040c8e858fcacf4a281d8c3bcff4eba0d8ff7f7d8088aee1b7",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "literal reference text and safe environment handling pass",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
       "name": "malformed GitHub workflow fails closed",
       "ruleId": "ci-workflow-security.github",
       "outcome": "error",
@@ -80,6 +105,25 @@
           "message": "pull_request_target checks out untrusted pull-request code",
           "key": "job:test:step:0:privileged-checkout",
           "fingerprint": "d3edb7fae9a75f151c7ab7f2f7db3ae5aa1e29c49bdee0e3c98d9e68f30744bc",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pull request target trigger list with bracket checkout fails",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "ci-workflow-security.github",
+          "severity": "error",
+          "path": ".github/workflows/checkout.yml",
+          "line": 1,
+          "column": 1,
+          "message": "pull_request_target checks out untrusted pull-request code",
+          "key": "job:test:step:0:privileged-checkout",
+          "fingerprint": "f0aa4bbc1fc92ba2e16c10ef9f32d9b0379b54137f4d4ea80628901578809089",
           "waived": false,
           "hasFix": false
         }
@@ -210,6 +254,25 @@
           "message": "Action vendor/action@main is not pinned to an immutable commit or digest",
           "key": "job:release:step:0:uses",
           "fingerprint": "a977794292f26cdcf529363da0adc89e15c79f7d8ef5bb4e42a7abb0d59566d1",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "untrusted event in function argument fails",
+      "ruleId": "ci-workflow-security.github",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "ci-workflow-security.github",
+          "severity": "error",
+          "path": ".github/workflows/function.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Run script interpolates untrusted GitHub event data directly",
+          "key": "job:test:step:0:interpolation",
+          "fingerprint": "65aa9961bc12da2f6a2ee1f2c4c38753db14a4d63476f78ddd06b0ea461666bb",
           "waived": false,
           "hasFix": false
         }

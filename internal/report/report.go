@@ -21,14 +21,23 @@ import (
 
 	"github.com/openhoo/hoolicy/internal/config"
 	"github.com/openhoo/hoolicy/internal/engine"
+	"github.com/openhoo/hoolicy/internal/output"
 	"github.com/openhoo/hoolicy/internal/repository"
 	"github.com/openhoo/hoolicy/internal/safepath"
+	"github.com/openhoo/hoolicy/internal/strictjson"
 	"github.com/openhoo/hoolicy/sdk"
 )
 
 const MaxReportFileSize int64 = 64 << 20
 
-func Write(writer io.Writer, format string, report *engine.Report, color bool) error {
+func Write(writer io.Writer, format string, report *engine.Report, color bool) (resultErr error) {
+	checked := &output.Writer{Destination: writer}
+	writer = checked
+	defer func() {
+		if err := checked.Err(); err != nil && !errors.Is(resultErr, err) {
+			resultErr = errors.Join(resultErr, err)
+		}
+	}()
 	switch strings.ToLower(format) {
 	case "", "text":
 		return writeText(writer, report, color)
@@ -706,6 +715,9 @@ func LegacyProjectDigest(project *config.Project, rules []sdk.Rule) (string, err
 }
 
 func decodeLegacy(data []byte, path string) (*legacyReport, error) {
+	if _, err := strictjson.Decode(data); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	var input legacyReport
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -1372,6 +1384,9 @@ func LoadJSON(path string) (*engine.Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := strictjson.Decode(data); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	var version struct {
 		ReportVersion int `json:"reportVersion"`
 	}
@@ -1526,7 +1541,14 @@ func fallbackDigest(input *engine.Report) string {
 	return input.ConfigDigest
 }
 
-func WriteDiff(writer io.Writer, format string, diff Diff) error {
+func WriteDiff(writer io.Writer, format string, diff Diff) (resultErr error) {
+	checked := &output.Writer{Destination: writer}
+	writer = checked
+	defer func() {
+		if err := checked.Err(); err != nil && !errors.Is(resultErr, err) {
+			resultErr = errors.Join(resultErr, err)
+		}
+	}()
 	if format == "json" {
 		encoder := json.NewEncoder(writer)
 		encoder.SetIndent("", "  ")

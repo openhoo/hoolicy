@@ -1,6 +1,7 @@
 package fix
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,94 @@ import (
 
 	"github.com/openhoo/hoolicy/sdk"
 )
+
+func TestDiffPreservesTrailingNewlineAndEmptyRanges(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, old, updated string
+		exists             bool
+	}{
+		{"add newline", "old", "old\n", true},
+		{"remove newline", "old\n", "old", true},
+		{"replace unterminated line", "old", "new", true},
+		{"create file", "", "new\n", false},
+		{"empty file", "old\n", "", true},
+		{"final context without newline", "one\nold\nlast", "one\nnew\nlast", true},
+		{"extend unterminated file", "old", "old\nnew\n", true},
+		{"extend with unterminated line", "old", "old\nnew", true},
+		{"remove final unterminated line", "old\nnew", "old", true},
+		{"CRLF content", "old\r\n", "new\r\n", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			if test.exists {
+				if err := os.WriteFile(filepath.Join(root, "target.txt"), []byte(test.old), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			plan := &Plan{Root: root, Files: []FilePlan{{Path: "target.txt", Exists: test.exists, Old: []byte(test.old), New: []byte(test.updated)}}}
+			diff := plan.Diff()
+			// Preview bytes are independent of the caller's Git EOL conversion
+			// preferences (Windows runners enable core.autocrlf globally).
+			command := exec.Command("git", "-c", "core.autocrlf=false", "-c", "core.eol=lf", "-C", root, "apply", "--no-index", "-")
+			command.Stdin = strings.NewReader(diff)
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("preview is not a valid diff: %v %s\n%s", err, output, diff)
+			}
+			data, err := os.ReadFile(filepath.Join(root, "target.txt"))
+			if err != nil || !bytes.Equal(data, []byte(test.updated)) {
+				t.Fatalf("preview did not reproduce bytes: %q, %v", data, err)
+			}
+		})
+	}
+}
+
+func TestBuildGroupsCanonicalPathsAndRejectsAmbiguousEdits(t *testing.T) {
+	t.Parallel()
+	root := cleanGitRepository(t, map[string]string{"tracked.txt": "old\n"})
+	for _, paths := range [][2]string{{"tracked.txt", "./tracked.txt"}, {"tracked.txt", "nested/../tracked.txt"}, {"tracked.txt", "tracked.txt"}} {
+		finding := sdk.Finding{RuleID: "test.edit", Fix: &sdk.Fix{Edits: []sdk.Edit{
+			{Path: paths[0], ExpectedSHA256: digest([]byte("old\n")), Start: 0, End: 1, Replacement: []byte("a")},
+			{Path: paths[1], ExpectedSHA256: digest([]byte("old\n")), Start: 0, End: 1, Replacement: []byte("b")},
+		}}}
+		if _, err := Build(root, []sdk.Finding{finding}, nil); err == nil || !strings.Contains(err.Error(), "overlapping") {
+			t.Errorf("overlapping edits through %v accepted: %v", paths, err)
+		}
+	}
+	finding := sdk.Finding{RuleID: "test.insert", Fix: &sdk.Fix{Edits: []sdk.Edit{
+		{Path: "tracked.txt", ExpectedSHA256: digest([]byte("old\n")), Start: 1, End: 1, Replacement: []byte("a")},
+		{Path: "tracked.txt", ExpectedSHA256: digest([]byte("old\n")), Start: 1, End: 1, Replacement: []byte("b")},
+	}}}
+	if _, err := Build(root, []sdk.Finding{finding}, nil); err == nil {
+		t.Fatal("ambiguous insertions at the same byte offset accepted")
+	}
+}
+
+func TestApplyRechecksGitIndexAfterPreview(t *testing.T) {
+	t.Parallel()
+	root := cleanGitRepository(t, map[string]string{"tracked.txt": "old\n"})
+	finding := sdk.Finding{RuleID: "test.edit", Fix: &sdk.Fix{Edits: []sdk.Edit{{Path: "tracked.txt", ExpectedSHA256: digest([]byte("old\n")), Start: 0, End: 3, Replacement: []byte("new")}}}}
+	plan, err := Build(root, []sdk.Finding{finding}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Stage a change, then restore the previewed worktree bytes. Content alone
+	// cannot detect the user's independently changed Git index.
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "tracked.txt")
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Apply(); err == nil || !strings.Contains(err.Error(), "dirty target") {
+		t.Fatalf("changed index accepted after preview: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "tracked.txt"))
+	if err != nil || string(data) != "old\n" {
+		t.Fatalf("worktree changed: %q, %v", data, err)
+	}
+}
 
 func TestBuildPreviewAndApply(t *testing.T) {
 	t.Parallel()

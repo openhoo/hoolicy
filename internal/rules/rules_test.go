@@ -63,6 +63,13 @@ func TestGitHubRunExpressionDetectionToleratesWhitespace(t *testing.T) {
 		{name: "bracket property access", script: `echo "${{ github.event['pull_request']['title'] }}"`, want: true},
 		{name: "mixed property access", script: `echo "${{ github['event']['pull_request'].title }}"`, want: true},
 		{name: "head ref", script: "echo '${{ github.head_ref }}'", want: true},
+		{name: "bracket head ref", script: `echo "${{ github['head_ref'] }}"`, want: true},
+		{name: "function argument", script: `echo "${{ toJSON(github.event.pull_request.title) }}"`, want: true},
+		{name: "fallback expression", script: `echo "${{ inputs.title || github.event.pull_request.title }}"`, want: true},
+		{name: "literal context text", script: `echo "${{ 'github.event.pull_request.title' }}"`, want: false},
+		{name: "literal closing braces", script: `echo "${{ format('}} {0}', github.event.pull_request.title) }}"`, want: true},
+		{name: "event name", script: `echo "${{ github.event_name }}"`, want: false},
+		{name: "plain shell text", script: `echo github.event.pull_request.title`, want: false},
 		{name: "trusted output", script: "echo '${{ needs.build.outputs.value }}'", want: false},
 	}
 	for _, test := range tests {
@@ -87,6 +94,27 @@ func TestGitHubRunExpressionDetectionToleratesWhitespace(t *testing.T) {
 				t.Fatalf("script %q detected=%v, want %v; findings=%#v", test.script, found, test.want, findings)
 			}
 		})
+	}
+}
+
+func TestPrivilegedCheckoutRecognizesAllTriggerAndAccessForms(t *testing.T) {
+	t.Parallel()
+	rule := baseRule("demo.workflow", "ci.workflow-security", []string{"workflow.yml"}, nil)
+	for _, trigger := range []any{"pull_request_target", []any{"push", "pull_request_target"}, map[string]any{"pull_request_target": nil}} {
+		for _, ref := range []string{
+			`${{ github.event.pull_request.head.sha }}`,
+			`${{ github['event']['pull_request']['head']['sha'] }}`,
+			`${{ github['head_ref'] }}`,
+			`${{ format('{0}', github.event.pull_request.head.sha) }}`,
+		} {
+			root := map[string]any{"on": trigger, "permissions": "read-all", "jobs": map[string]any{"test": map[string]any{"steps": []any{map[string]any{
+				"uses": "actions/checkout@" + strings.Repeat("a", 40), "with": map[string]any{"ref": ref},
+			}}}}}
+			findings := inspectGitHubWorkflow(rule, "workflow.yml", root, nil, false)
+			if len(findings) != 1 || !strings.Contains(findings[0].Message, "untrusted pull-request code") {
+				t.Errorf("trigger=%v ref=%s findings=%#v", trigger, ref, findings)
+			}
+		}
 	}
 }
 

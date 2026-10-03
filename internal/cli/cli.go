@@ -25,6 +25,7 @@ import (
 	"github.com/openhoo/hoolicy/internal/evidence"
 	"github.com/openhoo/hoolicy/internal/fix"
 	"github.com/openhoo/hoolicy/internal/ocipack"
+	"github.com/openhoo/hoolicy/internal/output"
 	"github.com/openhoo/hoolicy/internal/packarchive"
 	"github.com/openhoo/hoolicy/internal/packs"
 	"github.com/openhoo/hoolicy/internal/policylint"
@@ -69,7 +70,21 @@ func RunWithRegistry(ctx context.Context, args []string, info BuildInfo, registr
 	return app.run(ctx, args)
 }
 
-func (a application) run(ctx context.Context, args []string) int {
+func (a application) run(ctx context.Context, args []string) (code int) {
+	stdout := &output.Writer{Destination: a.stdout}
+	stderr := &output.Writer{Destination: a.stderr}
+	a.stdout, a.stderr = stdout, stderr
+	defer func() {
+		if err := stdout.Err(); err != nil {
+			if code != 2 {
+				fmt.Fprintf(a.stderr, "hoolicy: write output: %v\n", err)
+			}
+			code = 2
+		}
+		if stderr.Err() != nil {
+			code = 2
+		}
+	}()
 	if len(args) == 0 {
 		return a.help()
 	}
@@ -128,28 +143,40 @@ func (a application) help() int {
 Usage:
   hoolicy <command> [options]
 
-Commands:
+Start and inspect:
   init       Create a standard, strict, or empty starter configuration
   validate   Validate configuration, packs, and rule expressions
-  check      Evaluate all policies offline
-  fix        Preview or apply engine-approved safe fixes
   list       List active rules
   explain    Explain one active rule
-  test       Run policy pack fixtures
-  baseline   Create or prune reviewed finding baselines
   doctor     Diagnose local policy and CI inputs without changing files
+
+Evaluate and review:
+  check      Evaluate all policies offline
+  fix        Preview or apply engine-approved safe fixes
+  baseline   Create or prune reviewed finding baselines
   report     Compare deterministic JSON reports
+  waiver     Preview or apply an exact finding-bound waiver
+  evidence   Create or independently verify decision evidence
+
+Author and distribute:
+  test       Run policy pack fixtures
   fmt        Normalize Hoolicy-owned YAML
   lint       Explain pack-authoring heuristics
+  pack       Add, update, or verify policy packs
+  migrate    Preview or apply supported on-disk format migrations
+
+Integrate:
   completion Generate shell completion scripts
-  evidence   Create or independently verify decision evidence
-  waiver     Preview or apply an exact finding-bound waiver
   inventory  Emit active workspace, rule, control, waiver, and owner inventory
   serve      Run a loopback-only, GET-only policy service
-  migrate    Preview or apply supported on-disk format migrations
-  pack       Add, update, or verify policy packs
   version    Print build information
 
+Quick start:
+  hoolicy init --project my-service
+  hoolicy check
+  hoolicy explain <rule-id>
+
+Exit codes: 0 passed, 1 blocking findings, 2 invalid input or execution failure.
 Run 'hoolicy <command> -h' for command options.
 `)
 	return 0
@@ -330,7 +357,9 @@ func (a application) fix(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	fmt.Fprint(a.stdout, plan.Diff())
+	if _, err := fmt.Fprint(a.stdout, plan.Diff()); err != nil {
+		return a.fail(fmt.Errorf("write fix preview: %w", err))
+	}
 	if !*apply {
 		fmt.Fprintln(a.stdout, "Preview only. Re-run with --apply after reviewing this diff.")
 		return 0
@@ -365,7 +394,7 @@ func (a application) list(args []string) int {
 		if rule.Pack != "" {
 			source = rule.Pack + "@" + rule.PackVersion
 		}
-		fmt.Fprintf(a.stdout, "%-8s %-30s %-24s %s\n", rule.Severity, rule.ID, source, rule.Title)
+		fmt.Fprintf(a.stdout, "%-8s %-30s %-24s %s\n", rule.Severity, rule.ID, source, terminalText(rule.Title, false))
 	}
 	return 0
 }
@@ -410,16 +439,25 @@ func (a application) explain(args []string) int {
 		if *format != "text" {
 			return a.fail(fmt.Errorf("unknown explain format %q", *format))
 		}
-		fmt.Fprintf(a.stdout, "%s — %s\n\nSeverity: %s\nKind: %s\nSource: %s@%s\n\n%s\n\nWhy: %s\n\nFix: %s\n", rule.ID, rule.Title, rule.Severity, rule.Kind, fallback(rule.Pack, "project"), fallback(rule.PackVersion, "local"), rule.Description, rule.Rationale, rule.Remediation)
+		fmt.Fprintf(a.stdout, "%s — %s\n\nSeverity: %s\nKind: %s\nSource: %s@%s\n\n%s\n\nWhy: %s\n\nFix: %s\n", rule.ID, terminalText(rule.Title, false), rule.Severity, rule.Kind, fallback(rule.Pack, "project"), fallback(rule.PackVersion, "local"), terminalText(rule.Description, true), terminalText(rule.Rationale, true), terminalText(rule.Remediation, true))
 		if len(rule.Controls) > 0 {
 			fmt.Fprintln(a.stdout, "\nControls:")
 			for _, control := range rule.Controls {
-				fmt.Fprintf(a.stdout, "- %s %s\n", control.Framework, control.ID)
+				fmt.Fprintf(a.stdout, "- %s %s\n", terminalText(control.Framework, false), terminalText(control.ID, false))
 			}
 		}
 		return 0
 	}
 	return a.fail(fmt.Errorf("unknown rule %s", flags.Arg(0)))
+}
+
+func terminalText(value string, multiline bool) string {
+	return strings.Map(func(character rune) rune {
+		if unicode.IsControl(character) && !(multiline && character == '\n') {
+			return ' '
+		}
+		return character
+	}, value)
 }
 
 func (a application) completion(args []string) int {
@@ -749,7 +787,10 @@ func (a application) readOnlyHandler(configPath string) http.Handler {
 	}
 	getOnly := func(handler func(*http.Request) (any, error)) http.HandlerFunc {
 		return func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Cache-Control", "no-store")
+			writer.Header().Set("X-Content-Type-Options", "nosniff")
 			if request.Method != http.MethodGet {
+				writer.Header().Set("Allow", http.MethodGet)
 				jsonError(writer, http.StatusMethodNotAllowed, errors.New("read-only service accepts GET only"))
 				return
 			}
@@ -2680,6 +2721,9 @@ func commandOutputLine(output []byte) string {
 func colorEnabled(writer io.Writer) bool {
 	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
 		return false
+	}
+	if checked, ok := writer.(*output.Writer); ok {
+		writer = checked.Destination
 	}
 	file, ok := writer.(*os.File)
 	if !ok {

@@ -19,6 +19,21 @@ import (
 	"github.com/openhoo/hoolicy/sdk"
 )
 
+func TestExternalEvidenceRejectsConflictingJSONKeys(t *testing.T) {
+	t.Parallel()
+	subject := "sha256:" + strings.Repeat("a", 64)
+	data := []byte(`{"bomFormat":"Other","bomFormat":"CycloneDX","specVersion":"1.6","metadata":{"component":{"hashes":[{"alg":"SHA-256","content":"` + strings.TrimPrefix(subject, "sha256:") + `"}]}},"components":[]}`)
+	spec := evidence.ExternalSpec{ID: "test", Type: "cyclonedx", Path: "bom.json", SHA256: sha(data), SubjectDigest: subject}
+	if _, err := evidence.InspectExternalBytes(spec, data, time.Now()); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("ambiguous evidence accepted: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "bundle.json")
+	writeEvidenceFile(t, path, []byte(`{"version":2,"version":1}`))
+	if _, err := evidence.Load(path); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("ambiguous bundle accepted: %v", err)
+	}
+}
+
 func TestBundleBuildAndVerificationBindEveryInput(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

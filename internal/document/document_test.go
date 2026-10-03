@@ -1,10 +1,57 @@
 package document
 
 import (
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/openhoo/hoolicy/sdk"
 )
+
+func TestConcurrentParseCacheKeepsOneEvictionEntryPerKey(t *testing.T) {
+	file := sdk.File{Path: t.Name() + ".json", Data: []byte("[" + strings.Repeat("0,", 16384) + "0]")}
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	for range 16 {
+		workers.Go(func() {
+			<-start
+			if _, _, err := ParseCached(file, "json"); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	close(start)
+	workers.Wait()
+	sharedParseCache.Lock()
+	defer sharedParseCache.Unlock()
+	seen := map[string]bool{}
+	for _, key := range sharedParseCache.order {
+		if seen[key] {
+			t.Fatal("concurrent misses duplicated a cache eviction key")
+		}
+		seen[key] = true
+	}
+	if len(seen) != len(sharedParseCache.entries) || len(seen) > parseCacheLimit {
+		t.Fatalf("cache queue and entries diverged: %d vs %d", len(seen), len(sharedParseCache.entries))
+	}
+}
+
+func TestJSONRejectsDuplicateObjectKeys(t *testing.T) {
+	t.Parallel()
+	for _, data := range []string{
+		`{"producer":"trusted","producer":"other"}`,
+		`{"outer":{"ok":true,"ok":false}}`,
+		`[{"version":1,"version":2}]`,
+		`{"key":1,"\u006bey":2}`,
+	} {
+		if _, err := Parse(sdk.File{Path: "ambiguous.json", Data: []byte(data)}, "json"); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+			t.Fatalf("ambiguous input %s: %v", data, err)
+		}
+	}
+	if _, err := Parse(sdk.File{Path: "distinct.json", Data: []byte(`{"a":{"key":1},"b":{"key":2}}`)}, "json"); err != nil {
+		t.Fatalf("keys in different objects must remain valid: %v", err)
+	}
+}
 
 func TestParseFormatsAndRejectAmbiguity(t *testing.T) {
 	t.Parallel()
