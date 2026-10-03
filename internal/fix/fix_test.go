@@ -26,6 +26,7 @@ func TestDiffPreservesTrailingNewlineAndEmptyRanges(t *testing.T) {
 		{"extend unterminated file", "old", "old\nnew\n", true},
 		{"extend with unterminated line", "old", "old\nnew", true},
 		{"remove final unterminated line", "old\nnew", "old", true},
+		{"CRLF content", "old\r\n", "new\r\n", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -36,7 +37,9 @@ func TestDiffPreservesTrailingNewlineAndEmptyRanges(t *testing.T) {
 			}
 			plan := &Plan{Root: root, Files: []FilePlan{{Path: "target.txt", Exists: test.exists, Old: []byte(test.old), New: []byte(test.updated)}}}
 			diff := plan.Diff()
-			command := exec.Command("git", "-C", root, "apply", "--no-index", "-")
+			// Preview bytes are independent of the caller's Git EOL conversion
+			// preferences (Windows runners enable core.autocrlf globally).
+			command := exec.Command("git", "-c", "core.autocrlf=false", "-c", "core.eol=lf", "-C", root, "apply", "--no-index", "-")
 			command.Stdin = strings.NewReader(diff)
 			if output, err := command.CombinedOutput(); err != nil {
 				t.Fatalf("preview is not a valid diff: %v %s\n%s", err, output, diff)
