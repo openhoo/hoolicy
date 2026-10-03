@@ -1,15 +1,5 @@
 # Changelog
 
-## 0.4.1 (2026-10-03)
-
-### Bug Fixes
-
-- **hoolicy:** harden policy evaluation and polish CLI workflows (#35) (13b8f61)
-
-### Other Changes
-
-- **hoolicy:** add contributor and user agent skills (#34) (95fa1e8)
-
 ## 0.4.0 (2026-09-22)
 
 ### Features
