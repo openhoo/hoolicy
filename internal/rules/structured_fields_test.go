@@ -252,3 +252,19 @@ func TestStructuredFieldsNestedArrayComparisonBudgetAndCancellation(t *testing.T
 		t.Fatalf("nested cancellation escaped: %v", err)
 	}
 }
+
+func TestStructuredFieldsRetainsJSONDecimalAndExponentPrecision(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		value string
+		field map[string]any
+	}{
+		{"9007199254740993e0", map[string]any{"pointer": "/value", "allowedValues": []any{int64(9007199254740992)}}},
+		{"1.0000000000000000001", map[string]any{"pointer": "/value", "type": "integer"}},
+	} {
+		findings, err := evaluateStructured(t, context.Background(), "config.json", `{"value":`+test.value+`}`, map[string]any{"fields": []any{test.field}})
+		if err != nil || len(findings) != 1 {
+			t.Fatalf("JSON precision lost for %s: %#v %v", test.value, findings, err)
+		}
+	}
+}

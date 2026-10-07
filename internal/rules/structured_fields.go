@@ -157,7 +157,7 @@ func (kind StructuredFields) Evaluate(ctx context.Context, input sdk.EvalContext
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		parsed, hit, err := document.ParseCached(file, spec.Format)
+		parsed, hit, err := document.ParseCachedPreservingJSONNumbers(file, spec.Format)
 		if err != nil {
 			return nil, err
 		}

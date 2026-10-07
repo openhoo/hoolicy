@@ -60,6 +60,22 @@ cases:
     expect:
       - path: config/production.json
         messageContains: /replicas
+  - name: fractional JSON replicas do not round to an integer
+    rule: structured-configuration.availability
+    outcome: fail
+    files:
+      config/production.json: '{"replicas":2.0000000000000000001,"timeoutMs":10000}'
+    expect:
+      - path: config/production.json
+        messageContains: must have type integer
+  - name: JSON timeout above maximum does not round down
+    rule: structured-configuration.availability
+    outcome: fail
+    files:
+      config/production.json: '{"replicas":2,"timeoutMs":30000.0000000000000000001}'
+    expect:
+      - path: config/production.json
+        messageContains: exceeds the maximum
   - name: explicit unique origins pass
     rule: structured-configuration.browser-origins
     outcome: pass
