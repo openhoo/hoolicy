@@ -1,4 +1,6 @@
 version: 1
+# Synthetic secret signatures use YAML Unicode escapes to keep scanner-safe source.
+# Decoding restores the exact fixture bytes; no working credentials or private keys exist here.
 cases:
   - name: public key and certificate pass
     rule: secrets-prevention.private-key-material
@@ -14,9 +16,7 @@ cases:
     rule: secrets-prevention.private-key-material
     outcome: fail
     files:
-      keys/private.txt: |
-        -----BEGIN OPENSSH PRIVATE KEY-----
-        SYNTHETIC NONSECRET FIXTURE
+      keys/private.txt: "-----\u0042EGIN OPENSSH PRIVATE KEY-----\nSYNTHETIC NONSECRET FIXTURE\n"
     expect:
       - ruleId: secrets-prevention.private-key-material
         messageContains: Private key material marker
@@ -28,9 +28,7 @@ cases:
     rule: secrets-prevention.private-key-material
     outcome: fail
     files:
-      keys/private.pem: |
-        -----BEGIN ENCRYPTED PRIVATE KEY-----
-        SYNTHETIC NONSECRET FIXTURE
+      keys/private.pem: "-----\u0042EGIN ENCRYPTED PRIVATE KEY-----\nSYNTHETIC NONSECRET FIXTURE\n"
     expect:
       - ruleId: secrets-prevention.private-key-material
         messageContains: Private key material marker
@@ -50,8 +48,7 @@ cases:
     rule: secrets-prevention.provider-token-signatures
     outcome: fail
     files:
-      config.txt: |
-        token=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+      config.txt: "token=\u0067hp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
     expect:
       - ruleId: secrets-prevention.provider-token-signatures
         messageContains: Provider access token signature
@@ -63,8 +60,7 @@ cases:
     rule: secrets-prevention.provider-token-signatures
     outcome: fail
     files:
-      config.txt: |
-        token=glpat-AAAAAAAAAAAAAAAAAAAA
+      config.txt: "token=\u0067lpat-AAAAAAAAAAAAAAAAAAAA\n"
     expect:
       - ruleId: secrets-prevention.provider-token-signatures
         messageContains: Provider access token signature
@@ -76,8 +72,7 @@ cases:
     rule: secrets-prevention.provider-token-signatures
     outcome: pass
     files:
-      config.txt: |
-        identifier=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+      config.txt: "identifier=\u0067hp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
   - name: placeholder templates and public keys pass
     rule: secrets-prevention.credential-files
     outcome: pass
@@ -139,8 +134,7 @@ cases:
     rule: secrets-prevention.provider-token-signatures
     outcome: fail
     files:
-      config.txt: |
-        token=glpat-AAAAAAAAAAAAAAAAAAA-
+      config.txt: "token=\u0067lpat-AAAAAAAAAAAAAAAAAAA-\n"
     expect:
       - ruleId: secrets-prevention.provider-token-signatures
         messageContains: Provider access token signature
@@ -152,5 +146,4 @@ cases:
     rule: secrets-prevention.provider-token-signatures
     outcome: pass
     files:
-      config.txt: |
-        identifier=glpat-AAAAAAAAAAAAAAAAAAAA-suffix
+      config.txt: "identifier=\u0067lpat-AAAAAAAAAAAAAAAAAAAA-suffix\n"
