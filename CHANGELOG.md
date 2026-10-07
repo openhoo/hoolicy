@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 (2026-10-07)
+
+### Features
+
+- **hoolicy:** expand policy catalog and offline starter profiles (1c55b2b)
+
+### Bug Fixes
+
+- **structured:** preserve exact JSON number comparisons (#44) (6cf8cd0)
+
 ## 0.4.2 (2026-10-07)
 
 ### Bug Fixes
