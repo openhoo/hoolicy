@@ -5,7 +5,7 @@ Use immutable action revisions in consuming repositories.
 ```yaml
 - uses: openhoo/hoolicy/actions/check@<full-commit-sha>
   with:
-    version: 0.4.2
+    version: 0.5.0
 ```
 
 `actions/setup` installs a pinned Cosign verifier, downloads the release archive,
