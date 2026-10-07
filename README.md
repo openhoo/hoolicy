@@ -178,7 +178,9 @@ and do not prove execution or conformance. Read the
 Use `structured.fields` for targeted JSON, YAML, and TOML configuration checks.
 JSON pointers select nested fields and array elements. Constraints support
 required or forbidden fields, types, allowed values, string patterns, numeric
-bounds, array sizes, uniqueness, and required array members:
+bounds, array sizes, uniqueness, and required array members. This rule fragment
+belongs under `rules` in a project policy; include the required `id`, `title`,
+`description`, `rationale`, `remediation`, and `severity` metadata:
 
 ```yaml
 kind: structured.fields
