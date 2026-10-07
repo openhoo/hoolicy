@@ -123,3 +123,48 @@ cases:
     files:
       package.json: '{broken'
     errorContains: package.json
+  - name: block and quoted local Go replacements fail
+    rule: dependency-governance.manifests
+    outcome: fail
+    files:
+      go.mod: |
+        module example.com/demo
+        go 1.26
+        replace (
+          example.com/shared => ../shared // local edge
+          example.com/tools => "./tools with spaces"
+        )
+      go.sum: ""
+    findingCount: 2
+    expect:
+      - ruleId: dependency-governance.manifests
+        key: replace:example.com/shared
+        line: 4
+      - ruleId: dependency-governance.manifests
+        key: replace:example.com/tools
+        line: 5
+  - name: approved block Go replacement passes
+    rule: dependency-governance.manifests
+    outcome: pass
+    parameters:
+      allowed_local_dependencies: [example.com/shared]
+    files:
+      go.mod: |
+        module example.com/demo
+        go 1.26
+        replace (
+          example.com/shared => "../shared"
+          example.com/remote => example.com/fork v1.2.3
+        )
+      go.sum: ""
+  - name: unclosed Go replacement block fails closed
+    rule: dependency-governance.manifests
+    outcome: error
+    files:
+      go.mod: |
+        module example.com/demo
+        go 1.26
+        replace (
+          example.com/shared => ../shared
+      go.sum: ""
+    errorContains: unclosed replace block

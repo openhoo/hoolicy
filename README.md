@@ -101,6 +101,8 @@ hoolicy version    Print build information; --json emits structured output
 
 Reports: human text, JSON, SARIF 2.1.0, JUnit XML, GitHub step summaries, and GitLab Code Quality. Exit codes: `0` passed, `1` a new policy finding met `failOn`, `2` configuration or execution error.
 
+Options must precede positional arguments, for example `hoolicy explain --format json <rule-id>` and `hoolicy pack update --apply repository`. Use `hoolicy <command> --help` for available options.
+
 ### Choose a workflow
 
 | Goal | Start here | Next step |
@@ -112,7 +114,7 @@ Reports: human text, JSON, SARIF 2.1.0, JUnit XML, GitHub step summaries, and Gi
 | Author a reusable pack | `hoolicy pack init <directory>` | Run `test`, `lint`, and `pack snapshot` |
 | Integrate with CI | `hoolicy check --format sarif --output hoolicy.sarif` | Upload the report and preserve the command's exit status |
 
-Previewed fixes include changes to final newlines and recheck target bytes and Git status before applying. A report-output failure returns `2`, including when a pipe closes or a destination accepts only part of the report.
+Previewed fixes include changes to final newlines and recheck target bytes and Git status before applying. Commands that apply fixes, waivers, baselines, migrations, or pack updates stop before writing when their preview cannot be displayed. A report-output failure returns `2`, including when a pipe closes or a destination accepts only part of the report.
 
 ### Native CI report contracts
 
@@ -160,7 +162,7 @@ packs:
       commit_subject_maximum: 100
 ```
 
-Run `hoolicy pack update repository` once. It resolves the Git ref, vendors the exact pack, and writes `hoolicy.lock` with commit and content digest. Later `validate` and `check` operate offline and fail on tampering.
+Run `hoolicy pack update repository` to preview the resolved pack and its changes. Review the digest, rule, severity, parameter, and control changes, then run `hoolicy pack update --apply repository` to vendor the exact pack and write `hoolicy.lock` with commit and content digest. Later `validate` and `check` operate offline and fail on tampering.
 
 ## Guardrails for guardrails
 

@@ -64,11 +64,15 @@ Checks `branchPattern`, `allowedBranches`, `commitPattern`, `commitSubjectMaximu
 
 ### `manifest.consistency`
 
-Compares one authoritative JSON pointer against target file pointers. Empty pointer selects document root. Scalar JSON targets can receive hash-bound safe fixes.
+Compares one authoritative JSON pointer against target file pointers. Empty pointer selects document root. Scalar JSON targets can receive hash-bound safe fixes. Fixes follow the exact pointer and preserve unrelated keys, formatting, and escaped JSON names. Object and array values remain report-only.
 
 ### `sources.allowed`
 
 Parses npm registry entries, NuGet XML sources, Dockerfile `FROM`, and structured `image` or `repository` values. Supports registry hosts in `registries`, absolute HTTP(S) URLs in `npm` and `nuget`, plus `requireDigest`. Credentials, URL queries, and fragments in allowlists are rejected.
+
+### `dependency.governance`
+
+Checks npm, Cargo, and Go manifests for required locks, mutable sources, unapproved licenses, and local dependencies. Go replacement checks cover both single directives and `replace (...)` blocks, including quoted local paths and trailing comments. `allowedLocalDependencies` names explicitly reviewed local edges. Malformed or unclosed replacement directives fail closed.
 
 ### `exceptions.lifecycle`
 
@@ -76,7 +80,7 @@ Checks a structured exception collection for unique ID, meaningful reason, owner
 
 ### `i18n.parity`
 
-Reads language codes from a manifest JSON pointer, flattens nested translation catalogs, then reports missing or empty keys per language.
+Reads language codes from a manifest JSON pointer, flattens nested translation catalogs, then reports missing or empty keys per language. Catalogs with colliding flattened keys, such as a literal `greeting.title` alongside nested `greeting: {title: ...}`, are rejected as ambiguous input.
 
 ### `gherkin.requirements`
 

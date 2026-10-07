@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,6 +30,10 @@ import (
 type failingCLIWriter struct{}
 
 func (failingCLIWriter) Write([]byte) (int, error) { return 0, errors.New("destination closed") }
+
+type shortCLIWriter struct{}
+
+func (shortCLIWriter) Write(data []byte) (int, error) { return len(data) / 2, nil }
 
 func TestCommandsFailWhenOutputCannotBeWritten(t *testing.T) {
 	t.Parallel()
@@ -257,7 +262,7 @@ func TestCommandHelpExitsSuccessfully(t *testing.T) {
 		{"fix", "-h"}, {"list", "-h"}, {"explain", "-h"}, {"test", "-h"},
 		{"baseline", "-h"}, {"baseline", "create", "-h"}, {"baseline", "prune", "-h"},
 		{"doctor", "-h"}, {"report", "-h"}, {"report", "diff", "-h"},
-		{"fmt", "-h"}, {"lint", "-h"},
+		{"fmt", "-h"}, {"lint", "-h"}, {"completion", "-h"}, {"completion", "--help"}, {"completion", "help"},
 		{"evidence", "-h"}, {"evidence", "verify", "-h"},
 		{"waiver", "-h"}, {"waiver", "create", "-h"}, {"inventory", "-h"}, {"serve", "-h"},
 		{"migrate", "-h"}, {"migrate", "report", "-h"},
@@ -326,7 +331,7 @@ func TestEvidenceCreateAndVerifyWithoutCIUI(t *testing.T) {
 	configPath := filepath.Join(root, config.DefaultFilename)
 	writeCLIFile(t, configPath, "version: 1\nproject: demo\nrules: []\n")
 	for _, args := range [][]string{{"init", "-q"}, {"config", "user.name", "Hoolicy Tests"}, {"config", "user.email", "tests@hoolicy.invalid"}, {"add", "hoolicy.yaml"}, {"commit", "-q", "-m", "test: evidence subject"}} {
-		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		command := exec.Command("git", append([]string{"-c", "commit.gpgsign=false", "-C", root}, args...)...)
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, output)
 		}
@@ -394,6 +399,7 @@ rules:
 	}
 	stdout.Reset()
 	stderr.Reset()
+	assertFailedPreviewPreservesFile(t, waiverPath, append(base, "--apply"))
 	if code := app.run(context.Background(), append(base, "--apply")); code != 0 || !strings.Contains(stdout.String(), "Applied waiver") {
 		t.Fatalf("apply code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
@@ -574,6 +580,15 @@ func TestCommandOutputLineRemovesControlsAndCredentials(t *testing.T) {
 	}
 }
 
+func TestCommandOutputLineRedactsEveryCredentialURL(t *testing.T) {
+	t.Parallel()
+	input := "fetch https://first:password@example.com/a and https://second:token@example.com/b"
+	output := commandOutputLine([]byte(input))
+	if strings.Contains(output, "first") || strings.Contains(output, "password") || strings.Contains(output, "second") || strings.Contains(output, "token") || strings.Count(output, "<redacted>@") != 2 {
+		t.Fatalf("unsafe diagnostic: %q", output)
+	}
+}
+
 func TestFailedAttestationSigningPublishesNoFinalFiles(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake executable fixture uses POSIX shell")
@@ -628,6 +643,7 @@ func TestReportMigrationIsPreviewFirst(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
+	assertFailedPreviewPreservesFile(t, path, []string{"migrate", "report", "--config", configPath, "--apply", path})
 	if code := app.run(context.Background(), []string{"migrate", "report", "--config", configPath, "--apply", path}); code != 0 {
 		t.Fatalf("apply code=%d stderr=%q", code, stderr.String())
 	}
@@ -837,6 +853,7 @@ rules:
 	}
 	stdout.Reset()
 	stderr.Reset()
+	assertFailedPreviewPreservesFile(t, baselinePath, append(create, "--apply"))
 	if code := app.run(context.Background(), append(create, "--apply")); code != 0 {
 		t.Fatalf("apply code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
@@ -868,6 +885,7 @@ rules:
 	}
 	stdout.Reset()
 	stderr.Reset()
+	assertFailedPreviewPreservesFile(t, baselinePath, append(prune, "--apply"))
 	if code := app.run(context.Background(), append(prune, "--apply")); code != 0 {
 		t.Fatalf("prune apply code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
@@ -1047,6 +1065,7 @@ func TestPackUpdatePrunesLockAfterLastRemotePackWasRemoved(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
+	assertFailedPreviewPreservesFile(t, lockPath, []string{"pack", "update", "--config", configPath, "--apply"})
 	if code := app.run(context.Background(), []string{"pack", "update", "--config", configPath, "--apply"}); code != 0 || !strings.Contains(stdout.String(), "Pruned stale") {
 		t.Fatalf("apply code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
@@ -1276,9 +1295,55 @@ func writeCLIBytes(t *testing.T, path string, body []byte) {
 
 func runCLICommand(t *testing.T, root, name string, args ...string) {
 	t.Helper()
+	if name == "git" {
+		// Temporary fixture commits must not invoke a contributor's signing agent.
+		args = append([]string{"-c", "commit.gpgsign=false"}, args...)
+	}
 	command := exec.Command(name, args...)
 	command.Dir = root
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("%s %v: %v: %s", name, args, err, output)
+	}
+}
+
+// Failed previews must stop before persisting accepted debt or policy changes.
+func assertFailedPreviewPreservesFile(t *testing.T, path string, args []string) {
+	t.Helper()
+	before, readErr := os.ReadFile(path)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		t.Fatal(readErr)
+	}
+	for _, destination := range []struct {
+		writer  io.Writer
+		problem string
+	}{{failingCLIWriter{}, "destination closed"}, {shortCLIWriter{}, "short write"}} {
+		app, _, stderr := testApplication(t)
+		app.stdout = destination.writer
+		if code := app.run(context.Background(), args); code != 2 || !strings.Contains(stderr.String(), "preview") || !strings.Contains(stderr.String(), destination.problem) {
+			t.Fatalf("failed preview args=%v code=%d stderr=%q", args, code, stderr.String())
+		}
+		after, afterErr := os.ReadFile(path)
+		if !bytes.Equal(before, after) || (readErr == nil) != (afterErr == nil) {
+			t.Fatalf("failed preview changed %s: before=%q after=%q err=%v", path, before, after, afterErr)
+		}
+	}
+}
+
+func TestFormatPreservesFileWhenOutputCannotBeWritten(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), config.DefaultFilename)
+	writeCLIFile(t, path, "version: 1\nproject: formatting\nrules: []\n")
+	assertFailedPreviewPreservesFile(t, path, []string{"fmt", path})
+}
+
+func TestOperationalErrorsCannotInjectTerminalOrWorkflowCommands(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "missing\n::error::forged\x1b[2J.yaml")
+	app, _, stderr := testApplication(t)
+	if code := app.run(context.Background(), []string{"validate", "--config", path}); code != 2 {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	if strings.ContainsRune(stderr.String(), '\x1b') || strings.Contains(stderr.String(), "\n::error::") {
+		t.Fatalf("unsafe error: %q", stderr.String())
 	}
 }

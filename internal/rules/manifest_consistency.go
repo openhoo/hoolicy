@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/openhoo/hoolicy/internal/document"
@@ -143,28 +142,86 @@ func scalarJSONEdit(file sdk.File, pointer string, oldValue, newValue any) (sdk.
 	if strings.ToLower(filepath.Ext(file.Path)) != ".json" {
 		return sdk.Edit{}, fmt.Errorf("safe automatic edit is only available for JSON")
 	}
-	tokens := strings.Split(strings.TrimPrefix(pointer, "/"), "/")
-	if len(tokens) == 0 {
-		return sdk.Edit{}, fmt.Errorf("invalid pointer")
+	if err := validateJSONPointer(pointer); err != nil {
+		return sdk.Edit{}, err
 	}
-	key := strings.ReplaceAll(strings.ReplaceAll(tokens[len(tokens)-1], "~1", "/"), "~0", "~")
-	oldJSON, err := json.Marshal(oldValue)
+	for _, value := range []any{oldValue, newValue} {
+		switch value.(type) {
+		case map[string]any, []any:
+			return sdk.Edit{}, fmt.Errorf("safe automatic edit requires scalar values")
+		}
+	}
+	// Validate the complete document, including duplicate keys, before locating
+	// the exact pointer. Text searches can confuse sibling keys, escaped strings,
+	// or a number such as 1 with the prefix of 10.
+	if _, _, err := document.ParseCached(file, "json"); err != nil {
+		return sdk.Edit{}, err
+	}
+	data := file.Data
+	prefix := 0
+	if bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) {
+		data = data[3:]
+		prefix = 3
+	}
+	var tokens []string
+	if pointer != "" {
+		for _, token := range strings.Split(pointer[1:], "/") {
+			tokens = append(tokens, strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~"))
+		}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	start, end, err := jsonPointerSpan(decoder, tokens)
 	if err != nil {
 		return sdk.Edit{}, err
+	}
+	current, err := document.Parse(sdk.File{Path: file.Path, Data: data[start:end]}, "json")
+	if err != nil {
+		return sdk.Edit{}, err
+	}
+	equal, err := manifestValuesEqual(current[0].Data, oldValue)
+	if err != nil {
+		return sdk.Edit{}, err
+	}
+	if !equal {
+		return sdk.Edit{}, fmt.Errorf("target value changed")
 	}
 	newJSON, err := json.Marshal(newValue)
 	if err != nil {
 		return sdk.Edit{}, err
 	}
-	pattern := regexp.MustCompile(`(?m)("` + regexp.QuoteMeta(key) + `"\s*:\s*)` + regexp.QuoteMeta(string(oldJSON)))
-	locations := pattern.FindAllSubmatchIndex(file.Data, -1)
-	if len(locations) != 1 {
-		return sdk.Edit{}, fmt.Errorf("target scalar is not uniquely editable")
+	return sdk.Edit{Path: file.Path, ExpectedSHA256: file.SHA256(), Start: start + prefix, End: end + prefix, Replacement: newJSON, Description: "Set " + pointer}, nil
+}
+
+// jsonPointerSpan follows object keys using the decoder's byte offsets. Array
+// pointers remain unsupported, matching readPointer's public rule contract.
+func jsonPointerSpan(decoder *json.Decoder, tokens []string) (int, int, error) {
+	if len(tokens) == 0 {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return 0, 0, err
+		}
+		end := int(decoder.InputOffset())
+		return end - len(raw), end, nil
 	}
-	start := locations[0][3]
-	end := locations[0][1]
-	if !bytes.Equal(file.Data[start:end], oldJSON) {
-		return sdk.Edit{}, fmt.Errorf("target value changed")
+	token, err := decoder.Token()
+	if err != nil {
+		return 0, 0, err
 	}
-	return sdk.Edit{Path: file.Path, ExpectedSHA256: file.SHA256(), Start: start, End: end, Replacement: newJSON, Description: "Set " + pointer}, nil
+	if token != json.Delim('{') {
+		return 0, 0, fmt.Errorf("pointer must traverse objects")
+	}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return 0, 0, err
+		}
+		if token == tokens[0] {
+			return jsonPointerSpan(decoder, tokens[1:])
+		}
+		var skipped json.RawMessage
+		if err := decoder.Decode(&skipped); err != nil {
+			return 0, 0, err
+		}
+	}
+	return 0, 0, fmt.Errorf("pointer does not exist")
 }

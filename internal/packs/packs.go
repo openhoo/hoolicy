@@ -1,6 +1,7 @@
 package packs
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -191,6 +192,9 @@ func Digest(root string) (string, error) {
 		if readErr != nil {
 			return "", readErr
 		}
+		if bytes.ContainsRune(data, '\x00') {
+			return "", fmt.Errorf("pack file contains forbidden NUL bytes: %s", path)
+		}
 		total += int64(len(data))
 		if total > packarchive.MaxTotalSize {
 			return "", fmt.Errorf("pack content exceeds %d bytes", packarchive.MaxTotalSize)
@@ -242,6 +246,9 @@ func Sync(project *config.Project, name string, toolVersions ...string) (config.
 		return config.LockedPack{}, err
 	}
 	defer acquired.cleanup()
+	if err := validateUpdateTargets(project.Root, []*acquiredPack{acquired}, nil); err != nil {
+		return config.LockedPack{}, err
+	}
 	if err := installAcquired([]*acquiredPack{acquired}, nil, nil); err != nil {
 		return config.LockedPack{}, err
 	}
@@ -434,6 +441,9 @@ func (plan *UpdatePlan) Materialize(root string) error {
 	if plan.cleaned {
 		return errors.New("pack update plan has been cleaned up")
 	}
+	if err := validateUpdateTargets(root, plan.acquired, plan.removalPaths); err != nil {
+		return err
+	}
 	for _, pack := range plan.acquired {
 		target := filepath.Join(root, filepath.FromSlash(pack.locked.Vendor))
 		if err := os.RemoveAll(target); err != nil {
@@ -458,6 +468,9 @@ func (plan *UpdatePlan) Apply() error {
 	if plan.applied {
 		return errors.New("pack update plan has already been applied")
 	}
+	if err := validateUpdateTargets(plan.projectRoot, plan.acquired, plan.removalPaths); err != nil {
+		return err
+	}
 	lockPath := filepath.Join(plan.projectRoot, config.DefaultLockfile)
 	if err := installAcquired(plan.acquired, plan.removalAbsolutePaths(), func() error {
 		return config.SaveLock(lockPath, plan.lock)
@@ -465,6 +478,32 @@ func (plan *UpdatePlan) Apply() error {
 		return err
 	}
 	plan.applied = true
+	return nil
+}
+
+// Revalidate every reviewed input and destination before the first mutation.
+// The filesystem may have changed while an update preview was inspected.
+func validateUpdateTargets(root string, acquired []*acquiredPack, removals []string) error {
+	if _, _, err := safepath.Writable(root, config.DefaultLockfile); err != nil {
+		return fmt.Errorf("unsafe pack lock destination: %w", err)
+	}
+	for _, pack := range acquired {
+		if _, _, err := safepath.Writable(root, pack.locked.Vendor); err != nil {
+			return fmt.Errorf("unsafe pack vendor destination: %w", err)
+		}
+		digest, err := Digest(pack.staged)
+		if err != nil {
+			return fmt.Errorf("reviewed pack %s: %w", pack.locked.Name, err)
+		}
+		if digest != pack.locked.Digest {
+			return fmt.Errorf("reviewed pack %s digest mismatch: lock %s, staged %s", pack.locked.Name, pack.locked.Digest, digest)
+		}
+	}
+	for _, relative := range removals {
+		if _, _, err := safepath.Writable(root, relative); err != nil {
+			return fmt.Errorf("unsafe stale pack destination: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -764,6 +803,8 @@ func replaceDirectory(source, target string) error {
 	return nil
 }
 
+var credentialURL = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/\s]+@`)
+
 func sanitizeGitOutput(value string) string {
 	value = strings.TrimSpace(strings.Map(func(character rune) rune {
 		if character == '\n' {
@@ -781,14 +822,10 @@ func sanitizeGitOutput(value string) string {
 	if len(lines) > 3 {
 		lines = lines[len(lines)-3:]
 	}
-	for i, line := range lines {
-		if at := strings.Index(line, "@"); at >= 0 {
-			if scheme := strings.LastIndex(line[:at], "://"); scheme >= 0 {
-				line = line[:scheme+3] + "<redacted>@" + line[at+1:]
-			}
-		}
-		lines[i] = line
+	for index, line := range lines {
+		lines[index] = credentialURL.ReplaceAllString(line, "${1}<redacted>@")
 	}
+
 	value = strings.Join(lines, " ")
 	runes := []rune(value)
 	if len(runes) > 1024 {

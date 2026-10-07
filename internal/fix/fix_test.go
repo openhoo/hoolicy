@@ -2,6 +2,7 @@ package fix
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -250,8 +251,44 @@ func cleanGitRepository(t *testing.T, files map[string]string) string {
 
 func runGit(t *testing.T, root string, args ...string) {
 	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command := exec.Command("git", append([]string{"-c", "commit.gpgsign=false", "-C", root}, args...)...)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+}
+
+func TestInstallStagesRejectsChangedReplacement(t *testing.T) {
+	t.Parallel()
+	for _, symlink := range []bool{false, true} {
+		t.Run(fmt.Sprint(symlink), func(t *testing.T) {
+			root := cleanGitRepository(t, map[string]string{"tracked.txt": "old\n"})
+			plan := &Plan{Root: root}
+			stage, err := plan.stageFile(FilePlan{Path: "tracked.txt", Exists: true, Mode: 0o644, Old: []byte("old\n"), New: []byte("reviewed\n")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = cleanupStagedTemps([]stagedFile{stage}) }()
+			if symlink {
+				outside := filepath.Join(t.TempDir(), "replacement")
+				if err := os.WriteFile(outside, []byte("reviewed\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(stage.temp); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(outside, stage.temp); err != nil {
+					t.Skipf("symbolic links unavailable: %v", err)
+				}
+			} else if err := os.WriteFile(stage.temp, []byte("unreviewed\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := plan.installStages([]stagedFile{stage}); err == nil || !strings.Contains(err.Error(), "replacement changed") {
+				t.Fatalf("changed replacement installed: %v", err)
+			}
+			data, err := os.ReadFile(filepath.Join(root, "tracked.txt"))
+			if err != nil || string(data) != "old\n" {
+				t.Fatalf("target changed: %q %v", data, err)
+			}
+		})
 	}
 }

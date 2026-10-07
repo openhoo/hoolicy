@@ -38,8 +38,10 @@ packs:
     subdir: packs/repository
 ```
 
-Resolve with `hoolicy pack update repository`, review vendored content and
-`hoolicy.lock`, then run `hoolicy validate` and `hoolicy check`. Those later
+Preview resolution with `hoolicy pack update repository`, review the proposed
+digest/rule/severity/parameter/control changes, then run
+`hoolicy pack update --apply repository`. Review and commit vendored content
+and `hoolicy.lock`, then run `hoolicy validate` and `hoolicy check`. Those later
 commands operate offline and fail on tampering. Pack parameters must reflect
 the repository's existing naming/source conventions. Do not require every
 available pack just because it exists.

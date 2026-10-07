@@ -74,6 +74,27 @@ func TestRegistryRejectsInvalidKindNames(t *testing.T) {
 	}
 }
 
+func TestFindingFinalizeClearsUnverifiedDisposition(t *testing.T) {
+	t.Parallel()
+	item := Finding{Message: "Policy violation", Waived: true, WaiverID: "forged", State: FindingExisting, StateSource: "baseline"}
+	item.Finalize(Rule{ID: "demo.rule", Severity: SeverityError})
+	if item.Waived || item.WaiverID != "" || item.State != FindingNew || item.StateSource != "" {
+		t.Fatalf("extension-controlled disposition survived finalization: %#v", item)
+	}
+}
+
+func TestRegistryRejectsTypedNilImplementation(t *testing.T) {
+	t.Parallel()
+	var implementation *noopKind
+	registry := NewRegistry()
+	if err := registry.Register("custom", implementation); err == nil {
+		t.Fatal("typed nil implementation accepted")
+	}
+	if _, exists := registry.Kind("custom"); exists {
+		t.Fatal("invalid implementation stored")
+	}
+}
+
 type noopKind struct{}
 
 func (noopKind) Validate(Rule) error { return nil }

@@ -69,7 +69,9 @@ packs:
       required_file: README.md
 ```
 
-Run `hoolicy pack update my-pack`. Commit `hoolicy.lock` and `.hoolicy/vendor/my-pack`. CI checks remain offline. Changing the Git ref in configuration without refreshing the lock, changing vendored bytes, using a symbolic link, or changing pack identity fails validation.
+Run `hoolicy pack update my-pack` to preview the resolved pack changes. After review, run `hoolicy pack update --apply my-pack`. Commit `hoolicy.lock` and `.hoolicy/vendor/my-pack`. CI checks remain offline. Changing the Git ref in configuration without refreshing the lock, changing vendored bytes, using a symbolic link, or changing pack identity fails validation.
+
+Pack files must be NUL-free text. Acquisition and offline digest verification reject NUL bytes to keep file boundaries unambiguous. Applying an update rehashes the reviewed staged files and revalidates destination paths before replacing vendored content; altered staging or symlink destinations fail closed.
 
 Treat pack releases like APIs: document behavior changes, keep IDs stable, add regression fixtures before fixing a false positive, and make severity increases explicit in release notes.
 

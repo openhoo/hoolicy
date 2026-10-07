@@ -573,7 +573,7 @@ rules:
 
 func engineGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command := exec.Command("git", append([]string{"-C", root, "-c", "commit.gpgsign=false"}, args...)...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)

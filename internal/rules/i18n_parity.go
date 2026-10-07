@@ -87,7 +87,9 @@ func (I18nParity) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Ru
 			return nil, fmt.Errorf("%s: translation catalog must be an object", path)
 		}
 		catalog := make(map[string]string)
-		flattenCatalog("", object, catalog)
+		if err := flattenCatalog("", object, catalog); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
 		catalogs[language] = catalog
 		for key := range catalog {
 			allKeys[key] = true
@@ -145,19 +147,29 @@ func languageCodes(value any) ([]string, error) {
 	return languages, nil
 }
 
-func flattenCatalog(prefix string, value map[string]any, target map[string]string) {
-	for key, entry := range value {
+func flattenCatalog(prefix string, value map[string]any, target map[string]string) error {
+	for _, key := range sortedObjectKeys(value) {
+		entry := value[key]
 		path := key
 		if prefix != "" {
 			path = prefix + "." + key
 		}
 		switch current := entry.(type) {
 		case map[string]any:
-			flattenCatalog(path, current, target)
+			if err := flattenCatalog(path, current, target); err != nil {
+				return err
+			}
 		case string:
+			if _, exists := target[path]; exists {
+				return fmt.Errorf("ambiguous translation key %q", path)
+			}
 			target[path] = current
 		default:
+			if _, exists := target[path]; exists {
+				return fmt.Errorf("ambiguous translation key %q", path)
+			}
 			target[path] = ""
 		}
 	}
+	return nil
 }

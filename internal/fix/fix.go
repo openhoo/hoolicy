@@ -32,7 +32,7 @@ type FilePlan struct {
 type stagedFile struct {
 	path, target, temp, backup string
 	existed                    bool
-	old                        []byte
+	old, replacement           []byte
 }
 
 func Build(root string, findings []sdk.Finding, selected []string) (*Plan, error) {
@@ -238,7 +238,7 @@ func (p *Plan) stageFile(file FilePlan) (stage stagedFile, resultErr error) {
 	if err != nil {
 		return stage, err
 	}
-	stage = stagedFile{path: file.Path, target: target, temp: temporary.Name(), existed: file.Exists, old: append([]byte(nil), file.Old...)}
+	stage = stagedFile{path: file.Path, target: target, temp: temporary.Name(), existed: file.Exists, old: append([]byte(nil), file.Old...), replacement: append([]byte(nil), file.New...)}
 	defer func() {
 		if resultErr != nil {
 			if err := os.Remove(stage.temp); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -280,6 +280,10 @@ func (p *Plan) installStages(stages []stagedFile) error {
 		}
 		if err := verifyCleanTarget(p.Root, entry.path); err != nil {
 			return rollback(stages[:index], err)
+		}
+		replacement, replacementErr := readRegularTarget(entry.temp)
+		if replacementErr != nil || !bytes.Equal(replacement, entry.replacement) {
+			return rollback(stages[:index], fmt.Errorf("%s staged replacement changed before apply", entry.path))
 		}
 		if entry.existed {
 			if err := os.Rename(entry.target, entry.backup); err != nil {

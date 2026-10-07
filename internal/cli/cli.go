@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -461,6 +462,10 @@ func terminalText(value string, multiline bool) string {
 }
 
 func (a application) completion(args []string) int {
+	if len(args) == 1 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
+		fmt.Fprintln(a.stdout, "Usage: hoolicy completion bash|zsh|fish")
+		return 0
+	}
 	if len(args) != 1 {
 		return a.fail(fmt.Errorf("usage: hoolicy completion bash|zsh|fish"))
 	}
@@ -555,7 +560,9 @@ func (a application) waiver(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	fmt.Fprintf(a.stdout, "Waiver preview for %s (%s):\n%s", target.RuleID, target.Location.Path, preview)
+	if _, err := fmt.Fprintf(a.stdout, "Waiver preview for %s (%s):\n%s", target.RuleID, terminalText(target.Location.Path, false), preview); err != nil {
+		return a.fail(fmt.Errorf("write waiver preview: %w", err))
+	}
 	if !*apply {
 		fmt.Fprintln(a.stdout, "No files changed. Re-run with --apply after review.")
 		return 0
@@ -884,9 +891,13 @@ func (a application) migrate(args []string) int {
 	if err := report.Write(&encoded, "json", migrated, false); err != nil {
 		return a.fail(err)
 	}
-	fmt.Fprintf(a.stdout, "Migration preview: report version %d to 2.\n", input.ReportVersion)
+	if _, err := fmt.Fprintf(a.stdout, "Migration preview: report version %d to 2.\n", input.ReportVersion); err != nil {
+		return a.fail(fmt.Errorf("write migration preview: %w", err))
+	}
+	if _, err := a.stdout.Write(encoded.Bytes()); err != nil {
+		return a.fail(fmt.Errorf("write migration preview: %w", err))
+	}
 	if !*apply {
-		_, _ = a.stdout.Write(encoded.Bytes())
 		fmt.Fprintln(a.stdout, "No files changed. Re-run with --apply after review.")
 		return 0
 	}
@@ -1230,7 +1241,9 @@ func (a application) baselineCreate(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	fmt.Fprint(a.stdout, string(data))
+	if _, err := a.stdout.Write(data); err != nil {
+		return a.fail(fmt.Errorf("write baseline preview: %w", err))
+	}
 	if !*apply {
 		fmt.Fprintln(a.stdout, "Preview only. Re-run with --apply after reviewing this baseline.")
 		return 0
@@ -1292,7 +1305,9 @@ func (a application) baselinePrune(ctx context.Context, args []string) int {
 			fmt.Fprintf(a.stdout, "- %s %s %s: %s\n", change.RuleID, short(change.Fingerprint), change.State, change.Reason)
 		}
 	}
-	fmt.Fprint(a.stdout, string(data))
+	if _, err := a.stdout.Write(data); err != nil {
+		return a.fail(fmt.Errorf("write baseline preview: %w", err))
+	}
 	if !*apply {
 		fmt.Fprintln(a.stdout, "Preview only. Re-run with --apply after reviewing this prune.")
 		return 0
@@ -1486,7 +1501,9 @@ func (a application) format(args []string) int {
 			continue
 		}
 		changed++
-		fmt.Fprintln(a.stdout, filepath.ToSlash(path))
+		if _, err := fmt.Fprintln(a.stdout, terminalText(filepath.ToSlash(path), false)); err != nil {
+			return a.fail(fmt.Errorf("write formatting preview: %w", err))
+		}
 		if !*check {
 			if err := writeReportFile(path, data); err != nil {
 				return a.fail(err)
@@ -2430,7 +2447,9 @@ func (a application) packUpdate(args []string) int {
 	if _, err := a.engine.Validate(previewProject); err != nil {
 		return a.fail(fmt.Errorf("updated packs are invalid: %w", err))
 	}
-	writePackUpdateReview(a.stdout, project, previewProject, &previewLock, names)
+	if err := writePackUpdateReview(a.stdout, project, previewProject, &previewLock, names); err != nil {
+		return a.fail(fmt.Errorf("write pack update preview: %w", err))
+	}
 	if !*apply {
 		fmt.Fprintln(a.stdout, "Preview only. Re-run with --apply after reviewing rule, parameter, control, severity, and digest changes.")
 		return 0
@@ -2565,7 +2584,9 @@ func copyPreviewPath(source, target string) error {
 	})
 }
 
-func writePackUpdateReview(writer io.Writer, currentProject, previewProject *config.Project, previewLock *config.Lock, names []string) {
+func writePackUpdateReview(writer io.Writer, currentProject, previewProject *config.Project, previewLock *config.Lock, names []string) error {
+	checked := &output.Writer{Destination: writer}
+	writer = checked
 	currentLock, _ := config.LoadLock(filepath.Join(currentProject.Root, config.DefaultLockfile))
 	oldEntries := make(map[string]config.LockedPack)
 	if currentLock != nil {
@@ -2631,6 +2652,7 @@ func writePackUpdateReview(writer io.Writer, currentProject, previewProject *con
 			}
 		}
 	}
+	return checked.Err()
 }
 
 func (a application) packVerify(ctx context.Context, args []string) int {
@@ -2673,7 +2695,10 @@ func loadProject(explicit string) (*config.Project, error) {
 	}
 	return config.LoadProject(path)
 }
-func (a application) fail(err error) int { fmt.Fprintln(a.stderr, "hoolicy:", err); return 2 }
+func (a application) fail(err error) int {
+	fmt.Fprintln(a.stderr, "hoolicy:", terminalText(err.Error(), false))
+	return 2
+}
 func (a application) unexpectedArguments(command string, args []string) int {
 	return a.fail(fmt.Errorf("%s does not accept positional arguments: %s", command, strings.Join(args, " ")))
 }
@@ -2697,6 +2722,9 @@ func fallback(value, defaultValue string) string {
 	}
 	return value
 }
+
+var commandURLCredentials = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/\s]+@`)
+
 func commandOutputLine(output []byte) string {
 	value := strings.TrimSpace(strings.Map(func(character rune) rune {
 		if unicode.IsControl(character) {
@@ -2707,11 +2735,8 @@ func commandOutputLine(output []byte) string {
 	if value == "" {
 		return "command failed"
 	}
-	if at := strings.IndexByte(value, '@'); at >= 0 {
-		if scheme := strings.LastIndex(value[:at], "://"); scheme >= 0 {
-			value = value[:scheme+3] + "<redacted>@" + value[at+1:]
-		}
-	}
+	value = commandURLCredentials.ReplaceAllString(value, "${1}<redacted>@")
+
 	runes := []rune(value)
 	if len(runes) > 500 {
 		value = string(runes[len(runes)-500:])

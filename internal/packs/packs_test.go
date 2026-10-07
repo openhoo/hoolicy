@@ -348,8 +348,70 @@ func assertPackFile(t *testing.T, path, want string) {
 
 func runPackGit(t *testing.T, root string, args ...string) {
 	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command := exec.Command("git", append([]string{"-c", "commit.gpgsign=false", "-C", root}, args...)...)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+}
+
+func TestUpdatePlanRejectsChangedStagedBytes(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	staged := filepath.Join(root, "stage")
+	writePackFile(t, staged, "pack.yaml", "reviewed")
+	digest, err := Digest(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &UpdatePlan{projectRoot: root, acquired: []*acquiredPack{{staged: staged, vendor: filepath.Join(root, ".hoolicy/vendor/demo"), locked: config.LockedPack{Vendor: ".hoolicy/vendor/demo", Digest: digest}}}}
+	writePackFile(t, staged, "pack.yaml", "changed after preview")
+	if err := plan.Apply(); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("changed staged pack accepted: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, ".hoolicy/vendor/demo")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("rejected plan installed vendor: %v", err)
+	}
+}
+
+func TestUpdatePlanRejectsVendorParentSymlinkAfterPreview(t *testing.T) {
+	t.Parallel()
+	root, outside := t.TempDir(), t.TempDir()
+	staged := filepath.Join(root, "stage")
+	writePackFile(t, staged, "pack.yaml", "reviewed")
+	digest, err := Digest(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &UpdatePlan{projectRoot: root, acquired: []*acquiredPack{{staged: staged, vendor: filepath.Join(root, ".hoolicy/vendor/demo"), locked: config.LockedPack{Vendor: ".hoolicy/vendor/demo", Digest: digest}}}}
+	if err := os.Symlink(outside, filepath.Join(root, ".hoolicy")); err != nil {
+		t.Skipf("symbolic links unavailable: %v", err)
+	}
+	if err := plan.Apply(); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+		t.Fatalf("unsafe plan accepted: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(outside, "vendor/demo")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("outside destination mutated: %v", err)
+	}
+}
+
+func TestDigestRejectsAmbiguousNULContent(t *testing.T) {
+	t.Parallel()
+	one, two := t.TempDir(), t.TempDir()
+	writePackFile(t, one, "a", "x\x00b\x00y")
+	writePackFile(t, two, "a", "x")
+	writePackFile(t, two, "b", "y")
+	if _, err := Digest(one); err == nil || !strings.Contains(err.Error(), "NUL") {
+		t.Fatalf("ambiguous tree accepted: %v", err)
+	}
+	if _, err := Digest(two); err != nil {
+		t.Fatalf("ordinary text tree rejected: %v", err)
+	}
+}
+
+func TestSanitizeGitOutputRedactsMultipleCredentialURLs(t *testing.T) {
+	t.Parallel()
+	output := sanitizeGitOutput("fetch https://first:password@example.com/a and https://second:token@example.com/b")
+	if strings.Contains(output, "first") || strings.Contains(output, "password") || strings.Contains(output, "second") || strings.Contains(output, "token") || strings.Count(output, "<redacted>@") != 2 {
+		t.Fatalf("unsafe diagnostic: %q", output)
 	}
 }

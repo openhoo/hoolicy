@@ -36,7 +36,7 @@ Subject and producer binding is field-specific; a matching string in an unrelate
   levels, SLSA version, and verification timestamp fields; producer binding
   uses `verifier.id`, freshness uses `timeVerified`, and `FAILED` counts as a
   failure.
-- JUnit uses explicit `hoolicy.subjectDigest` and `hoolicy.producer` properties plus the suite timestamp.
+- JUnit uses explicit `hoolicy.subjectDigest` and `hoolicy.producer` properties plus the suite timestamp. It requires a single `testsuites` XML root with flat child suites, rejects nested or misplaced suites/testcases, and rejects aggregate test/failure/error totals that understate the child suites or present testcase results. Count-only producers remain supported.
 
 Adapters validate required structural fields before applying subject, producer, freshness, and threshold policy. They do not claim full conformance certification for every optional field in the upstream format.
 

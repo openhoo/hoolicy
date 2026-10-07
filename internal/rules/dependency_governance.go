@@ -5,7 +5,10 @@ import (
 	"fmt"
 	pathpkg "path"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"text/scanner"
+	"unicode"
 
 	"github.com/openhoo/hoolicy/internal/document"
 	"github.com/openhoo/hoolicy/sdk"
@@ -71,7 +74,11 @@ func (DependencyGovernance) Evaluate(_ context.Context, input sdk.EvalContext, r
 			}
 			findings = append(findings, items...)
 		case "go.mod":
-			findings = append(findings, inspectGoModule(input, rule, file, spec.RequireLocks, allowedLocal, message)...)
+			items, err := inspectGoModule(input, rule, file, spec.RequireLocks, allowedLocal, message)
+			if err != nil {
+				return nil, err
+			}
+			findings = append(findings, items...)
 		}
 	}
 	return findings, nil
@@ -205,24 +212,96 @@ func inspectCargo(input sdk.EvalContext, rule sdk.Rule, file sdk.File, requireLo
 	return findings, nil
 }
 
-func inspectGoModule(input sdk.EvalContext, rule sdk.Rule, file sdk.File, requireLock bool, allowedLocal map[string]bool, message string) []sdk.Finding {
+func inspectGoModule(input sdk.EvalContext, rule sdk.Rule, file sdk.File, requireLock bool, allowedLocal map[string]bool, message string) ([]sdk.Finding, error) {
 	var findings []sdk.Finding
 	if requireLock && !hasSibling(input.Repository, file.Path, "go.sum") {
 		findings = append(findings, finding(rule, message+": go.sum is missing", file.Path, "lock:missing", 1, 1))
 	}
+	inReplaceBlock := false
 	for index, line := range strings.Split(string(file.Data), "\n") {
-		text := strings.TrimSpace(line)
-		if !strings.HasPrefix(text, "replace ") || !strings.Contains(text, "=>") {
+		fields, err := goModuleFields(line)
+		if err != nil {
+			return nil, fmt.Errorf("%s:%d: %w", file.Path, index+1, err)
+		}
+		if len(fields) == 0 {
 			continue
 		}
-		left, right, _ := strings.Cut(strings.TrimPrefix(text, "replace "), "=>")
-		module := strings.Fields(strings.TrimSpace(left))
-		target := strings.TrimSpace(right)
-		if len(module) > 0 && !allowedLocal[module[0]] && localGoReplacement(target) {
-			findings = append(findings, finding(rule, message+": "+module[0]+" uses unresolved local replace "+target, file.Path, "replace:"+module[0], index+1, 1))
+		if fields[0] == "replace" {
+			fields = fields[1:]
+			if len(fields) > 0 && fields[0] == "(" {
+				inReplaceBlock = true
+				fields = fields[1:]
+			}
+		} else if !inReplaceBlock {
+			continue
+		}
+		if len(fields) > 0 && fields[len(fields)-1] == ")" {
+			inReplaceBlock = false
+			fields = fields[:len(fields)-1]
+		}
+		if len(fields) == 0 {
+			continue
+		}
+		arrow := -1
+		for position, field := range fields {
+			if field == "=>" {
+				arrow = position
+				break
+			}
+		}
+		if arrow < 1 || arrow+1 >= len(fields) {
+			return nil, fmt.Errorf("%s:%d: malformed replace directive", file.Path, index+1)
+		}
+		module, target := fields[0], fields[arrow+1]
+		if !allowedLocal[module] && localGoReplacement(target) {
+			findings = append(findings, finding(rule, message+": "+module+" uses unresolved local replace "+target, file.Path, "replace:"+module, index+1, 1))
 		}
 	}
-	return findings
+	if inReplaceBlock {
+		return nil, fmt.Errorf("%s: unclosed replace block", file.Path)
+	}
+	return findings, nil
+}
+
+// goModuleFields preserves quoted local paths and discards comments. Scanner
+// handles string escapes; punctuation stays in words except block delimiters.
+func goModuleFields(line string) ([]string, error) {
+	var lexer scanner.Scanner
+	lexer.Init(strings.NewReader(line))
+	lexer.Mode = scanner.ScanStrings | scanner.ScanRawStrings | scanner.ScanComments
+	lexer.Whitespace = 0
+	var scanErr error
+	lexer.Error = func(_ *scanner.Scanner, message string) { scanErr = fmt.Errorf("invalid Go module token: %s", message) }
+	var fields []string
+	var word strings.Builder
+	flush := func() {
+		if word.Len() > 0 {
+			fields = append(fields, word.String())
+			word.Reset()
+		}
+	}
+	for token := lexer.Scan(); token != scanner.EOF; token = lexer.Scan() {
+		switch {
+		case token == scanner.Comment:
+			flush()
+		case token == scanner.String || token == scanner.RawString:
+			flush()
+			value, err := strconv.Unquote(lexer.TokenText())
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, value)
+		case unicode.IsSpace(token):
+			flush()
+		case token == '(' || token == ')':
+			flush()
+			fields = append(fields, string(token))
+		default:
+			word.WriteString(lexer.TokenText())
+		}
+	}
+	flush()
+	return fields, scanErr
 }
 
 func localGoReplacement(target string) bool {

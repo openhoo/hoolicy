@@ -16,6 +16,10 @@ and OIDC issuer `https://token.actions.githubusercontent.com`, then checks the
 archive checksum, installed binary version, and `PATH` setup. `actions/check`
 then runs `hoolicy doctor` and `hoolicy check`; pull requests automatically use
 their base SHA and title unless explicit inputs override them.
+The installed version must match the requested semantic version exactly,
+including prerelease and build identifiers. Download and extraction directories
+are removed after verification; a failed install never publishes a binary to
+`PATH`.
 Repository self-tests may set `executable` to a freshly built local binary;
 normal consumers should omit it so the verified release installer runs.
 For GitHub code scanning, request `security-events: write`, select SARIF, and upload the generated file with the pinned CodeQL uploader:
