@@ -37,8 +37,8 @@ For unpublished changes, pass the local checkout path instead of
 Install a release binary, use the container, or build with Go 1.26+:
 
 ```sh
-go install github.com/openhoo/hoolicy/cmd/hoolicy@v0.4.1
-# or: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work:ro" -w /work ghcr.io/openhoo/hoolicy:v0.4.1 check
+go install github.com/openhoo/hoolicy/cmd/hoolicy@v0.4.2
+# or: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work:ro" -w /work ghcr.io/openhoo/hoolicy:v0.4.2 check
 ```
 
 For rootless Podman, add `--userns=keep-id`. Mapping the caller UID lets the non-root image read private repository files without weakening their host permissions.
@@ -151,7 +151,7 @@ Use this repository as a versioned remote pack source:
 packs:
   - name: repository
     git: https://github.com/openhoo/hoolicy.git
-    ref: v0.4.1
+    ref: v0.4.2
     subdir: packs/repository
     with:
       branch_pattern: '^(feat|fix|chore)/[a-z0-9]+(?:-[a-z0-9]+)*$'

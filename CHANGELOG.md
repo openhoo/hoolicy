@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 (2026-10-07)
+
+### Bug Fixes
+
+- **hoolicy:** harden policy integrity and polish CLI workflows (deb1bac)
+
 ## 0.4.1 (2026-10-03)
 
 ### Bug Fixes
