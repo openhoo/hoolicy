@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 (2026-10-07)
+
+### Features
+
+- **hoolicy:** expand policy catalog and offline starter profiles (1c55b2b)
+
 ## 0.4.2 (2026-10-07)
 
 ### Bug Fixes
