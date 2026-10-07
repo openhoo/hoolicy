@@ -86,9 +86,17 @@ actual and expected configuration values to keep sensitive values out of
 reports. Parser errors can include invalid input tokens, so avoid using policy
 reports as an unrestricted channel for confidential configuration.
 
-Numeric comparisons use rational arithmetic so large integer inputs are not
-rounded to `float64`. Policy `minimum` and `maximum` bounds use Go `float64`
-representation; use `allowedValues` for exact very large numeric constants.
+JSON numbers retain their original decimal and exponent tokens before rational
+comparison, within the documented comparison limits. For example,
+`9007199254740993e0` does not equal `9007199254740992`, and
+`1.0000000000000000001` is not an integer. YAML and TOML retain their existing
+parser representations: floating values may already have been rounded to
+`float64` before comparison. Policy constants follow policy YAML parsing;
+`minimum` and `maximum` explicitly use `float64`. This does not guarantee
+arbitrary decimal precision for numeric policy constants. Very large integer
+constants are exact only when representable by the policy parser's integer
+types. Other rule kinds retain the existing normalized document input.
+
 Value comparisons allow at most 100000 items in every compared array (including nested arrays) and 128 nesting levels. Numeric type checks, bounds, and value comparisons allow numeric text up to 4096 bytes and exponent magnitude up to 4096; exceeding these limits is an operational error. Required-item membership uses a single indexed pass over the array.
 The kind preserves cancellation between files, field constraints, and array comparisons and uses
 the shared document parse cache. It does not offer automatic fixes.

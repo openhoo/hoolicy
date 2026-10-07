@@ -4,10 +4,60 @@
   "release": "0.1.0",
   "cases": [
     {
+      "name": "JSON timeout above maximum does not round down",
+      "ruleId": "structured-configuration.availability",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.availability",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production availability configuration is outside approved bounds: Field \"/timeoutMs\" exceeds the maximum",
+          "key": "document:0:/timeoutMs:exceeds the maximum",
+          "fingerprint": "08503b4badb07b3eb98e2d63ab43962aed017b3562c52a77a4e553600fa7bf93",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "structured-configuration.availability",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production availability configuration is outside approved bounds: Field \"/timeoutMs\" must have type integer",
+          "key": "document:0:/timeoutMs:must have type integer",
+          "fingerprint": "5c1ad2aa43a862705af019ffe6207107df5b6d27a00351d3f4b97d94604d8635",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
       "name": "TOML availability passes",
       "ruleId": "structured-configuration.availability",
       "outcome": "pass",
       "findings": []
+    },
+    {
+      "name": "fractional JSON replicas do not round to an integer",
+      "ruleId": "structured-configuration.availability",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.availability",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production availability configuration is outside approved bounds: Field \"/replicas\" must have type integer",
+          "key": "document:0:/replicas:must have type integer",
+          "fingerprint": "307a52dc4290fd310dd6f98c41faf04efbff9ea7c0733eabbbc20d58a5db6d06",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
     },
     {
       "name": "insufficient replicas fail",

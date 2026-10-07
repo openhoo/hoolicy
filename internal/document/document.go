@@ -39,7 +39,21 @@ var sharedParseCache = struct {
 // digest. Changed content naturally invalidates the entry; callers receive a
 // fresh slice so they cannot mutate cache membership.
 func ParseCached(file sdk.File, format string) ([]Document, bool, error) {
+	return parseCached(file, format, false)
+}
+
+// ParseCachedPreservingJSONNumbers retains lexical JSON number tokens for
+// exact field constraints. Other formats preserve their existing parser
+// semantics. This uses a separate cache namespace from normalized CEL input.
+func ParseCachedPreservingJSONNumbers(file sdk.File, format string) ([]Document, bool, error) {
+	return parseCached(file, format, true)
+}
+
+func parseCached(file sdk.File, format string, preserveJSONNumbers bool) ([]Document, bool, error) {
 	key := file.Path + "\x00" + strings.ToLower(format) + "\x00" + file.SHA256()
+	if preserveJSONNumbers {
+		key += "\x00preserve-json-numbers"
+	}
 	sharedParseCache.Lock()
 	if cached, exists := sharedParseCache.entries[key]; exists {
 		result := append([]Document(nil), cached...)
@@ -47,7 +61,17 @@ func ParseCached(file sdk.File, format string) ([]Document, bool, error) {
 		return result, true, nil
 	}
 	sharedParseCache.Unlock()
-	parsed, err := Parse(file, format)
+	var parsed []Document
+	var err error
+	resolved := strings.ToLower(format)
+	if resolved == "" || resolved == "auto" {
+		resolved = detect(file.Path)
+	}
+	if preserveJSONNumbers && resolved == "json" {
+		parsed, err = parseJSONData(file, true)
+	} else {
+		parsed, err = Parse(file, format)
+	}
 	if err != nil {
 		return nil, false, err
 	}
@@ -111,6 +135,10 @@ func detect(path string) string {
 }
 
 func parseJSON(file sdk.File) ([]Document, error) {
+	return parseJSONData(file, false)
+}
+
+func parseJSONData(file sdk.File, preserveNumbers bool) ([]Document, error) {
 	data := file.Data
 	if bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) {
 		data = data[3:]
@@ -119,7 +147,10 @@ func parseJSON(file sdk.File) ([]Document, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", file.Path, err)
 	}
-	return []Document{{Path: file.Path, Line: 1, Column: 1, Data: normalize(value)}}, nil
+	if !preserveNumbers {
+		value = normalize(value)
+	}
+	return []Document{{Path: file.Path, Line: 1, Column: 1, Data: value}}, nil
 }
 
 func parseYAML(file sdk.File) ([]Document, error) {

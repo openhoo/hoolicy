@@ -2,6 +2,7 @@ package document
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -131,5 +132,66 @@ func TestJSONNormalizationPreservesUnderflow(t *testing.T) {
 	}
 	if parsed[0].Data != float64(0) {
 		t.Fatalf("true zero should normalize normally: %#v", parsed[0].Data)
+	}
+}
+
+func TestPreciseJSONCacheSeparatesNormalizationAndPreservesTokens(t *testing.T) {
+	file := sdk.File{Path: t.Name() + ".json", Data: []byte(`{"number":9007199254740993e0,"fraction":1.0000000000000000001}`)}
+	ordinary, _, err := ParseCached(file, "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	precise, hit, err := ParseCachedPreservingJSONNumbers(file, "json")
+	if err != nil || hit {
+		t.Fatalf("unexpected shared cache hit: %v %v", hit, err)
+	}
+	normal := ordinary[0].Data.(map[string]any)
+	exact := precise[0].Data.(map[string]any)
+	if normal["number"] != float64(9007199254740992) || normal["fraction"] != float64(1) {
+		t.Fatalf("existing normalized contract changed: %#v", normal)
+	}
+	if exact["number"] != json.Number("9007199254740993e0") || exact["fraction"] != json.Number("1.0000000000000000001") {
+		t.Fatalf("lexical tokens lost: %#v", exact)
+	}
+	_, hit, err = ParseCachedPreservingJSONNumbers(file, "json")
+	if err != nil || !hit {
+		t.Fatalf("precise cache missed: %v %v", hit, err)
+	}
+	file.Data = []byte(`{"number":2}`)
+	changed, hit, err := ParseCachedPreservingJSONNumbers(file, "json")
+	if err != nil || hit || changed[0].Data.(map[string]any)["number"] != json.Number("2") {
+		t.Fatalf("changed content cached incorrectly: %#v %v %v", changed, hit, err)
+	}
+}
+
+func TestPreciseJSONParserParity(t *testing.T) {
+	for _, text := range []string{`{"a":1,"a":2}`, `{"a":`, `{} {}`, `{"a":NaN}`} {
+		file := sdk.File{Path: t.Name() + ".json", Data: []byte(text)}
+		_, _, ordinaryErr := ParseCached(file, "json")
+		_, _, exactErr := ParseCachedPreservingJSONNumbers(file, "json")
+		if ordinaryErr == nil || exactErr == nil || ordinaryErr.Error() != exactErr.Error() {
+			t.Fatalf("strict error parity lost for %s: %v / %v", text, ordinaryErr, exactErr)
+		}
+	}
+	file := sdk.File{Path: t.Name() + ".json", Data: append([]byte{0xef, 0xbb, 0xbf}, []byte(`{"a":1.0}`)...)}
+	precise, _, err := ParseCachedPreservingJSONNumbers(file, "auto")
+	if err != nil || precise[0].Data.(map[string]any)["a"] != json.Number("1.0") {
+		t.Fatalf("BOM/auto parity: %#v %v", precise, err)
+	}
+	for _, file := range []sdk.File{{Path: "number.yaml", Data: []byte("a: 1.5\n")}, {Path: "number.toml", Data: []byte("a=1.5\n")}} {
+		ordinary, _, err := ParseCached(file, "auto")
+		if err != nil {
+			t.Fatal(err)
+		}
+		precise, _, err := ParseCachedPreservingJSONNumbers(file, "auto")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(ordinary, precise) {
+			t.Fatalf("non-JSON semantics changed: %#v / %#v", ordinary, precise)
+		}
+	}
+	if _, _, err := ParseCachedPreservingJSONNumbers(sdk.File{Path: "config.json", Data: []byte(`{}`)}, "json-exact"); err == nil {
+		t.Fatal("private precision mode exposed as document format")
 	}
 }
