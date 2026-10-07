@@ -58,6 +58,20 @@ spec:
   costLimit: 50000
 ```
 
+### `structured.fields`
+
+Declarative JSON-pointer constraints for JSON, YAML, and TOML configuration.
+Supports required/forbidden fields, scalar and collection types, allowed
+values, string patterns, numeric bounds, array size, uniqueness, and required
+array members. Every YAML document is checked. Missing optional fields skip
+their value constraints; explicit null is a present value. Empty file selection
+fails by default, with explicit `allowNoFiles: true` for optional scopes.
+
+See [structured field rules](structured-data-rules.md) for the exact spec,
+numeric semantics, examples, and operational-error behavior. The optional
+standalone editor schema is `schemas/structured-fields.schema.json`; existing
+versioned project/pack schemas retain their immutable generic kind/spec contract.
+
 ### `git.naming`
 
 Checks `branchPattern`, `allowedBranches`, `commitPattern`, `commitSubjectMaximum`, `mergeRequestTitlePattern`, and `mergeRequestTitleMaximum`. Commit-range checks use `--base` or supported CI environment variables.

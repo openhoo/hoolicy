@@ -1,0 +1,93 @@
+version: 1
+name: container-build
+release: 0.1.0
+description: Immutable base images and narrow risky-input checks for container build definitions.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: Base-image parsing shares sources.allowed semantics. Text rules intentionally cover direct single-line instructions, not a Dockerfile or shell security proof. Ignore-file presence does not establish its effectiveness.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.4.2 <2.0.0'
+parameters:
+  dockerfiles:
+    type: string_list
+    description: Container build files to inspect.
+    default:
+      - '**/{Dockerfile,Containerfile}'
+      - '**/{Dockerfile,Containerfile}.*'
+  registries:
+    type: string_list
+    description: Approved literal base image registry hosts.
+    default:
+      - docker.io
+      - ghcr.io
+  dockerignore_paths:
+    type: string_list
+    description: Ignore file alternatives for the explicitly selected build context.
+    default:
+      - .dockerignore
+  excluded_paths:
+    type: string_list
+    description: Reviewed narrow exclusions for generated or vendored build files.
+    default:
+      - .hoolicy/vendor/**
+rules:
+  - id: container-build.immutable-base-images
+    title: Container base images are approved and immutable
+    description: Parses literal FROM references, including stages and scratch, against registry allowlists and SHA256 digests.
+    rationale: Mutable image tags can change reviewed build inputs without a repository change.
+    remediation: Pin each external base image to a reviewed sha256 digest in an approved registry.
+    severity: error
+    kind: sources.allowed
+    files:
+      - '{{ dockerfiles }}'
+    spec:
+      registries: '{{ registries }}'
+      requireDigest: true
+      message: Container base image is not an approved immutable source
+    exclude:
+      - '{{ excluded_paths }}'
+  - id: container-build.context-ignore
+    title: The selected container context has an ignore policy
+    description: Requires one configured .dockerignore alternative in repository inventory.
+    rationale: An explicit ignore policy provides a review point for credentials and unrelated files sent to the builder.
+    remediation: Commit an ignore file for the actual build context and review its patterns; the rule checks existence only.
+    severity: warning
+    kind: files
+    files:
+      - '{{ dockerignore_paths }}'
+    spec:
+      mode: require
+      message: Container build context has no configured ignore file
+    exclude:
+      - '{{ excluded_paths }}'
+  - id: container-build.remote-add
+    title: Container builds avoid literal remote ADD inputs
+    description: Finds single-line ADD instructions whose first source is an HTTP or HTTPS URL, including instruction flags.
+    rationale: Remote ADD bypasses the repository source review and changes build inputs unless integrity is separately managed.
+    remediation: Vendor the reviewed input or fetch it in an explicitly checksum-verified build step; use a narrow waiver for reviewed checksum ADD.
+    severity: warning
+    kind: text
+    files:
+      - '{{ dockerfiles }}'
+    spec:
+      forbid:
+        - (?mi)^[ \t]*ADD[ \t]+(?:--[^ \t\r\n]+[ \t]+)*https?://
+      message: Container ADD fetches a remote URL
+    exclude:
+      - '{{ excluded_paths }}'
+  - id: container-build.download-pipe-shell
+    title: Container builds do not pipe literal downloads into a shell
+    description: Finds a direct curl or wget pipe to sh or bash on a single RUN instruction.
+    rationale: Executing an unverified network response during a build gives that endpoint control over build execution.
+    remediation: Download to a file, verify its pinned digest or signature, then execute the reviewed artifact.
+    severity: error
+    kind: text
+    files:
+      - '{{ dockerfiles }}'
+    spec:
+      forbid:
+        - (?mi)^[ \t]*RUN[ \t]+(?:--[^ \t\r\n]+[ \t]+)*(?:curl|wget)\b(?:[^'"\\\r\n|]|\\[^\r\n]|"(?:\\[^\r\n]|[^"\\\r\n])*"|'[^'\r\n]*')*\|[ \t]*(?:/bin/)?(?:sh|bash)\b
+      message: Container build pipes an unverified download into a shell
+    exclude:
+      - '{{ excluded_paths }}'

@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "pack": "container-build",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "custom context ignore passes",
+      "ruleId": "container-build.context-ignore",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "missing context ignore fails",
+      "ruleId": "container-build.context-ignore",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "container-build.context-ignore",
+          "severity": "warning",
+          "message": "Container build context has no configured ignore file",
+          "key": "missing",
+          "fingerprint": "325adc26ee3259613afc61ab287685481a07bd7b6301cf3198883187eb7e8c6d",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "selected root context ignore passes",
+      "ruleId": "container-build.context-ignore",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "curl pipe bash fails",
+      "ruleId": "container-build.download-pipe-shell",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "container-build.download-pipe-shell",
+          "severity": "error",
+          "path": "Dockerfile",
+          "line": 1,
+          "column": 1,
+          "message": "Container build pipes an unverified download into a shell",
+          "key": "forbid:0",
+          "fingerprint": "04907f4f8aa1bacb5cedbc4d1d55aed269306308d8d9e7ef6029c838edbfd7cf",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "double quoted header pipe passes",
+      "ruleId": "container-build.download-pipe-shell",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "escaped literal pipe passes",
+      "ruleId": "container-build.download-pipe-shell",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "quoted download URL with real pipe fails",
+      "ruleId": "container-build.download-pipe-shell",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "container-build.download-pipe-shell",
+          "severity": "error",
+          "path": "Dockerfile",
+          "line": 1,
+          "column": 1,
+          "message": "Container build pipes an unverified download into a shell",
+          "key": "forbid:0",
+          "fingerprint": "04907f4f8aa1bacb5cedbc4d1d55aed269306308d8d9e7ef6029c838edbfd7cf",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "quoted header pipe passes",
+      "ruleId": "container-build.download-pipe-shell",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "verified staged download and comments pass",
+      "ruleId": "container-build.download-pipe-shell",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "wget pipe sh fails",
+      "ruleId": "container-build.download-pipe-shell",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "container-build.download-pipe-shell",
+          "severity": "error",
+          "path": "Containerfile",
+          "line": 1,
+          "column": 1,
+          "message": "Container build pipes an unverified download into a shell",
+          "key": "forbid:0",
+          "fingerprint": "973ba31ba1c50736e5d64ae7f960a5bbbbad998ca63d775eb36379b35b939548",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "digest pinned external base and local stage pass",
+      "ruleId": "container-build.immutable-base-images",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "mutable base image fails",
+      "ruleId": "container-build.immutable-base-images",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "container-build.immutable-base-images",
+          "severity": "error",
+          "path": "Dockerfile",
+          "line": 1,
+          "column": 1,
+          "message": "Container base image is not an approved immutable source: image alpine:latest is not pinned by sha256 digest",
+          "key": "image:alpine:latest",
+          "fingerprint": "0bd6a3b2b4bdfceb8fc7d0af6ace30a57072a1376e72b3878e6f5065556ffc01",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "unapproved registry fails",
+      "ruleId": "container-build.immutable-base-images",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "container-build.immutable-base-images",
+          "severity": "error",
+          "path": "Containerfile",
+          "line": 1,
+          "column": 1,
+          "message": "Container base image is not an approved immutable source: registry registry.example.invalid is not allowed",
+          "key": "image:registry.example.invalid/alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "fingerprint": "590be57e4f1da01ab71624df600beb418caa603e810b4a5e4e9f2410eba8c5fa",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "flagged lowercase remote ADD fails",
+      "ruleId": "container-build.remote-add",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "container-build.remote-add",
+          "severity": "warning",
+          "path": "Dockerfile",
+          "line": 1,
+          "column": 1,
+          "message": "Container ADD fetches a remote URL",
+          "key": "forbid:0",
+          "fingerprint": "27a17127467e3c9c0be1ab6eb3d9d443cfdaa984228d31821df7ded4a102d066",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "local ADD and comment examples pass",
+      "ruleId": "container-build.remote-add",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "remote ADD fails",
+      "ruleId": "container-build.remote-add",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "container-build.remote-add",
+          "severity": "warning",
+          "path": "Dockerfile",
+          "line": 1,
+          "column": 1,
+          "message": "Container ADD fetches a remote URL",
+          "key": "forbid:0",
+          "fingerprint": "27a17127467e3c9c0be1ab6eb3d9d443cfdaa984228d31821df7ded4a102d066",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    }
+  ]
+}

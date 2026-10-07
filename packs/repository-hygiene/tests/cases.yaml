@@ -1,0 +1,108 @@
+version: 1
+cases:
+  - name: resolved source passes
+    rule: repository-hygiene.conflict-markers
+    outcome: pass
+    files:
+      src/main.ts: |
+        const marker = "<<<<<<< is an inline string";
+        // >>>>>>> explanation
+  - name: opening conflict boundary fails
+    rule: repository-hygiene.conflict-markers
+    outcome: fail
+    files:
+      src/main.ts: |
+        <<<<<<< HEAD
+        const x = 1;
+    expect:
+      - ruleId: repository-hygiene.conflict-markers
+        messageContains: Unresolved Git conflict marker
+        waived: false
+        hasFix: false
+        key: forbid:0
+        path: src/main.ts
+  - name: closing conflict boundary fails
+    rule: repository-hygiene.conflict-markers
+    outcome: fail
+    files:
+      src/main.ts: |
+        const x = 1;
+        >>>>>>> fix/merge
+    expect:
+      - ruleId: repository-hygiene.conflict-markers
+        messageContains: Unresolved Git conflict marker
+        waived: false
+        hasFix: false
+        key: forbid:1
+        path: src/main.ts
+  - name: intentional excluded conflict fixture passes
+    rule: repository-hygiene.conflict-markers
+    outcome: pass
+    files:
+      fixtures/conflict.ts: |
+        <<<<<<< HEAD
+    parameters:
+      excluded_paths:
+        - fixtures/conflict.ts
+  - name: normal source has no merge debris
+    rule: repository-hygiene.merge-debris
+    outcome: pass
+    files:
+      src/main.go: |
+        package main
+  - name: rejected patch fails
+    rule: repository-hygiene.merge-debris
+    outcome: fail
+    files:
+      src/main.go.rej: |
+        @@ rejected patch
+    expect:
+      - ruleId: repository-hygiene.merge-debris
+        messageContains: Merge or patch backup file
+        waived: false
+        hasFix: false
+        key: forbidden
+        path: src/main.go.rej
+  - name: original backup fails
+    rule: repository-hygiene.merge-debris
+    outcome: fail
+    files:
+      config.yaml.orig: |
+        value: old
+    expect:
+      - ruleId: repository-hygiene.merge-debris
+        messageContains: Merge or patch backup file
+        waived: false
+        hasFix: false
+        key: forbidden
+        path: config.yaml.orig
+  - name: portable repository passes
+    rule: repository-hygiene.desktop-debris
+    outcome: pass
+    files:
+      src/main.go: |
+        package main
+  - name: macOS desktop cache fails
+    rule: repository-hygiene.desktop-debris
+    outcome: fail
+    files:
+      assets/.DS_Store: synthetic metadata
+    expect:
+      - ruleId: repository-hygiene.desktop-debris
+        messageContains: Desktop metadata file
+        waived: false
+        hasFix: false
+        key: forbidden
+        path: assets/.DS_Store
+  - name: Windows thumbnail cache fails
+    rule: repository-hygiene.desktop-debris
+    outcome: fail
+    files:
+      images/Thumbs.db: synthetic metadata
+    expect:
+      - ruleId: repository-hygiene.desktop-debris
+        messageContains: Desktop metadata file
+        waived: false
+        hasFix: false
+        key: forbidden
+        path: images/Thumbs.db

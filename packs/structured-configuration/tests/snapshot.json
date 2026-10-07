@@ -1,0 +1,288 @@
+{
+  "version": 1,
+  "pack": "structured-configuration",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "TOML availability passes",
+      "ruleId": "structured-configuration.availability",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "insufficient replicas fail",
+      "ruleId": "structured-configuration.availability",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.availability",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production availability configuration is outside approved bounds: Field \"/replicas\" is below the minimum",
+          "key": "document:0:/replicas:is below the minimum",
+          "fingerprint": "68b59fb71d14a9a8d55ce7a7c5c86130dd3f5145dd7622ff7d7319f98fd20c81",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "numeric string fails type check",
+      "ruleId": "structured-configuration.availability",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.availability",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production availability configuration is outside approved bounds: Field \"/replicas\" must have type integer",
+          "key": "document:0:/replicas:must have type integer",
+          "fingerprint": "307a52dc4290fd310dd6f98c41faf04efbff9ea7c0733eabbbc20d58a5db6d06",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "structured-configuration.availability",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production availability configuration is outside approved bounds: Field \"/replicas\" must be a number for numeric bounds",
+          "key": "document:0:/replicas:must be a number for numeric bounds",
+          "fingerprint": "b157ed6ed2a6f14f252c244b05edddfbf993042206dcca21a9688191d5afe4d4",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "unbounded timeout fails",
+      "ruleId": "structured-configuration.availability",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.availability",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production availability configuration is outside approved bounds: Field \"/timeoutMs\" exceeds the maximum",
+          "key": "document:0:/timeoutMs:exceeds the maximum",
+          "fingerprint": "08503b4badb07b3eb98e2d63ab43962aed017b3562c52a77a4e553600fa7bf93",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "TLS bypass field fails even when false",
+      "ruleId": "structured-configuration.browser-origins",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.browser-origins",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production browser trust configuration is unsafe: Field \"/insecureSkipVerify\" is forbidden",
+          "key": "document:0:/insecureSkipVerify:is forbidden",
+          "fingerprint": "d815d7e719b72fb54e8cdcd7aa043523dd84478ef0a1d3ae196ac4c0d99dcfad",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "duplicate origins fail",
+      "ruleId": "structured-configuration.browser-origins",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.browser-origins",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production browser trust configuration is unsafe: Field \"/allowedOrigins\" must contain unique items",
+          "key": "document:0:/allowedOrigins:must contain unique items",
+          "fingerprint": "8d73e7fa18249ce0428821b3e2755d86d9afb686126c0cd408178bcaf72252e3",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "empty origin list fails",
+      "ruleId": "structured-configuration.browser-origins",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.browser-origins",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production browser trust configuration is unsafe: Field \"/allowedOrigins\" has fewer than minItems",
+          "key": "document:0:/allowedOrigins:has fewer than minItems",
+          "fingerprint": "d3f387a5559b8fab400074d424c3423f5af11de4dd9c7decf0f288990f18c833",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "explicit unique origins pass",
+      "ruleId": "structured-configuration.browser-origins",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "literal origin passes",
+      "ruleId": "structured-configuration.no-wildcard-origins",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "object origin fails",
+      "ruleId": "structured-configuration.no-wildcard-origins",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.no-wildcard-origins",
+          "severity": "error",
+          "message": "Browser origins must be explicit strings without wildcards",
+          "key": "cel",
+          "fingerprint": "cc5ed2434081fd539adb8acfd68e7056b8b70fa675b6789ee6a87c81581c0613",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "wildcard origin fails",
+      "ruleId": "structured-configuration.no-wildcard-origins",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.no-wildcard-origins",
+          "severity": "error",
+          "message": "Browser origins must be explicit strings without wildcards",
+          "key": "cel",
+          "fingerprint": "cc5ed2434081fd539adb8acfd68e7056b8b70fa675b6789ee6a87c81581c0613",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "debug mode fails",
+      "ruleId": "structured-configuration.production-mode",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.production-mode",
+          "severity": "error",
+          "path": "config/production.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Production mode configuration is unsafe: Field \"/debug\" must match an allowed value",
+          "key": "document:0:/debug:must match an allowed value",
+          "fingerprint": "8344ef048f82a490abe03311c6287353d283a22b522fdbfaf765f48988d2d368",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "duplicate input key is operational error",
+      "ruleId": "structured-configuration.production-mode",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule structured-configuration.production-mode: config/production.json: duplicate key \"debug\" at byte 49"
+    },
+    {
+      "name": "every YAML document is checked",
+      "ruleId": "structured-configuration.production-mode",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.production-mode",
+          "severity": "error",
+          "path": "config/production.yaml",
+          "line": 4,
+          "column": 1,
+          "message": "Production mode configuration is unsafe: Field \"/debug\" must match an allowed value",
+          "key": "document:1:/debug:must match an allowed value",
+          "fingerprint": "ec9d6580a1c8e2148e54a085f83023a33af218505780a9067bfd3c75d08c96d5",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "malformed YAML is operational error",
+      "ruleId": "structured-configuration.production-mode",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule structured-configuration.production-mode: config/production.yaml: yaml: line 1: did not find expected node content"
+    },
+    {
+      "name": "missing configuration fails",
+      "ruleId": "structured-configuration.production-mode",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.production-mode",
+          "severity": "error",
+          "message": "No files matched the structured field policy",
+          "key": "no-files",
+          "fingerprint": "debe215c5533758f8869577bcf6ec418ce380a53ee1f0e52e816a44d6824574b",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "null debug is not false",
+      "ruleId": "structured-configuration.production-mode",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "structured-configuration.production-mode",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production mode configuration is unsafe: Field \"/debug\" must have type boolean",
+          "key": "document:0:/debug:must have type boolean",
+          "fingerprint": "7c6e1c2c0f902a3bb82d9ad21e35a5d23e338b11b4b9b304f25525daf803f58e",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "structured-configuration.production-mode",
+          "severity": "error",
+          "path": "config/production.json",
+          "line": 1,
+          "column": 1,
+          "message": "Production mode configuration is unsafe: Field \"/debug\" must match an allowed value",
+          "key": "document:0:/debug:must match an allowed value",
+          "fingerprint": "bd74b565bd89f998834d2eb7ad3425c09f50beb672b5e3528631c014054676ad",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "production mode passes",
+      "ruleId": "structured-configuration.production-mode",
+      "outcome": "pass",
+      "findings": []
+    }
+  ]
+}

@@ -145,7 +145,7 @@ Usage:
   hoolicy <command> [options]
 
 Start and inspect:
-  init       Create a standard, strict, or empty starter configuration
+  init       Create an offline starter configuration; list profiles with --list-profiles
   validate   Validate configuration, packs, and rule expressions
   list       List active rules
   explain    Explain one active rule
@@ -206,12 +206,19 @@ func (a application) init(args []string) int {
 	flags.SetOutput(a.stderr)
 	projectName := flags.String("project", "", "lowercase project name")
 	directory := flags.String("directory", ".", "target directory")
-	profile := flags.String("profile", "standard", "starter profile: empty, standard, or strict")
+	profile := flags.String("profile", "standard", "starter profile (use --list-profiles to see available choices)")
+	listProfiles := flags.Bool("list-profiles", false, "list offline starter profiles without creating files")
 	if err := flags.Parse(args); err != nil {
 		return flagErrorCode(err)
 	}
 	if flags.NArg() != 0 {
 		return a.unexpectedArguments("init", flags.Args())
+	}
+	if *listProfiles {
+		for _, item := range starterProfiles {
+			fmt.Fprintf(a.stdout, "%s\t%s\n", item.name, item.description)
+		}
+		return 0
 	}
 	root, err := filepath.Abs(*directory)
 	if err != nil {
@@ -2823,8 +2830,12 @@ func starterRules(profile string) ([]sdk.Rule, error) {
 	if profile == "empty" {
 		return []sdk.Rule{}, nil
 	}
-	if profile != "standard" && profile != "strict" {
-		return nil, fmt.Errorf("unknown starter profile %q", profile)
+	known := false
+	for _, item := range starterProfiles {
+		known = known || item.name == profile
+	}
+	if !known {
+		return nil, fmt.Errorf("unknown starter profile %q; use hoolicy init --list-profiles", profile)
 	}
 	rule := func(id, title, description, rationale, remediation, kind string, files []string, spec map[string]any) sdk.Rule {
 		return sdk.Rule{
@@ -2844,9 +2855,9 @@ func starterRules(profile string) ([]sdk.Rule, error) {
 		}),
 		rule("supply-chain.approved-sources", "Dependencies use approved public sources", "Parses common package and container source declarations.", "Explicit source boundaries reduce dependency-confusion and accidental registry drift.", "Mirror the artifact into an approved source or adjust the reviewed allowlist.", "sources.allowed", []string{"**/.npmrc", "**/nuget.config", "**/{Dockerfile,Containerfile}", "**/{Dockerfile,Containerfile}.*", "**/*.{json,yaml,yml}"}, map[string]any{
 			"registries": []string{"docker.io", "ghcr.io"}, "npm": []string{"https://registry.npmjs.org"},
-			"nuget": []string{"https://api.nuget.org/v3/index.json"}, "requireDigest": profile == "strict",
+			"nuget": []string{"https://api.nuget.org/v3/index.json"}, "requireDigest": profile == "strict" || profile == "container-service",
 			"message": "Artifact source is outside the approved supply chain",
 		}),
 	}
-	return rules, nil
+	return append(rules, stackStarterRules(profile)...), nil
 }

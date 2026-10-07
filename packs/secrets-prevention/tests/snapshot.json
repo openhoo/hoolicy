@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "pack": "secrets-prevention",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "SSH private key filename fails",
+      "ruleId": "secrets-prevention.credential-files",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "secrets-prevention.credential-files",
+          "severity": "error",
+          "path": "keys/id_ed25519",
+          "line": 1,
+          "column": 1,
+          "message": "Live credential or environment file is tracked",
+          "key": "forbidden",
+          "fingerprint": "c6dfa5e1ecd8f95e30f04e5b5623f8e643138221711a5ced7f6e93a2a4d02cf5",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "identity bundle fails",
+      "ruleId": "secrets-prevention.credential-files",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "secrets-prevention.credential-files",
+          "severity": "error",
+          "path": "certs/client.p12",
+          "line": 1,
+          "column": 1,
+          "message": "Live credential or environment file is tracked",
+          "key": "forbidden",
+          "fingerprint": "58e0aae7357d8a422d01c3d021b7ea8b5e69a6561cda6b9487787f9d246ace53",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "placeholder templates and public keys pass",
+      "ruleId": "secrets-prevention.credential-files",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "reviewed credential fixture exclusion passes",
+      "ruleId": "secrets-prevention.credential-files",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "runtime environment file fails",
+      "ruleId": "secrets-prevention.credential-files",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "secrets-prevention.credential-files",
+          "severity": "error",
+          "path": "service/.env.production",
+          "line": 1,
+          "column": 1,
+          "message": "Live credential or environment file is tracked",
+          "key": "forbidden",
+          "fingerprint": "11a76e0ffae4787dd54963fd16d3de0b007e79662f907d404e61a0060ae80a76",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "OpenSSH private key fails",
+      "ruleId": "secrets-prevention.private-key-material",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "secrets-prevention.private-key-material",
+          "severity": "error",
+          "path": "keys/private.txt",
+          "line": 1,
+          "column": 1,
+          "message": "Private key material marker is committed",
+          "key": "forbid:0",
+          "fingerprint": "77b47c79ceafc0e64ebec5a7d46e2a9d2b3d5b9c05fef74d825520ab4bf7b410",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "encrypted private key fails",
+      "ruleId": "secrets-prevention.private-key-material",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "secrets-prevention.private-key-material",
+          "severity": "error",
+          "path": "keys/private.pem",
+          "line": 1,
+          "column": 1,
+          "message": "Private key material marker is committed",
+          "key": "forbid:0",
+          "fingerprint": "b2a73155201cd3f36be388282e86b661b6f63766f0e9bf1a80926d21e8a64f05",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "public key and certificate pass",
+      "ruleId": "secrets-prevention.private-key-material",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "environment references and short placeholders pass",
+      "ruleId": "secrets-prevention.provider-token-signatures",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "longer GitLab shaped identifier passes",
+      "ruleId": "secrets-prevention.provider-token-signatures",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "longer unrelated identifier passes",
+      "ruleId": "secrets-prevention.provider-token-signatures",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "synthetic GitHub token signature fails",
+      "ruleId": "secrets-prevention.provider-token-signatures",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "secrets-prevention.provider-token-signatures",
+          "severity": "error",
+          "path": "config.txt",
+          "line": 1,
+          "column": 7,
+          "message": "Provider access token signature is committed",
+          "key": "forbid:0",
+          "fingerprint": "9fb271a1dd6aa25256095aaa5eb4ef3152514400be258a8c417055701943d783",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "synthetic GitLab signature ending in hyphen fails",
+      "ruleId": "secrets-prevention.provider-token-signatures",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "secrets-prevention.provider-token-signatures",
+          "severity": "error",
+          "path": "config.txt",
+          "line": 1,
+          "column": 6,
+          "message": "Provider access token signature is committed",
+          "key": "forbid:1",
+          "fingerprint": "c84d451370798c376d68fa57856c9779351fcc8b0630e5f7accfff10c834594a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "synthetic GitLab token signature fails",
+      "ruleId": "secrets-prevention.provider-token-signatures",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "secrets-prevention.provider-token-signatures",
+          "severity": "error",
+          "path": "config.txt",
+          "line": 1,
+          "column": 6,
+          "message": "Provider access token signature is committed",
+          "key": "forbid:1",
+          "fingerprint": "c84d451370798c376d68fa57856c9779351fcc8b0630e5f7accfff10c834594a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    }
+  ]
+}

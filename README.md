@@ -52,6 +52,24 @@ hoolicy check
 
 Default `standard` profile checks repository documentation, licensing, vulnerability reporting, Git naming, and artifact sources. `--profile strict` also requires literal container images to use `sha256` digests. `--profile empty` creates only the strict configuration skeleton.
 
+Choose a stack-specific starting point with `hoolicy init --list-profiles`:
+
+| Profile | Additional checks |
+| --- | --- |
+| `go-library` | Go module, reviewed dependency sources, release notes |
+| `go-service` | Go module, dependency locks, operating runbook |
+| `node-library` | npm metadata, dependency locks, release notes |
+| `node-service` | npm metadata, dependency locks, operating runbook |
+| `container-service` | Immutable image sources, build definition, context ignore file, runbook |
+
+```sh
+hoolicy init --project payments-api --profile go-service
+```
+
+Profiles embed their rules and work offline. Review the generated policy for
+your repository; the [starter profile guide](docs/starter-profiles.md) explains
+the exact checks and limitations.
+
 ## Small rules look small
 
 ```yaml
@@ -77,7 +95,7 @@ Every rule must explain what it checks, why it matters, and how to remediate it.
 ## Commands
 
 ```text
-hoolicy init       Create standard, strict, or empty starter policy
+hoolicy init       Create an offline starter policy; --list-profiles shows choices
 hoolicy validate   Compile configuration, packs, regexes, and CEL
 hoolicy check      Evaluate policies offline
 hoolicy fix        Preview safe fixes; --apply writes reviewed changes
@@ -144,6 +162,47 @@ Existing repositories can adopt policy without hiding debt. `hoolicy baseline cr
 - `packs/dependency-governance`: lock, source, local-reference, and license governance.
 - `packs/deployment-invariants`: parameterized Kubernetes, Compose, and Terraform plan invariants.
 - `packs/api-contract-hygiene`: experimental OpenAPI consumption-evidence comparison.
+- `packs/repository-hygiene`: conflict markers, merge leftovers, and desktop metadata.
+- `packs/secrets-prevention`: narrow private-key/token signatures and credential filenames.
+- `packs/container-build`: immutable base images, build-context inventory, and risky literal build inputs.
+- `packs/acceptance-coverage`: semantic failure, accessibility, and security scenario coverage intent.
+- `packs/structured-configuration`: typed production mode, replica/timeout bounds, and explicit browser trust.
+
+The five new packs are opt-in and experimental. Secret signatures cover a
+documented subset of credential formats; acceptance tags record coverage intent
+and do not prove execution or conformance. Read the
+[predefined pack guide](docs/predefined-packs.md) before enabling them.
+
+### Check structured fields without writing CEL
+
+Use `structured.fields` for targeted JSON, YAML, and TOML configuration checks.
+JSON pointers select nested fields and array elements. Constraints support
+required or forbidden fields, types, allowed values, string patterns, numeric
+bounds, array sizes, uniqueness, and required array members. This rule fragment
+belongs under `rules` in a project policy; include the required `id`, `title`,
+`description`, `rationale`, `remediation`, and `severity` metadata:
+
+```yaml
+kind: structured.fields
+files: [config/production.yaml]
+spec:
+  fields:
+    - pointer: /debug
+      required: true
+      type: boolean
+      allowedValues: [false]
+    - pointer: /replicas
+      required: true
+      type: integer
+      minimum: 2
+    - pointer: /credentials/password
+      forbidden: true
+```
+
+No matching files produces a finding unless `allowNoFiles: true` is explicit.
+Malformed documents remain operational errors. Findings identify the field and
+constraint without printing its value. See the
+[structured field guide](docs/structured-data-rules.md) for complete semantics.
 
 Use this repository as a versioned remote pack source:
 

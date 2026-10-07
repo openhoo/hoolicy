@@ -1,0 +1,161 @@
+version: 1
+cases:
+  - name: digest pinned external base and local stage pass
+    rule: container-build.immutable-base-images
+    outcome: pass
+    files:
+      Dockerfile: |
+        FROM docker.io/library/alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa AS build
+        FROM build AS test
+        FROM scratch
+  - name: mutable base image fails
+    rule: container-build.immutable-base-images
+    outcome: fail
+    files:
+      Dockerfile: |
+        FROM alpine:latest
+    expect:
+      - ruleId: container-build.immutable-base-images
+        messageContains: digest
+        waived: false
+        hasFix: false
+  - name: unapproved registry fails
+    rule: container-build.immutable-base-images
+    outcome: fail
+    files:
+      Containerfile: |
+        FROM registry.example.invalid/alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    expect:
+      - ruleId: container-build.immutable-base-images
+        messageContains: registry
+        waived: false
+        hasFix: false
+  - name: selected root context ignore passes
+    rule: container-build.context-ignore
+    outcome: pass
+    files:
+      .dockerignore: |
+        .git
+        .env
+      Dockerfile: |
+        FROM docker.io/library/alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: missing context ignore fails
+    rule: container-build.context-ignore
+    outcome: fail
+    files:
+      Dockerfile: |
+        FROM docker.io/library/alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    expect:
+      - ruleId: container-build.context-ignore
+        messageContains: no configured ignore file
+        waived: false
+        hasFix: false
+        key: missing
+  - name: custom context ignore passes
+    rule: container-build.context-ignore
+    outcome: pass
+    files:
+      service/.dockerignore: |
+        .git
+    parameters:
+      dockerignore_paths:
+        - service/.dockerignore
+  - name: local ADD and comment examples pass
+    rule: container-build.remote-add
+    outcome: pass
+    files:
+      Dockerfile: |
+        ADD archive.tar /app/
+        # ADD https://example.invalid/demo /app/
+        COPY source/ /app/
+  - name: remote ADD fails
+    rule: container-build.remote-add
+    outcome: fail
+    files:
+      Dockerfile: |
+        ADD https://example.invalid/archive.tar /app/
+    expect:
+      - ruleId: container-build.remote-add
+        messageContains: fetches a remote URL
+        waived: false
+        hasFix: false
+        key: forbid:0
+        path: Dockerfile
+  - name: flagged lowercase remote ADD fails
+    rule: container-build.remote-add
+    outcome: fail
+    files:
+      Dockerfile: |
+        add --chown=1000:1000 https://example.invalid/archive.tar /app/
+    expect:
+      - ruleId: container-build.remote-add
+        messageContains: fetches a remote URL
+        waived: false
+        hasFix: false
+        key: forbid:0
+        path: Dockerfile
+  - name: verified staged download and comments pass
+    rule: container-build.download-pipe-shell
+    outcome: pass
+    files:
+      Dockerfile: |
+        # RUN curl https://example.invalid/install | sh
+        RUN curl -o /tmp/install https://example.invalid/install && sha256sum -c /tmp/install.sha256 && sh /tmp/install
+        RUN echo done | sh
+  - name: curl pipe bash fails
+    rule: container-build.download-pipe-shell
+    outcome: fail
+    files:
+      Dockerfile: |
+        RUN curl -fsSL https://example.invalid/install | bash
+    expect:
+      - ruleId: container-build.download-pipe-shell
+        messageContains: pipes an unverified download
+        waived: false
+        hasFix: false
+        key: forbid:0
+        path: Dockerfile
+  - name: wget pipe sh fails
+    rule: container-build.download-pipe-shell
+    outcome: fail
+    files:
+      Containerfile: |
+        RUN wget -qO- https://example.invalid/install | /bin/sh
+    expect:
+      - ruleId: container-build.download-pipe-shell
+        messageContains: pipes an unverified download
+        waived: false
+        hasFix: false
+        key: forbid:0
+        path: Containerfile
+  - name: quoted header pipe passes
+    rule: container-build.download-pipe-shell
+    outcome: pass
+    files:
+      Dockerfile: |
+        RUN curl https://example.invalid -H 'X-Example: | sh'
+  - name: double quoted header pipe passes
+    rule: container-build.download-pipe-shell
+    outcome: pass
+    files:
+      Dockerfile: |
+        RUN wget --header="X-Example: | bash" https://example.invalid
+  - name: escaped literal pipe passes
+    rule: container-build.download-pipe-shell
+    outcome: pass
+    files:
+      Dockerfile: |
+        RUN curl https://example.invalid -H X-Example:\| sh
+  - name: quoted download URL with real pipe fails
+    rule: container-build.download-pipe-shell
+    outcome: fail
+    files:
+      Dockerfile: |
+        RUN curl "https://example.invalid/install" | sh
+    expect:
+      - ruleId: container-build.download-pipe-shell
+        messageContains: pipes an unverified download
+        waived: false
+        hasFix: false
+        key: forbid:0
+        path: Dockerfile

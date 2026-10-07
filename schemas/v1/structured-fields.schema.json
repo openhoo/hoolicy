@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/v1/structured-fields.schema.json",
+  "title": "Hoolicy structured.fields rule spec",
+  "description": "Optional editor contract for a structured.fields spec. Runtime validates cross-field combinations and JSON pointer syntax.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fields"],
+  "properties": {
+    "format": { "enum": ["auto", "json", "yaml", "yml", "toml"] },
+    "allowNoFiles": { "type": "boolean", "default": false },
+    "message": { "type": "string" },
+    "fields": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/field" }
+    }
+  },
+  "$defs": {
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pointer"],
+      "properties": {
+        "pointer": { "type": "string", "pattern": "^(?:/(?:[^~]|~[01])*)*$" },
+        "required": { "type": "boolean" },
+        "forbidden": { "type": "boolean" },
+        "type": { "enum": ["string", "number", "integer", "boolean", "array", "object", "null"] },
+        "allowedValues": { "type": "array", "minItems": 1, "maxItems": 256 },
+        "pattern": { "type": "string", "maxLength": 4096 },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "minItems": { "type": "integer", "minimum": 0 },
+        "maxItems": { "type": "integer", "minimum": 0 },
+        "uniqueItems": { "type": "boolean" },
+        "requiredItems": { "type": "array", "minItems": 1, "maxItems": 256 }
+      }
+    }
+  }
+}

@@ -1,0 +1,157 @@
+version: 1
+cases:
+  - name: failure and recovery scenario passes
+    rule: acceptance-coverage.failure-scenarios
+    outcome: pass
+    files:
+      features/product.feature: |
+        Feature: Product behavior
+          @failure
+          Scenario: Required behavior
+            Given a relevant condition
+            When the user acts
+            Then the expected outcome is observable
+  - name: failure and recovery tag missing fails
+    rule: acceptance-coverage.failure-scenarios
+    outcome: fail
+    files:
+      features/product.feature: |
+        Feature: Product behavior
+          Scenario: Ordinary behavior
+            Given a valid input
+            Then the normal outcome occurs
+    expect:
+      - ruleId: acceptance-coverage.failure-scenarios
+        messageContains: required scenario tag @failure is missing
+        waived: false
+        hasFix: false
+        key: tag:@failure
+        path: features/product.feature
+  - name: failure and recovery word in prose cannot satisfy tag
+    rule: acceptance-coverage.failure-scenarios
+    outcome: fail
+    files:
+      features/product.feature: |
+        Feature: @failure is mentioned in prose
+          Scenario: Normal behavior
+            Given the @failure string is displayed
+            Then behavior is normal
+    expect:
+      - ruleId: acceptance-coverage.failure-scenarios
+        messageContains: required scenario tag @failure is missing
+        waived: false
+        hasFix: false
+        key: tag:@failure
+        path: features/product.feature
+  - name: accessibility scenario passes
+    rule: acceptance-coverage.accessibility-scenarios
+    outcome: pass
+    files:
+      features/product.feature: |
+        Feature: Product behavior
+          @accessibility
+          Scenario: Required behavior
+            Given a relevant condition
+            When the user acts
+            Then the expected outcome is observable
+  - name: accessibility tag missing fails
+    rule: acceptance-coverage.accessibility-scenarios
+    outcome: fail
+    files:
+      features/product.feature: |
+        Feature: Product behavior
+          Scenario: Ordinary behavior
+            Given a valid input
+            Then the normal outcome occurs
+    expect:
+      - ruleId: acceptance-coverage.accessibility-scenarios
+        messageContains: required scenario tag @accessibility is missing
+        waived: false
+        hasFix: false
+        key: tag:@accessibility
+        path: features/product.feature
+  - name: accessibility word in prose cannot satisfy tag
+    rule: acceptance-coverage.accessibility-scenarios
+    outcome: fail
+    files:
+      features/product.feature: |
+        Feature: @accessibility is mentioned in prose
+          Scenario: Normal behavior
+            Given the @accessibility string is displayed
+            Then behavior is normal
+    expect:
+      - ruleId: acceptance-coverage.accessibility-scenarios
+        messageContains: required scenario tag @accessibility is missing
+        waived: false
+        hasFix: false
+        key: tag:@accessibility
+        path: features/product.feature
+  - name: security boundaries scenario passes
+    rule: acceptance-coverage.security-scenarios
+    outcome: pass
+    files:
+      features/product.feature: |
+        Feature: Product behavior
+          @security
+          Scenario: Required behavior
+            Given a relevant condition
+            When the user acts
+            Then the expected outcome is observable
+  - name: security boundaries tag missing fails
+    rule: acceptance-coverage.security-scenarios
+    outcome: fail
+    files:
+      features/product.feature: |
+        Feature: Product behavior
+          Scenario: Ordinary behavior
+            Given a valid input
+            Then the normal outcome occurs
+    expect:
+      - ruleId: acceptance-coverage.security-scenarios
+        messageContains: required scenario tag @security is missing
+        waived: false
+        hasFix: false
+        key: tag:@security
+        path: features/product.feature
+  - name: security boundaries word in prose cannot satisfy tag
+    rule: acceptance-coverage.security-scenarios
+    outcome: fail
+    files:
+      features/product.feature: |
+        Feature: @security is mentioned in prose
+          Scenario: Normal behavior
+            Given the @security string is displayed
+            Then behavior is normal
+    expect:
+      - ruleId: acceptance-coverage.security-scenarios
+        messageContains: required scenario tag @security is missing
+        waived: false
+        hasFix: false
+        key: tag:@security
+        path: features/product.feature
+  - name: configured dialect tags pass
+    rule: acceptance-coverage.accessibility-scenarios
+    outcome: pass
+    files:
+      features/product.feature: |
+        # language: de
+        Funktionalität: Bedienbarkeit
+          @barrierefreiheit
+          Szenario: Tastaturbedienung
+            Angenommen die Ansicht ist geöffnet
+            Dann ist das Formular per Tastatur bedienbar
+    parameters:
+      gherkin_language: de
+      accessibility_tags:
+        - '@barrierefreiheit'
+  - name: malformed acceptance feature fails closed
+    rule: acceptance-coverage.failure-scenarios
+    outcome: error
+    files:
+      features/product.feature: |
+        Feature: Broken
+          Scenario: Unterminated doc string
+            Given invalid input
+              """
+              never closed
+    errorContains: features/product.feature

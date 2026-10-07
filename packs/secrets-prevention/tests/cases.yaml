@@ -1,0 +1,149 @@
+version: 1
+# Synthetic secret signatures use YAML Unicode escapes to keep scanner-safe source.
+# Decoding restores the exact fixture bytes; no working credentials or private keys exist here.
+cases:
+  - name: public key and certificate pass
+    rule: secrets-prevention.private-key-material
+    outcome: pass
+    files:
+      certs/server.pem: |
+        -----BEGIN CERTIFICATE-----
+        SYNTHETIC
+        -----END CERTIFICATE-----
+      keys/id_ed25519.pub: |
+        ssh-ed25519 SYNTHETIC public@example
+  - name: OpenSSH private key fails
+    rule: secrets-prevention.private-key-material
+    outcome: fail
+    files:
+      keys/private.txt: "-----\u0042EGIN OPENSSH PRIVATE KEY-----\nSYNTHETIC NONSECRET FIXTURE\n"
+    expect:
+      - ruleId: secrets-prevention.private-key-material
+        messageContains: Private key material marker
+        waived: false
+        hasFix: false
+        key: forbid:0
+        path: keys/private.txt
+  - name: encrypted private key fails
+    rule: secrets-prevention.private-key-material
+    outcome: fail
+    files:
+      keys/private.pem: "-----\u0042EGIN ENCRYPTED PRIVATE KEY-----\nSYNTHETIC NONSECRET FIXTURE\n"
+    expect:
+      - ruleId: secrets-prevention.private-key-material
+        messageContains: Private key material marker
+        waived: false
+        hasFix: false
+        key: forbid:0
+        path: keys/private.pem
+  - name: environment references and short placeholders pass
+    rule: secrets-prevention.provider-token-signatures
+    outcome: pass
+    files:
+      config.txt: |
+        token=${GITHUB_TOKEN}
+        example=ghp_PLACEHOLDER
+        gitlab=glpat-placeholder
+  - name: synthetic GitHub token signature fails
+    rule: secrets-prevention.provider-token-signatures
+    outcome: fail
+    files:
+      config.txt: "token=\u0067hp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+    expect:
+      - ruleId: secrets-prevention.provider-token-signatures
+        messageContains: Provider access token signature
+        waived: false
+        hasFix: false
+        key: forbid:0
+        path: config.txt
+  - name: synthetic GitLab token signature fails
+    rule: secrets-prevention.provider-token-signatures
+    outcome: fail
+    files:
+      config.txt: "token=\u0067lpat-AAAAAAAAAAAAAAAAAAAA\n"
+    expect:
+      - ruleId: secrets-prevention.provider-token-signatures
+        messageContains: Provider access token signature
+        waived: false
+        hasFix: false
+        key: forbid:1
+        path: config.txt
+  - name: longer unrelated identifier passes
+    rule: secrets-prevention.provider-token-signatures
+    outcome: pass
+    files:
+      config.txt: "identifier=\u0067hp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+  - name: placeholder templates and public keys pass
+    rule: secrets-prevention.credential-files
+    outcome: pass
+    files:
+      service/.env.example: |
+        TOKEN=YOUR_TOKEN
+      service/.env.sample: |
+        TOKEN=YOUR_TOKEN
+      service/.env.template: |
+        TOKEN=${TOKEN}
+      keys/id_ed25519.pub: |
+        public key
+  - name: runtime environment file fails
+    rule: secrets-prevention.credential-files
+    outcome: fail
+    files:
+      service/.env.production: |
+        TOKEN=synthetic
+    expect:
+      - ruleId: secrets-prevention.credential-files
+        messageContains: Live credential or environment file
+        waived: false
+        hasFix: false
+        key: forbidden
+        path: service/.env.production
+  - name: identity bundle fails
+    rule: secrets-prevention.credential-files
+    outcome: fail
+    files:
+      certs/client.p12: synthetic bundle
+    expect:
+      - ruleId: secrets-prevention.credential-files
+        messageContains: Live credential or environment file
+        waived: false
+        hasFix: false
+        key: forbidden
+        path: certs/client.p12
+  - name: SSH private key filename fails
+    rule: secrets-prevention.credential-files
+    outcome: fail
+    files:
+      keys/id_ed25519: synthetic fixture
+    expect:
+      - ruleId: secrets-prevention.credential-files
+        messageContains: Live credential or environment file
+        waived: false
+        hasFix: false
+        key: forbidden
+        path: keys/id_ed25519
+  - name: reviewed credential fixture exclusion passes
+    rule: secrets-prevention.credential-files
+    outcome: pass
+    files:
+      fixtures/test.pfx: synthetic
+    parameters:
+      excluded_paths:
+        - fixtures/test.pfx
+  - name: synthetic GitLab signature ending in hyphen fails
+    rule: secrets-prevention.provider-token-signatures
+    outcome: fail
+    files:
+      config.txt: "token=\u0067lpat-AAAAAAAAAAAAAAAAAAA-\n"
+    expect:
+      - ruleId: secrets-prevention.provider-token-signatures
+        messageContains: Provider access token signature
+        waived: false
+        hasFix: false
+        key: forbid:1
+        path: config.txt
+  - name: longer GitLab shaped identifier passes
+    rule: secrets-prevention.provider-token-signatures
+    outcome: pass
+    files:
+      config.txt: "identifier=\u0067lpat-AAAAAAAAAAAAAAAAAAAA-suffix\n"

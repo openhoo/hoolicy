@@ -11,6 +11,7 @@ func RegisterCore(registry *sdk.Registry) error {
 		"files":                 Files{},
 		"text":                  Text{},
 		"structured.cel":        celKind,
+		"structured.fields":     StructuredFields{},
 		"ci.workflow-security":  CIWorkflowSecurity{},
 		"artifact.evidence":     ArtifactEvidence{},
 		"dependency.governance": DependencyGovernance{},

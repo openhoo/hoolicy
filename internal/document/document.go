@@ -289,6 +289,16 @@ func normalize(value any) any {
 			return current
 		}
 		if number, err := strconv.ParseFloat(text, 64); err == nil {
+			// ParseFloat can silently underflow a nonzero decimal to zero.
+			// Preserve its lexical number so policies retain exact evidence
+			// and can enforce their numeric comparison budgets.
+			mantissa := text
+			if index := strings.IndexAny(mantissa, "eE"); index >= 0 {
+				mantissa = mantissa[:index]
+			}
+			if number == 0 && strings.ContainsAny(mantissa, "123456789") {
+				return current
+			}
 			return number
 		}
 		return current
