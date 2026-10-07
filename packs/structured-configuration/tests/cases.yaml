@@ -1,0 +1,135 @@
+version: 1
+cases:
+  - name: production mode passes
+    rule: structured-configuration.production-mode
+    outcome: pass
+    files:
+      config/production.json: '{"environment":"production","debug":false}'
+  - name: debug mode fails
+    rule: structured-configuration.production-mode
+    outcome: fail
+    files:
+      config/production.yaml: 'environment: production
+
+        debug: true'
+    expect:
+      - path: config/production.yaml
+        messageContains: /debug
+  - name: null debug is not false
+    rule: structured-configuration.production-mode
+    outcome: fail
+    files:
+      config/production.json: '{"environment":"production","debug":null}'
+    expect:
+      - path: config/production.json
+        messageContains: /debug
+  - name: missing configuration fails
+    rule: structured-configuration.production-mode
+    outcome: fail
+    files: {}
+    expect:
+      - messageContains: matched
+  - name: TOML availability passes
+    rule: structured-configuration.availability
+    outcome: pass
+    files:
+      config/production.toml: |
+        replicas = 3
+        timeoutMs = 10000
+  - name: insufficient replicas fail
+    rule: structured-configuration.availability
+    outcome: fail
+    files:
+      config/production.json: '{"replicas":1,"timeoutMs":10000}'
+    expect:
+      - path: config/production.json
+        messageContains: /replicas
+  - name: unbounded timeout fails
+    rule: structured-configuration.availability
+    outcome: fail
+    files:
+      config/production.json: '{"replicas":2,"timeoutMs":30001}'
+    expect:
+      - path: config/production.json
+        messageContains: /timeoutMs
+  - name: numeric string fails type check
+    rule: structured-configuration.availability
+    outcome: fail
+    files:
+      config/production.json: '{"replicas":"2","timeoutMs":10000}'
+    expect:
+      - path: config/production.json
+        messageContains: /replicas
+  - name: explicit unique origins pass
+    rule: structured-configuration.browser-origins
+    outcome: pass
+    files:
+      config/production.json: '{"allowedOrigins":["https://app.example.com"]}'
+  - name: duplicate origins fail
+    rule: structured-configuration.browser-origins
+    outcome: fail
+    files:
+      config/production.json: '{"allowedOrigins":["https://app.example.com","https://app.example.com"]}'
+    expect:
+      - path: config/production.json
+        messageContains: /allowedOrigins
+  - name: TLS bypass field fails even when false
+    rule: structured-configuration.browser-origins
+    outcome: fail
+    files:
+      config/production.json: '{"allowedOrigins":["https://app.example.com"],"insecureSkipVerify":false}'
+    expect:
+      - path: config/production.json
+        messageContains: /insecureSkipVerify
+  - name: empty origin list fails
+    rule: structured-configuration.browser-origins
+    outcome: fail
+    files:
+      config/production.json: '{"allowedOrigins":[]}'
+    expect:
+      - path: config/production.json
+        messageContains: /allowedOrigins
+  - name: literal origin passes
+    rule: structured-configuration.no-wildcard-origins
+    outcome: pass
+    files:
+      config/production.json: '{"allowedOrigins":["https://app.example.com"]}'
+  - name: wildcard origin fails
+    rule: structured-configuration.no-wildcard-origins
+    outcome: fail
+    files:
+      config/production.json: '{"allowedOrigins":["*"]}'
+    expect:
+      - messageContains: without wildcards
+  - name: object origin fails
+    rule: structured-configuration.no-wildcard-origins
+    outcome: fail
+    files:
+      config/production.json: '{"allowedOrigins":[{"url":"https://app.example.com"}]}'
+    expect:
+      - messageContains: without wildcards
+  - name: duplicate input key is operational error
+    rule: structured-configuration.production-mode
+    outcome: error
+    files:
+      config/production.json: '{"environment":"production","debug":false,"debug":true}'
+    errorContains: duplicate
+  - name: malformed YAML is operational error
+    rule: structured-configuration.production-mode
+    outcome: error
+    files:
+      config/production.yaml: 'debug: ['
+    errorContains: config/production.yaml
+  - name: every YAML document is checked
+    rule: structured-configuration.production-mode
+    outcome: fail
+    files:
+      config/production.yaml: |
+        environment: production
+        debug: false
+        ---
+        environment: production
+        debug: true
+    expect:
+      - path: config/production.yaml
+        messageContains: /debug

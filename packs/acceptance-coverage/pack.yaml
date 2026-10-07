@@ -1,0 +1,88 @@
+version: 1
+name: acceptance-coverage
+release: 0.1.0
+description: Semantic failure, accessibility and security acceptance-scenario coverage intent.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: Gherkin AST scenario-tag keys are stable. All rules are advisory and do not establish execution, correctness, accessibility conformance, or security assurance. Empty selection passes; require feature files separately when absence must block.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.4.2 <2.0.0'
+parameters:
+  feature_globs:
+    type: string_list
+    description: Features for which failure, accessibility and security scenario coverage is an explicit product requirement.
+    default:
+      - features/**/*.feature
+  gherkin_language:
+    type: string
+    description: Expected Gherkin dialect.
+    default: en
+  excluded_paths:
+    type: string_list
+    description: Reviewed feature exclusions for inapplicable product areas.
+    default: []
+  failure_tags:
+    type: string_list
+    description: Tags required somewhere within each selected feature.
+    default:
+      - '@failure'
+  accessibility_tags:
+    type: string_list
+    description: Accessibility tags required somewhere within each selected feature.
+    default:
+      - '@accessibility'
+  security_tags:
+    type: string_list
+    description: Security tags required somewhere within each selected feature.
+    default:
+      - '@security'
+rules:
+  - id: acceptance-coverage.failure-scenarios
+    title: Acceptance features cover failure and recovery
+    description: Uses the Gherkin AST to require configured scenario tags in each selected feature.
+    rationale: Successful-only acceptance stories omit observable failure handling.
+    remediation: Add a scenario that exercises failure or recovery with observable outcomes. Tags describe coverage intent; run the scenarios separately.
+    severity: warning
+    kind: gherkin.requirements
+    files:
+      - '{{ feature_globs }}'
+    spec:
+      language: '{{ gherkin_language }}'
+      requiredTags: '{{ failure_tags }}'
+      minimumScenarios: 1
+      message: Acceptance feature lacks failure and recovery scenario coverage
+    exclude:
+      - '{{ excluded_paths }}'
+  - id: acceptance-coverage.accessibility-scenarios
+    title: Acceptance features cover accessibility
+    description: Uses the Gherkin AST to require configured scenario tags in each selected feature.
+    rationale: Accessibility regressions need explicit acceptance scenarios with observable keyboard or assistive-technology behavior.
+    remediation: Add a scenario covering relevant accessibility behavior and assert the user outcome. Tags describe coverage intent; run the scenarios separately.
+    severity: warning
+    kind: gherkin.requirements
+    files:
+      - '{{ feature_globs }}'
+    spec:
+      language: '{{ gherkin_language }}'
+      requiredTags: '{{ accessibility_tags }}'
+      minimumScenarios: 1
+      message: Acceptance feature lacks accessibility scenario coverage
+    exclude:
+      - '{{ excluded_paths }}'
+  - id: acceptance-coverage.security-scenarios
+    title: Acceptance features cover security boundaries
+    description: Uses the Gherkin AST to require configured scenario tags in each selected feature.
+    rationale: Authorization and trust-boundary failures need explicit acceptance scenarios alongside normal product behavior.
+    remediation: Add a scenario exercising a relevant authorization or trust boundary and assert denied behavior. Tags describe coverage intent; run the scenarios separately.
+    severity: warning
+    kind: gherkin.requirements
+    files:
+      - '{{ feature_globs }}'
+    spec:
+      language: '{{ gherkin_language }}'
+      requiredTags: '{{ security_tags }}'
+      minimumScenarios: 1
+      message: Acceptance feature lacks security boundaries scenario coverage
+    exclude:
+      - '{{ excluded_paths }}'

@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "pack": "acceptance-coverage",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "accessibility scenario passes",
+      "ruleId": "acceptance-coverage.accessibility-scenarios",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "accessibility tag missing fails",
+      "ruleId": "acceptance-coverage.accessibility-scenarios",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "acceptance-coverage.accessibility-scenarios",
+          "severity": "warning",
+          "path": "features/product.feature",
+          "line": 1,
+          "column": 1,
+          "message": "Acceptance feature lacks accessibility scenario coverage: required scenario tag @accessibility is missing",
+          "key": "tag:@accessibility",
+          "fingerprint": "2046029ae4df574a4ad0de0e22fc0ffa06532cffed03a74a8706d318c75d40de",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "accessibility word in prose cannot satisfy tag",
+      "ruleId": "acceptance-coverage.accessibility-scenarios",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "acceptance-coverage.accessibility-scenarios",
+          "severity": "warning",
+          "path": "features/product.feature",
+          "line": 1,
+          "column": 1,
+          "message": "Acceptance feature lacks accessibility scenario coverage: required scenario tag @accessibility is missing",
+          "key": "tag:@accessibility",
+          "fingerprint": "2046029ae4df574a4ad0de0e22fc0ffa06532cffed03a74a8706d318c75d40de",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "configured dialect tags pass",
+      "ruleId": "acceptance-coverage.accessibility-scenarios",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "failure and recovery scenario passes",
+      "ruleId": "acceptance-coverage.failure-scenarios",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "failure and recovery tag missing fails",
+      "ruleId": "acceptance-coverage.failure-scenarios",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "acceptance-coverage.failure-scenarios",
+          "severity": "warning",
+          "path": "features/product.feature",
+          "line": 1,
+          "column": 1,
+          "message": "Acceptance feature lacks failure and recovery scenario coverage: required scenario tag @failure is missing",
+          "key": "tag:@failure",
+          "fingerprint": "fdb074fb82d6c2a33c388845521fead447123ea2804df9d67fd4d7b8bcc7ac57",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "failure and recovery word in prose cannot satisfy tag",
+      "ruleId": "acceptance-coverage.failure-scenarios",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "acceptance-coverage.failure-scenarios",
+          "severity": "warning",
+          "path": "features/product.feature",
+          "line": 1,
+          "column": 1,
+          "message": "Acceptance feature lacks failure and recovery scenario coverage: required scenario tag @failure is missing",
+          "key": "tag:@failure",
+          "fingerprint": "fdb074fb82d6c2a33c388845521fead447123ea2804df9d67fd4d7b8bcc7ac57",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "malformed acceptance feature fails closed",
+      "ruleId": "acceptance-coverage.failure-scenarios",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule acceptance-coverage.failure-scenarios: features/product.feature: Parser errors:\n(6:0): unexpected end of file, expected: #DocStringSeparator, #Other"
+    },
+    {
+      "name": "security boundaries scenario passes",
+      "ruleId": "acceptance-coverage.security-scenarios",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "security boundaries tag missing fails",
+      "ruleId": "acceptance-coverage.security-scenarios",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "acceptance-coverage.security-scenarios",
+          "severity": "warning",
+          "path": "features/product.feature",
+          "line": 1,
+          "column": 1,
+          "message": "Acceptance feature lacks security boundaries scenario coverage: required scenario tag @security is missing",
+          "key": "tag:@security",
+          "fingerprint": "63ac5e69afe332bf387f88cf1aec77c145df8ad2317c6ec47646fc891f8f61f5",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "security boundaries word in prose cannot satisfy tag",
+      "ruleId": "acceptance-coverage.security-scenarios",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "acceptance-coverage.security-scenarios",
+          "severity": "warning",
+          "path": "features/product.feature",
+          "line": 1,
+          "column": 1,
+          "message": "Acceptance feature lacks security boundaries scenario coverage: required scenario tag @security is missing",
+          "key": "tag:@security",
+          "fingerprint": "63ac5e69afe332bf387f88cf1aec77c145df8ad2317c6ec47646fc891f8f61f5",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    }
+  ]
+}

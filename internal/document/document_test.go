@@ -1,6 +1,7 @@
 package document
 
 import (
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -107,4 +108,28 @@ func FuzzParseJSON(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		_, _ = Parse(sdk.File{Path: "fuzz.json", Data: data}, "json")
 	})
+}
+
+func TestJSONNormalizationPreservesUnderflow(t *testing.T) {
+	for _, text := range []string{"1e-999999999", "-1e-999999999", "1e-324"} {
+		parsed, err := Parse(sdk.File{Path: "number.json", Data: []byte(text)}, "json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		number, ok := parsed[0].Data.(json.Number)
+		if !ok || string(number) != text {
+			t.Fatalf("nonzero number %s lost evidence: %#v", text, parsed[0].Data)
+		}
+	}
+	subnormal, err := Parse(sdk.File{Path: "subnormal.json", Data: []byte("5e-324")}, "json")
+	if err != nil || subnormal[0].Data != float64(5e-324) {
+		t.Fatalf("representable subnormal changed: %#v %v", subnormal, err)
+	}
+	parsed, err := Parse(sdk.File{Path: "zero.json", Data: []byte("0e-999999999")}, "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed[0].Data != float64(0) {
+		t.Fatalf("true zero should normalize normally: %#v", parsed[0].Data)
+	}
 }

@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/v1/hoolicy.schema.json
+version: 1
+project: structured-configuration-example
+failOn: error
+rules:
+  - id: example.production-configuration
+    title: Production configuration uses explicit safe settings
+    description: Checks field presence, type, value, numeric bounds, and unique array members.
+    rationale: Production defaults need a reviewable contract that checks actual configuration values.
+    remediation: Disable debug mode, keep replicas and timeouts within approved bounds, and declare each capability once.
+    severity: error
+    kind: structured.fields
+    files: [production.yaml]
+    spec:
+      fields:
+        - pointer: /environment
+          required: true
+          type: string
+          allowedValues: [production]
+        - pointer: /debug
+          required: true
+          type: boolean
+          allowedValues: [false]
+        - pointer: /replicas
+          required: true
+          type: integer
+          minimum: 2
+          maximum: 20
+        - pointer: /timeoutMs
+          required: true
+          type: integer
+          minimum: 1
+          maximum: 30000
+        - pointer: /capabilities
+          required: true
+          type: array
+          minItems: 1
+          uniqueItems: true
+          requiredItems: [health]
+        - pointer: /credentials/password
+          forbidden: true
+      message: Production configuration violates its reviewed field contract

@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "pack": "repository-hygiene",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "closing conflict boundary fails",
+      "ruleId": "repository-hygiene.conflict-markers",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "repository-hygiene.conflict-markers",
+          "severity": "error",
+          "path": "src/main.ts",
+          "line": 2,
+          "column": 1,
+          "message": "Unresolved Git conflict marker in source",
+          "key": "forbid:1",
+          "fingerprint": "56440a5d04da84c8b3ec940732f0e98306daf1e67258ce2dfbd724e206c25582",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "intentional excluded conflict fixture passes",
+      "ruleId": "repository-hygiene.conflict-markers",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "opening conflict boundary fails",
+      "ruleId": "repository-hygiene.conflict-markers",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "repository-hygiene.conflict-markers",
+          "severity": "error",
+          "path": "src/main.ts",
+          "line": 1,
+          "column": 1,
+          "message": "Unresolved Git conflict marker in source",
+          "key": "forbid:0",
+          "fingerprint": "bca614c2afe0c259ae70dab92a2ad4bbaaed9efe2e296d507df524b2e62eb442",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "resolved source passes",
+      "ruleId": "repository-hygiene.conflict-markers",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "Windows thumbnail cache fails",
+      "ruleId": "repository-hygiene.desktop-debris",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "repository-hygiene.desktop-debris",
+          "severity": "warning",
+          "path": "images/Thumbs.db",
+          "line": 1,
+          "column": 1,
+          "message": "Desktop metadata file is tracked",
+          "key": "forbidden",
+          "fingerprint": "97fb5a758f75ac346280e43fa2b6b038697ab52f0aafc510962a3b1096822e51",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "macOS desktop cache fails",
+      "ruleId": "repository-hygiene.desktop-debris",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "repository-hygiene.desktop-debris",
+          "severity": "warning",
+          "path": "assets/.DS_Store",
+          "line": 1,
+          "column": 1,
+          "message": "Desktop metadata file is tracked",
+          "key": "forbidden",
+          "fingerprint": "246c33eae7d4e1f5f95373ecbde757019f79bcea494d82f98e81795c54db764b",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "portable repository passes",
+      "ruleId": "repository-hygiene.desktop-debris",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "normal source has no merge debris",
+      "ruleId": "repository-hygiene.merge-debris",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "original backup fails",
+      "ruleId": "repository-hygiene.merge-debris",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "repository-hygiene.merge-debris",
+          "severity": "warning",
+          "path": "config.yaml.orig",
+          "line": 1,
+          "column": 1,
+          "message": "Merge or patch backup file is tracked",
+          "key": "forbidden",
+          "fingerprint": "464fe9ed423d8d83995db07fe198e080e6ab858541e57c80535f161b497e8ab2",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "rejected patch fails",
+      "ruleId": "repository-hygiene.merge-debris",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "repository-hygiene.merge-debris",
+          "severity": "warning",
+          "path": "src/main.go.rej",
+          "line": 1,
+          "column": 1,
+          "message": "Merge or patch backup file is tracked",
+          "key": "forbidden",
+          "fingerprint": "4189aec502297bdea804e6be30e59f3d1a6ff7ad95291dac326140ec0c0b842f",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+environment: production
+debug: false
+replicas: 2
+timeoutMs: 10000
+capabilities: [health, metrics]

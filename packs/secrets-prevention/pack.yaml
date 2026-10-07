@@ -1,0 +1,80 @@
+version: 1
+name: secrets-prevention
+release: 0.1.0
+description: Bounded secret signatures and credential-file prevention for repository snapshots.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: Exact PEM, provider-signature, and forbidden-file keys are stable. Detection is a narrow preventive check, not comprehensive secret scanning, revocation, or history cleanup.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.4.2 <2.0.0'
+parameters:
+  scan_globs:
+    type: string_list
+    description: Source, documentation, and key text files scanned for bounded signatures; expand the reviewed scope explicitly for other formats.
+    default:
+      - '**/*.{go,rs,js,jsx,ts,tsx,py,java,cs,rb,php,sh,txt,md,pem,key}'
+  excluded_paths:
+    type: string_list
+    description: Reviewed narrow exclusions; no automatic docs or test exclusions.
+    default:
+      - .hoolicy/vendor/**
+  allowed_env_templates:
+    type: string_list
+    description: Template environment files that contain placeholders and are intentionally committed.
+    default:
+      - '**/.env.example'
+      - '**/.env.sample'
+      - '**/.env.template'
+rules:
+  - id: secrets-prevention.private-key-material
+    title: Private signing and SSH key blocks are absent
+    description: Finds PEM private-key and OpenSSH private-key begin markers; public keys and certificates remain allowed.
+    rationale: Committed private keys remain accessible in repository history even after deletion.
+    remediation: Remove the key, rotate or revoke it if real, and load replacement material from a secret store.
+    severity: error
+    kind: text
+    files:
+      - '{{ scan_globs }}'
+    spec:
+      forbid:
+        - (?m)^[ \t]*-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----[ \t]*\r?$
+      message: Private key material marker is committed
+    exclude:
+      - '{{ excluded_paths }}'
+  - id: secrets-prevention.provider-token-signatures
+    title: Recognizable provider token literals are absent
+    description: Finds bounded classic GitHub and GitLab personal token signatures without echoing matched contents.
+    rationale: Recognizable access tokens can grant repository or API access outside the intended credential boundary.
+    remediation: Remove and revoke any real token; pass credentials through a secret store or environment reference.
+    severity: error
+    kind: text
+    files:
+      - '{{ scan_globs }}'
+    spec:
+      forbid:
+        - \bgh[pousr]_[A-Za-z0-9]{36}\b
+        - (?:^|[^A-Za-z0-9_-])glpat-[A-Za-z0-9_-]{20}(?:$|[^A-Za-z0-9_-])
+      message: Provider access token signature is committed
+    exclude:
+      - '{{ excluded_paths }}'
+  - id: secrets-prevention.credential-files
+    title: Credential containers and live environment files are absent
+    description: Finds common SSH private-key filenames, PKCS12 containers, and .env files while allowing named templates.
+    rationale: Credential files can leak whole identity bundles or runtime secrets even when token signatures are unfamiliar.
+    remediation: Remove the live credential file, rotate exposed material, and retain only placeholder templates.
+    severity: error
+    kind: files
+    files:
+      - '**/id_rsa'
+      - '**/id_ed25519'
+      - '**/id_ecdsa'
+      - '**/*.{p12,pfx}'
+      - '**/.env'
+      - '**/.env.*'
+    spec:
+      mode: forbid
+      message: Live credential or environment file is tracked
+    exclude:
+      - '{{ excluded_paths }}'
+      - '{{ allowed_env_templates }}'

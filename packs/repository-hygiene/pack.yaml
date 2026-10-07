@@ -1,0 +1,68 @@
+version: 1
+name: repository-hygiene
+release: 0.1.0
+description: Focused source conflict and accidental repository artifact checks.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: Globs and per-pattern finding keys are stable. Desktop and merge debris rules are advisory. This pack scans the selected inventory and does not inspect Git history.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.4.2 <2.0.0'
+parameters:
+  source_globs:
+    type: string_list
+    description: Source files checked for unresolved conflict markers; select configuration files separately with a dedicated parser rule.
+    default:
+      - '**/*.{go,rs,js,jsx,ts,tsx,py,java,cs,rb,php,sh}'
+  excluded_paths:
+    type: string_list
+    description: Reviewed repository-relative exclusions for intentional fixtures or vendored policy.
+    default:
+      - .hoolicy/vendor/**
+rules:
+  - id: repository-hygiene.conflict-markers
+    title: Source files contain no unresolved merge markers
+    description: Finds line-anchored opening and closing Git conflict markers in selected source files.
+    rationale: Unresolved merge markers can leave contradictory code or malformed configuration in a reviewed change.
+    remediation: Resolve the conflict and remove both marker boundaries; exclude intentional test fixtures narrowly.
+    severity: error
+    kind: text
+    files:
+      - '{{ source_globs }}'
+    spec:
+      forbid:
+        - (?m)^<<<<<<< [^\r\n]+
+        - (?m)^>>>>>>> [^\r\n]+
+      message: Unresolved Git conflict marker in source
+    exclude:
+      - '{{ excluded_paths }}'
+  - id: repository-hygiene.merge-debris
+    title: Repositories contain no accidental merge backup files
+    description: Finds .orig backup and .rej rejected patch files in repository inventory.
+    rationale: Patch leftovers can contain obsolete code or confidential content and do not participate in the build.
+    remediation: Remove the leftover file or narrowly exclude an intentional reviewed fixture.
+    severity: warning
+    kind: files
+    files:
+      - '**/*.orig'
+      - '**/*.rej'
+    spec:
+      mode: forbid
+      message: Merge or patch backup file is tracked
+    exclude:
+      - '{{ excluded_paths }}'
+  - id: repository-hygiene.desktop-debris
+    title: Repositories contain no desktop metadata
+    description: Finds known macOS and Windows desktop cache files in repository inventory.
+    rationale: Desktop caches can reveal workstation metadata and add unrelated binary churn.
+    remediation: Remove the metadata file and add its basename to the repository ignore policy.
+    severity: warning
+    kind: files
+    files:
+      - '**/.DS_Store'
+      - '**/Thumbs.db'
+    spec:
+      mode: forbid
+      message: Desktop metadata file is tracked
+    exclude:
+      - '{{ excluded_paths }}'

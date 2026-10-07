@@ -33,8 +33,16 @@ hoolicy check
 
 Standard creates repository/documentation/Git/source rules; strict adds image
 digest requirements; empty creates the strict configuration skeleton only.
+Hoolicy 0.5 adds `go-library`, `go-service`, `node-library`, `node-service`, and
+`container-service`. Use `hoolicy init --list-profiles` to inspect the installed
+binary's choices. Each profile embeds offline rules; service profiles require
+an operating runbook and library profiles require release notes.
 Reuse an existing policy rather than overwriting it. Begin with checks that
 express the project's actual decisions, not every available rule.
+
+For Hoolicy 0.5 structured field constraints and opt-in predefined packs, read
+[the bundled rule catalog](references/rule-catalog.md). Do not infer universal
+security or accessibility coverage from a pack name.
 
 ## Evaluate and remediate
 
