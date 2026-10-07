@@ -976,6 +976,10 @@ type junitSuites struct {
 		Errors     int             `xml:"errors,attr"`
 		Timestamp  string          `xml:"timestamp,attr"`
 		Properties []junitProperty `xml:"properties>property"`
+		TestCases  []struct {
+			Failures []struct{} `xml:"failure"`
+			Errors   []struct{} `xml:"error"`
+		} `xml:"testcase"`
 	} `xml:"testsuite"`
 }
 
@@ -988,9 +992,54 @@ func inspectJUnit(data []byte) (time.Time, map[string]int, []junitProperty, erro
 	if bytes.Contains(bytes.ToUpper(data), []byte("<!DOCTYPE")) {
 		return time.Time{}, nil, nil, errors.New("JUnit document type declarations are forbidden")
 	}
+	// Only flat suites have defined aggregation semantics. Ignoring nested
+	// suite counts would let an apparently clean parent hide failing children.
+	shapeDecoder := xml.NewDecoder(bytes.NewReader(data))
+	var elements []string
+	for {
+		token, err := shapeDecoder.Token()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return time.Time{}, nil, nil, err
+		}
+		switch element := token.(type) {
+		case xml.StartElement:
+			if element.Name.Local == "testcase" && (len(elements) != 2 || elements[0] != "testsuites" || elements[1] != "testsuite") {
+				return time.Time{}, nil, nil, errors.New("misplaced JUnit testcases are unsupported")
+			}
+			if element.Name.Local == "testsuites" && len(elements) > 0 || element.Name.Local == "testsuite" && (len(elements) != 1 || elements[0] != "testsuites") {
+				return time.Time{}, nil, nil, errors.New("nested or misplaced JUnit suites are unsupported")
+			}
+			elements = append(elements, element.Name.Local)
+		case xml.EndElement:
+			elements = elements[:len(elements)-1]
+		}
+	}
 	var suites junitSuites
-	if err := xml.Unmarshal(data, &suites); err != nil {
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&suites); err != nil {
 		return time.Time{}, nil, nil, err
+	}
+	// Decode consumes one element; reject additional roots or trailing data.
+	for {
+		token, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return time.Time{}, nil, nil, err
+		}
+		switch value := token.(type) {
+		case xml.CharData:
+			if len(bytes.TrimSpace(value)) == 0 {
+				continue
+			}
+		case xml.Comment, xml.ProcInst:
+			continue
+		}
+		return time.Time{}, nil, nil, errors.New("exactly one JUnit XML root is required")
 	}
 	if suites.XMLName.Local != "testsuites" {
 		return time.Time{}, nil, nil, errors.New("JUnit root must be testsuites")
@@ -998,6 +1047,7 @@ func inspectJUnit(data []byte) (time.Time, map[string]int, []junitProperty, erro
 	properties := append([]junitProperty(nil), suites.Properties...)
 	tests, failures, errorsCount := suites.Tests, suites.Failures, suites.Errors
 	timestamp := suites.Timestamp
+	childTests, childFailures, childErrors := 0, 0, 0
 	if suites.Tests < 0 || suites.Failures < 0 || suites.Errors < 0 || suites.Failures > suites.Tests || suites.Errors > suites.Tests-suites.Failures {
 		return time.Time{}, nil, nil, errors.New("JUnit test and failure counts are invalid")
 	}
@@ -1008,19 +1058,35 @@ func inspectJUnit(data []byte) (time.Time, map[string]int, []junitProperty, erro
 		if suite.Failures > suite.Tests || suite.Errors > suite.Tests-suite.Failures {
 			return time.Time{}, nil, nil, errors.New("JUnit test and failure counts are invalid")
 		}
-		if suites.Tests == 0 {
-			nextTests, testsOK := checkedJUnitAdd(tests, suite.Tests)
-			nextFailures, failuresOK := checkedJUnitAdd(failures, suite.Failures)
-			nextErrors, errorsOK := checkedJUnitAdd(errorsCount, suite.Errors)
-			if !testsOK || !failuresOK || !errorsOK {
-				return time.Time{}, nil, nil, errors.New("JUnit count overflow while aggregating suites")
+		actualFailures, actualErrors := 0, 0
+		for _, testCase := range suite.TestCases {
+			if len(testCase.Failures) > 0 {
+				actualFailures++
 			}
-			tests, failures, errorsCount = nextTests, nextFailures, nextErrors
+			if len(testCase.Errors) > 0 {
+				actualErrors++
+			}
 		}
+		if len(suite.TestCases) > suite.Tests || actualFailures > suite.Failures || actualErrors > suite.Errors {
+			return time.Time{}, nil, nil, errors.New("JUnit suite totals are invalid: they understate testcase results")
+		}
+		nextTests, testsOK := checkedJUnitAdd(childTests, suite.Tests)
+		nextFailures, failuresOK := checkedJUnitAdd(childFailures, suite.Failures)
+		nextErrors, errorsOK := checkedJUnitAdd(childErrors, suite.Errors)
+		if !testsOK || !failuresOK || !errorsOK {
+			return time.Time{}, nil, nil, errors.New("JUnit count overflow while aggregating suites")
+		}
+		childTests, childFailures, childErrors = nextTests, nextFailures, nextErrors
+
 		properties = append(properties, suite.Properties...)
 		if timestamp == "" {
 			timestamp = suite.Timestamp
 		}
+	}
+	if suites.Tests == 0 {
+		tests, failures, errorsCount = childTests, childFailures, childErrors
+	} else if childTests > tests || childFailures > failures || childErrors > errorsCount {
+		return time.Time{}, nil, nil, errors.New("JUnit root totals are invalid: they understate child suite counts")
 	}
 	if tests < 0 || failures < 0 || errorsCount < 0 || failures > tests || errorsCount > tests-failures {
 		return time.Time{}, nil, nil, errors.New("JUnit test and failure counts are invalid")

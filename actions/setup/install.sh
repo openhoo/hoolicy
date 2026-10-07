@@ -2,9 +2,20 @@
 set -euo pipefail
 
 version="$HOOLICY_VERSION"
-if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)([-+][0-9A-Za-z.-]+)?$ ]]; then
+if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
   echo "::error::Hoolicy version must be an unprefixed semantic version."
   exit 2
+fi
+version_without_build="${version%%+*}"
+if [[ "$version_without_build" == *-* ]]; then
+  prerelease="${version_without_build#*-}"
+  IFS=. read -r -a identifiers <<< "$prerelease"
+  for identifier in "${identifiers[@]}"; do
+    if [[ "$identifier" =~ ^0[0-9]+$ ]]; then
+      echo "::error::Numeric prerelease identifiers must not have leading zeros."
+      exit 2
+    fi
+  done
 fi
 
 case "$RUNNER_OS_VALUE" in
@@ -42,6 +53,9 @@ base_url="https://github.com/openhoo/hoolicy/releases/download/v${version}"
 signature_identity="https://github.com/openhoo/hoolicy/.github/workflows/release.yml@refs/heads/main"
 signature_issuer="https://token.actions.githubusercontent.com"
 download_dir="$(mktemp -d "${RUNNER_TEMP}/hoolicy-download.XXXXXXXX")"
+extract_dir=""
+bin_dir=""
+trap 'status=$?; rm -rf "$download_dir"; if [[ -n "$extract_dir" ]]; then rm -rf "$extract_dir"; fi; if [[ "$status" != 0 && -n "$bin_dir" ]]; then rm -rf "$bin_dir"; fi' EXIT
 archive="${download_dir}/${archive_name}"
 checksums="${download_dir}/SHA256SUMS"
 archive_bundle="${archive}.sigstore.json"
@@ -90,6 +104,11 @@ fi
 bin_dir="$(mktemp -d "${RUNNER_TEMP}/hoolicy-bin.XXXXXXXX")"
 cp "$source_binary" "${bin_dir}/${binary_name}"
 chmod +x "${bin_dir}/${binary_name}"
-"${bin_dir}/${binary_name}" version | grep -F "hoolicy ${version}"
+installed_version="$("${bin_dir}/${binary_name}" version)"
+if [[ "$installed_version" != "hoolicy ${version} (commit "*", built "*")" ]]; then
+  echo "::error::Installed binary does not report requested Hoolicy version ${version}."
+  exit 1
+fi
+printf '%s\n' "$installed_version"
 echo "$bin_dir" >> "$GITHUB_PATH"
 echo "version=$version" >> "$GITHUB_OUTPUT"

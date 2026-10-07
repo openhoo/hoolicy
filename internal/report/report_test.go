@@ -628,12 +628,15 @@ func TestTextReportSanitizesControlCharacters(t *testing.T) {
 	rule := sdk.Rule{ID: "demo.rule", Title: "Demo", Remediation: "fix\nnow\x1b[2J", Severity: sdk.SeverityError}
 	finding := sdk.Finding{Message: "failed\nFORGED ERROR\x1b[31m", Location: sdk.Location{Path: "bad\npath", Line: 1, Column: 1}}
 	finding.Finalize(rule)
-	input := &engine.Report{Project: "demo", Findings: []sdk.Finding{finding}, Summary: engine.Summary{Rules: 1, Blocking: 1}}
+	finding.RuleID = "demo.rule\n::error::forged\x1b[2J"
+	finding.Waived = true
+	finding.WaiverID = "review\n::error::forged\x1b[2J"
+	input := &engine.Report{Project: "demo", Findings: []sdk.Finding{finding}, Changes: []engine.Change{{State: "fixed\n::error::forged\x1b[2J", RuleID: finding.RuleID, Fingerprint: "fingerprint\n\x1b[2J", Reason: "change\n::error::forged"}}, Summary: engine.Summary{Rules: 1, Blocking: 1}}
 	var output bytes.Buffer
 	if err := Write(&output, "text", input, false); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(output.String(), "\x1b") || strings.Contains(output.String(), "failed\nFORGED") || strings.Contains(output.String(), "bad\npath") {
+	if strings.Contains(output.String(), "\x1b") || strings.Contains(output.String(), "failed\nFORGED") || strings.Contains(output.String(), "bad\npath") || strings.Contains(output.String(), "\n::error::") {
 		t.Fatalf("control characters reached text report: %q", output.String())
 	}
 }
@@ -722,5 +725,36 @@ func TestHistoricalWaiverFindingsAreOrderIndependent(t *testing.T) {
 	}
 	if err := verifyHistoricalWaiverFindings(findings, []sdk.Finding{duplicate, stale}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReportDiffSanitizesAllUntrustedMetadata(t *testing.T) {
+	t.Parallel()
+	malicious := "value\n::error::forged\x1b[2J"
+	finding := sdk.Finding{RuleID: malicious, Fingerprint: malicious, Message: malicious}
+	diff := Diff{BeforePolicyDigest: malicious, AfterPolicyDigest: "new", Added: []sdk.Finding{finding}, Removed: []sdk.Finding{finding}, Changed: []FindingChange{{Fingerprint: malicious, After: finding}}, Waivers: WaiverDiff{Added: []config.Waiver{{ID: malicious}}, Removed: []config.Waiver{{ID: malicious}}, Renewed: []WaiverRenewal{{ID: malicious}}, ScopeGrown: []WaiverScopeGrowth{{ID: malicious}}, Expired: []config.Waiver{{ID: malicious}}}}
+	var output bytes.Buffer
+	if err := WriteDiff(&output, "text", diff); err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsRune(output.String(), '\x1b') || strings.Contains(output.String(), "\n::error::") {
+		t.Fatalf("unsafe report diff: %q", output.String())
+	}
+}
+
+func TestGitHubSummaryRendersMarkdownAsLiteralData(t *testing.T) {
+	t.Parallel()
+	malicious := "![tracking](https://example.invalid/pixel) [link](https://example.invalid) `code` | cell\n::error::forged\x1b[2J"
+	input := &engine.Report{Findings: []sdk.Finding{{RuleID: malicious, State: sdk.FindingState(malicious), Severity: sdk.Severity(malicious), Message: malicious, Remediation: malicious, Location: sdk.Location{Path: malicious}}}}
+	var output bytes.Buffer
+	if err := Write(&output, "github", input, false); err != nil {
+		t.Fatal(err)
+	}
+	rendered := output.String()
+	if strings.Contains(rendered, "![tracking](") || strings.Contains(rendered, "[link](") || strings.Contains(rendered, "`code`") || strings.ContainsRune(rendered, '\x1b') || strings.Contains(rendered, "\n::error::") {
+		t.Fatalf("unsafe summary: %q", rendered)
+	}
+	if !strings.Contains(rendered, "&#96;code&#96;") {
+		t.Fatalf("code text missing: %q", rendered)
 	}
 }

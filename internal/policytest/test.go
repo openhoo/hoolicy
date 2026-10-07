@@ -385,21 +385,33 @@ func assertFindings(rule sdk.Rule, testCase Case, report *engine.Report) error {
 	if testCase.FindingCount != nil && len(report.Findings) != *testCase.FindingCount {
 		return fmt.Errorf("findingCount is %d, got %d", *testCase.FindingCount, len(report.Findings))
 	}
-	used := make(map[int]bool)
-	for _, expected := range testCase.Expect {
-		matched := -1
+	// Match distinct findings with reassignment: a broad expectation may first
+	// take the only finding that satisfies a later, more specific expectation.
+	matchedBy := make([]int, len(report.Findings))
+	for index := range matchedBy {
+		matchedBy[index] = -1
+	}
+	var match func(int, []bool) bool
+	match = func(expectedIndex int, visited []bool) bool {
+		expected := testCase.Expect[expectedIndex]
 		for index, finding := range report.Findings {
-			if used[index] || !matchesExpected(rule.ID, expected, finding) {
+			if visited[index] || !matchesExpected(rule.ID, expected, finding) {
 				continue
 			}
-			matched = index
-			break
+			visited[index] = true
+			if matchedBy[index] < 0 || match(matchedBy[index], visited) {
+				matchedBy[index] = expectedIndex
+				return true
+			}
 		}
-		if matched < 0 {
+		return false
+	}
+	for index, expected := range testCase.Expect {
+		if !match(index, make([]bool, len(report.Findings))) {
 			return fmt.Errorf("expected finding was not produced: %#v", expected)
 		}
-		used[matched] = true
 	}
+
 	return nil
 }
 

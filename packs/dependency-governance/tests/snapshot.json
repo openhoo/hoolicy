@@ -4,10 +4,47 @@
   "release": "0.1.0",
   "cases": [
     {
+      "name": "approved block Go replacement passes",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
       "name": "approved local workspace edge is not a false positive",
       "ruleId": "dependency-governance.manifests",
       "outcome": "pass",
       "findings": []
+    },
+    {
+      "name": "block and quoted local Go replacements fail",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "dependency-governance.manifests",
+          "severity": "error",
+          "path": "go.mod",
+          "line": 4,
+          "column": 1,
+          "message": "Dependency manifest lacks an authoritative lock, uses unresolved source drift, or declares an unapproved license: example.com/shared uses unresolved local replace ../shared",
+          "key": "replace:example.com/shared",
+          "fingerprint": "6b5b917d3032d7084eeeb99afb86eae1d3d784efd597d6a1694c4b66dfee48c3",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "dependency-governance.manifests",
+          "severity": "error",
+          "path": "go.mod",
+          "line": 5,
+          "column": 1,
+          "message": "Dependency manifest lacks an authoritative lock, uses unresolved source drift, or declares an unapproved license: example.com/tools uses unresolved local replace ./tools with spaces",
+          "key": "replace:example.com/tools",
+          "fingerprint": "46eb6a5cdc5cba2d7f41bb4d405070486cb09b9793463c9fdec490fa77e479aa",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
     },
     {
       "name": "local Go replacement fails",
@@ -138,6 +175,13 @@
           "hasFix": false
         }
       ]
+    },
+    {
+      "name": "unclosed Go replacement block fails closed",
+      "ruleId": "dependency-governance.manifests",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule dependency-governance.manifests: go.mod: unclosed replace block"
     },
     {
       "name": "unrelated npm lock does not satisfy declared pnpm manager",

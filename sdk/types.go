@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -135,7 +136,12 @@ func (f *Finding) Finalize(rule Rule) {
 	f.Fingerprint = hex.EncodeToString(h[:])
 	f.PolicyDigest = RuleDigest(rule)
 	f.FindingDigest = findingDigest(*f)
+	// Only the engine may accept baseline state or verified waivers after
+	// finalization. Rule implementations produce fresh policy violations.
 	f.State = FindingNew
+	f.StateSource = ""
+	f.Waived = false
+	f.WaiverID = ""
 }
 
 // RuleDigest identifies the complete policy decision contract for one rule.
@@ -231,6 +237,15 @@ func (r *Registry) Register(name string, kind RuleKind) error {
 	}
 	if kind == nil {
 		return fmt.Errorf("rule kind implementation is required")
+	}
+	// An interface containing a nil pointer is itself non-nil. Reject it at
+	// registration rather than letting evaluation panic in its worker goroutine.
+	implementation := reflect.ValueOf(kind)
+	switch implementation.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if implementation.IsNil() {
+			return fmt.Errorf("rule kind implementation is required")
+		}
 	}
 	if _, exists := r.kinds[name]; exists {
 		return fmt.Errorf("rule kind %q is already registered", name)

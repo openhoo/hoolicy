@@ -358,6 +358,9 @@ func TestRepositoryPureGoFallbackSupportsUnreadableIndex(t *testing.T) {
 	if err := os.Chmod(filepath.Join(root, ".git", "index"), 0); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.ReadFile(filepath.Join(root, ".git", "index")); err == nil {
+		t.Skip("current user can read files despite restrictive permission bits")
+	}
 	t.Setenv("PATH", "")
 	repo, err := Open(root, Options{})
 	if err != nil {
@@ -552,7 +555,7 @@ func BenchmarkRepositoryMatch(b *testing.B) {
 
 func runGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command := exec.Command("git", append([]string{"-c", "commit.gpgsign=false", "-C", root}, args...)...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)

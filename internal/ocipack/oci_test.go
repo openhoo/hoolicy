@@ -260,3 +260,11 @@ func mustRead(t *testing.T, path string) string {
 	}
 	return string(data)
 }
+
+func TestSanitizedRedactsMultipleCredentialURLs(t *testing.T) {
+	t.Parallel()
+	output := sanitized([]byte("fetch https://first:password@example.com/a and https://second:token@example.com/b"))
+	if strings.Contains(output, "first") || strings.Contains(output, "password") || strings.Contains(output, "second") || strings.Contains(output, "token") || strings.Count(output, "<redacted>@") != 2 {
+		t.Fatalf("unsafe diagnostic: %q", output)
+	}
+}

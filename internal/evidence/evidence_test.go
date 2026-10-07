@@ -264,9 +264,34 @@ func TestJUnitErrorAccounting(t *testing.T) {
 			wantFailures: 0,
 		},
 		{
-			name:         "root totals remain authoritative",
-			body:         `<testsuites tests="1" failures="0" errors="0"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="0" errors="1"/></testsuites>`,
-			wantFailures: 0,
+			name:      "root totals cannot hide child errors",
+			body:      `<testsuites tests="1" failures="0" errors="0"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="0" errors="1"/></testsuites>`,
+			wantError: "invalid",
+		},
+		{
+			name:      "testcase failure cannot hide behind zero totals",
+			body:      `<testsuites tests="1"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1"><testcase><failure/></testcase></testsuite></testsuites>`,
+			wantError: "understate testcase",
+		},
+		{
+			name:      "testcase error cannot hide behind zero totals",
+			body:      `<testsuites tests="1"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1"><testcase><error/></testcase></testsuite></testsuites>`,
+			wantError: "understate testcase",
+		},
+		{
+			name:      "consistent failed testcase enforces threshold",
+			body:      `<testsuites tests="1" failures="1"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1" failures="1"><testcase><failure/></testcase></testsuite></testsuites>`,
+			wantError: "exceed maximum",
+		},
+		{
+			name:      "nested suite cannot hide failures",
+			body:      `<testsuites tests="1"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties><testsuite tests="1"><testsuite tests="1" failures="1"/></testsuite></testsuites>`,
+			wantError: "nested",
+		},
+		{
+			name:      "trailing root rejects",
+			body:      `<testsuites tests="1"><properties><property name="hoolicy.subjectDigest" value="` + subject + `"/></properties></testsuites><testsuites tests="1" failures="1"/>`,
+			wantError: "exactly one",
 		},
 		{
 			name:      "negative root errors reject",

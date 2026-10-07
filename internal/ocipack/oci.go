@@ -445,6 +445,8 @@ func verifiedCosignOutput(output []byte) bool {
 	return true
 }
 
+var credentialURL = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/\s]+@`)
+
 func sanitized(output []byte) string {
 	value := strings.TrimSpace(strings.Map(func(character rune) rune {
 		if character == '\n' {
@@ -463,13 +465,9 @@ func sanitized(output []byte) string {
 		lines = lines[len(lines)-3:]
 	}
 	for index, line := range lines {
-		if at := strings.IndexByte(line, '@'); at >= 0 {
-			if scheme := strings.LastIndex(line[:at], "://"); scheme >= 0 {
-				line = line[:scheme+3] + "<redacted>@" + line[at+1:]
-			}
-		}
-		lines[index] = line
+		lines[index] = credentialURL.ReplaceAllString(line, "${1}<redacted>@")
 	}
+
 	value = strings.Join(lines, " ")
 	runes := []rune(value)
 	if len(runes) > 1024 {

@@ -74,7 +74,7 @@ func writeJSON(writer io.Writer, report *engine.Report) error {
 
 func writeText(writer io.Writer, report *engine.Report, color bool) error {
 	for _, item := range report.Findings {
-		label := strings.ToUpper(string(item.Severity))
+		label := singleLine(strings.ToUpper(string(item.Severity)))
 		if item.Waived {
 			label = "WAIVED"
 		} else if item.State == sdk.FindingExisting {
@@ -90,14 +90,14 @@ func writeText(writer io.Writer, report *engine.Report, color bool) error {
 		if location != "" {
 			location += " "
 		}
-		fmt.Fprintf(writer, "%s %s%s %s\n", label, location, item.RuleID, singleLine(item.Message))
+		fmt.Fprintf(writer, "%s %s%s %s\n", label, location, singleLine(item.RuleID), singleLine(item.Message))
 		fmt.Fprintf(writer, "  Fix: %s\n", singleLine(item.Remediation))
 		if item.Waived {
-			fmt.Fprintf(writer, "  Waiver: %s\n", item.WaiverID)
+			fmt.Fprintf(writer, "  Waiver: %s\n", singleLine(item.WaiverID))
 		}
 	}
 	for _, change := range report.Changes {
-		fmt.Fprintf(writer, "%s %s %s (%s)\n", strings.ToUpper(change.State), change.RuleID, shortFingerprint(change.Fingerprint), singleLine(change.Reason))
+		fmt.Fprintf(writer, "%s %s %s (%s)\n", singleLine(strings.ToUpper(change.State)), singleLine(change.RuleID), singleLine(shortFingerprint(change.Fingerprint)), singleLine(change.Reason))
 	}
 	fmt.Fprintf(writer, "\n%d rules, %d findings: %d new, %d existing, %d waived, %d fixed, %d stale, %d blocking\n", report.Summary.Rules, len(report.Findings), report.Summary.New, report.Summary.Existing, report.Summary.Waived, report.Summary.Fixed, report.Summary.Stale, report.Summary.Blocking)
 	return nil
@@ -532,8 +532,11 @@ func writeGitHubSummary(writer io.Writer, input *engine.Report) error {
 func markdownCell(value string) string {
 	value = singleLine(value)
 	value = html.EscapeString(value)
-	value = strings.ReplaceAll(value, "|", "\\|")
-	value = strings.ReplaceAll(value, "`", "\\`")
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, "`", "&#96;")
+	for _, character := range []string{"|", "[", "]", "(", ")", "!", "*", "_", "~"} {
+		value = strings.ReplaceAll(value, character, `\`+character)
+	}
 	return value
 }
 
@@ -1559,31 +1562,31 @@ func WriteDiff(writer io.Writer, format string, diff Diff) (resultErr error) {
 		return fmt.Errorf("unknown report diff format %q", format)
 	}
 	if diff.BeforePolicyDigest != diff.AfterPolicyDigest {
-		fmt.Fprintf(writer, "POLICY %s -> %s\n", diff.BeforePolicyDigest, diff.AfterPolicyDigest)
+		fmt.Fprintf(writer, "POLICY %s -> %s\n", singleLine(diff.BeforePolicyDigest), singleLine(diff.AfterPolicyDigest))
 	}
 	for _, finding := range diff.Added {
-		fmt.Fprintf(writer, "ADDED %s %s %s\n", finding.RuleID, shortFingerprint(finding.Fingerprint), singleLine(finding.Message))
+		fmt.Fprintf(writer, "ADDED %s %s %s\n", singleLine(finding.RuleID), singleLine(shortFingerprint(finding.Fingerprint)), singleLine(finding.Message))
 	}
 	for _, finding := range diff.Removed {
-		fmt.Fprintf(writer, "REMOVED %s %s %s\n", finding.RuleID, shortFingerprint(finding.Fingerprint), singleLine(finding.Message))
+		fmt.Fprintf(writer, "REMOVED %s %s %s\n", singleLine(finding.RuleID), singleLine(shortFingerprint(finding.Fingerprint)), singleLine(finding.Message))
 	}
 	for _, change := range diff.Changed {
-		fmt.Fprintf(writer, "CHANGED %s %s\n", change.After.RuleID, shortFingerprint(change.Fingerprint))
+		fmt.Fprintf(writer, "CHANGED %s %s\n", singleLine(change.After.RuleID), singleLine(shortFingerprint(change.Fingerprint)))
 	}
 	for _, waiver := range diff.Waivers.Added {
-		fmt.Fprintf(writer, "WAIVER ADDED %s\n", waiver.ID)
+		fmt.Fprintf(writer, "WAIVER ADDED %s\n", singleLine(waiver.ID))
 	}
 	for _, waiver := range diff.Waivers.Removed {
-		fmt.Fprintf(writer, "WAIVER REMOVED %s\n", waiver.ID)
+		fmt.Fprintf(writer, "WAIVER REMOVED %s\n", singleLine(waiver.ID))
 	}
 	for _, renewal := range diff.Waivers.Renewed {
-		fmt.Fprintf(writer, "WAIVER RENEWED %s %s -> %s\n", renewal.ID, renewal.BeforeExpires.Time.Format("2006-01-02"), renewal.AfterExpires.Time.Format("2006-01-02"))
+		fmt.Fprintf(writer, "WAIVER RENEWED %s %s -> %s\n", singleLine(renewal.ID), renewal.BeforeExpires.Time.Format("2006-01-02"), renewal.AfterExpires.Time.Format("2006-01-02"))
 	}
 	for _, growth := range diff.Waivers.ScopeGrown {
-		fmt.Fprintf(writer, "WAIVER SCOPE-GROWN %s +%d fingerprints +%d paths\n", growth.ID, len(growth.AddedFingerprints), len(growth.AddedPaths))
+		fmt.Fprintf(writer, "WAIVER SCOPE-GROWN %s +%d fingerprints +%d paths\n", singleLine(growth.ID), len(growth.AddedFingerprints), len(growth.AddedPaths))
 	}
 	for _, waiver := range diff.Waivers.Expired {
-		fmt.Fprintf(writer, "WAIVER EXPIRED %s\n", waiver.ID)
+		fmt.Fprintf(writer, "WAIVER EXPIRED %s\n", singleLine(waiver.ID))
 	}
 	fmt.Fprintf(writer, "\n%d added, %d removed, %d changed; %d waiver changes\n", len(diff.Added), len(diff.Removed), len(diff.Changed), len(diff.Waivers.Added)+len(diff.Waivers.Removed)+len(diff.Waivers.Renewed)+len(diff.Waivers.ScopeGrown)+len(diff.Waivers.Expired))
 	return nil

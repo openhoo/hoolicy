@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openhoo/hoolicy/internal/engine"
 	"github.com/openhoo/hoolicy/internal/rules"
 	"github.com/openhoo/hoolicy/sdk"
 )
@@ -207,5 +208,25 @@ func writePolicyTestFile(t *testing.T, path, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExpectedFindingsDoNotDependOnExpectationOrder(t *testing.T) {
+	t.Parallel()
+	rule := sdk.Rule{ID: "demo.rule"}
+	report := &engine.Report{FailOn: sdk.SeverityError, Findings: []sdk.Finding{
+		{RuleID: rule.ID, Severity: sdk.SeverityError, Key: "specific"},
+		{RuleID: rule.ID, Severity: sdk.SeverityError, Key: "other"},
+	}}
+	for _, expected := range [][]ExpectedFinding{
+		{{}, {Key: "specific"}},
+		{{Key: "specific"}, {}},
+	} {
+		if err := assertFindings(rule, Case{Outcome: "fail", Expect: expected}, report); err != nil {
+			t.Fatalf("valid distinct expectations rejected: %v", err)
+		}
+	}
+	if err := assertFindings(rule, Case{Outcome: "fail", Expect: []ExpectedFinding{{Key: "specific"}, {Key: "specific"}}}, report); err == nil {
+		t.Fatal("one finding matched two expectations")
 	}
 }
