@@ -14,7 +14,7 @@ compatibilityNotes: >-
   exclusion. Requires Hoolicy with structured.cel object-list results, pack parameters, and the CEL lists extension.
 compatibility:
   config: '>=1 <2'
-  hoolicy: '>=0.5.1-0 <2.0.0'
+  hoolicy: '>=0.5.1-0 <0.5.1 || >=0.6.0 <2.0.0'
 parameters:
   manifest_globs:
     type: string_list
