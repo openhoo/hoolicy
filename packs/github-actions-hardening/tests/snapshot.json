@@ -1,0 +1,544 @@
+{
+  "version": 1,
+  "pack": "github-actions-hardening",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "pinning composite action with sha local and digest refs passes",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "pinning docker image tag in docker action fails",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "message": "An action or reusable workflow reference is not pinned to a full commit SHA or sha256 digest",
+          "key": "cel",
+          "fingerprint": "02d5f96daa77f4a67a29d513eb541063862ea4208e6c665dbc860975f7d50230",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pinning docker step without digest fails",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "message": "An action or reusable workflow reference is not pinned to a full commit SHA or sha256 digest",
+          "key": "cel",
+          "fingerprint": "02d5f96daa77f4a67a29d513eb541063862ea4208e6c665dbc860975f7d50230",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pinning excluded vendored action passes",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "pinning local dockerfile and digest docker action pass",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "pinning malformed action fails closed",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule github-actions-hardening.action-pinning: action.yml: yaml: line 1: did not find expected ',' or ']'"
+    },
+    {
+      "name": "pinning selected workflow branch reusable call fails",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "message": "An action or reusable workflow reference is not pinned to a full commit SHA or sha256 digest",
+          "key": "cel",
+          "fingerprint": "02d5f96daa77f4a67a29d513eb541063862ea4208e6c665dbc860975f7d50230",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pinning selected workflow expression ref fails",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "message": "An action or reusable workflow reference is not pinned to a full commit SHA or sha256 digest",
+          "key": "cel",
+          "fingerprint": "02d5f96daa77f4a67a29d513eb541063862ea4208e6c665dbc860975f7d50230",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pinning selected workflows pass with sha matrix and local reusable calls",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "pinning short sha in nested action fails",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "message": "An action or reusable workflow reference is not pinned to a full commit SHA or sha256 digest",
+          "key": "cel",
+          "fingerprint": "02d5f96daa77f4a67a29d513eb541063862ea4208e6c665dbc860975f7d50230",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pinning tag in composite action fails",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "message": "An action or reusable workflow reference is not pinned to a full commit SHA or sha256 digest",
+          "key": "cel",
+          "fingerprint": "02d5f96daa77f4a67a29d513eb541063862ea4208e6c665dbc860975f7d50230",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pinning uppercase sha fails",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "message": "An action or reusable workflow reference is not pinned to a full commit SHA or sha256 digest",
+          "key": "cel",
+          "fingerprint": "02d5f96daa77f4a67a29d513eb541063862ea4208e6c665dbc860975f7d50230",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pinning workflows are out of default scope",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "checkout persist credentials expression fails",
+      "ruleId": "github-actions-hardening.checkout-persist-credentials",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.checkout-persist-credentials",
+          "severity": "warning",
+          "message": "An actions/checkout step does not set persist-credentials to false",
+          "key": "cel",
+          "fingerprint": "599669a21488189448d2a0c3943e0de6b44bbbd82cb0c2b426faecd1179cd290",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "checkout persist credentials true in matrix job fails",
+      "ruleId": "github-actions-hardening.checkout-persist-credentials",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.checkout-persist-credentials",
+          "severity": "warning",
+          "message": "An actions/checkout step does not set persist-credentials to false",
+          "key": "cel",
+          "fingerprint": "599669a21488189448d2a0c3943e0de6b44bbbd82cb0c2b426faecd1179cd290",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "checkout warning severity is advisory",
+      "ruleId": "github-actions-hardening.checkout-persist-credentials",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.checkout-persist-credentials",
+          "severity": "warning",
+          "message": "An actions/checkout step does not set persist-credentials to false",
+          "key": "cel",
+          "fingerprint": "599669a21488189448d2a0c3943e0de6b44bbbd82cb0c2b426faecd1179cd290",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "checkout without with block fails",
+      "ruleId": "github-actions-hardening.checkout-persist-credentials",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.checkout-persist-credentials",
+          "severity": "warning",
+          "message": "An actions/checkout step does not set persist-credentials to false",
+          "key": "cel",
+          "fingerprint": "599669a21488189448d2a0c3943e0de6b44bbbd82cb0c2b426faecd1179cd290",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "persist credentials false in workflow and composite passes",
+      "ruleId": "github-actions-hardening.checkout-persist-credentials",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "injection bracket event access fails",
+      "ruleId": "github-actions-hardening.expression-injection",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.expression-injection",
+          "severity": "error",
+          "message": "A composite run script or github-script input interpolates untrusted github.event or github.head_ref data",
+          "key": "cel",
+          "fingerprint": "4869841b924ee6d61adc87f8b398c4b454cddba33aef8d78a939c88b8ccb6311",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "injection composite run head ref inside function fails",
+      "ruleId": "github-actions-hardening.expression-injection",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.expression-injection",
+          "severity": "error",
+          "message": "A composite run script or github-script input interpolates untrusted github.event or github.head_ref data",
+          "key": "cel",
+          "fingerprint": "4869841b924ee6d61adc87f8b398c4b454cddba33aef8d78a939c88b8ccb6311",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "injection composite run interpolating event title fails",
+      "ruleId": "github-actions-hardening.expression-injection",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.expression-injection",
+          "severity": "error",
+          "message": "A composite run script or github-script input interpolates untrusted github.event or github.head_ref data",
+          "key": "cel",
+          "fingerprint": "4869841b924ee6d61adc87f8b398c4b454cddba33aef8d78a939c88b8ccb6311",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "injection safe env handling passes",
+      "ruleId": "github-actions-hardening.expression-injection",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "injection similarly named contexts pass",
+      "ruleId": "github-actions-hardening.expression-injection",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "injection workflow github-script interpolation fails",
+      "ruleId": "github-actions-hardening.expression-injection",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.expression-injection",
+          "severity": "error",
+          "message": "A composite run script or github-script input interpolates untrusted github.event or github.head_ref data",
+          "key": "cel",
+          "fingerprint": "4869841b924ee6d61adc87f8b398c4b454cddba33aef8d78a939c88b8ccb6311",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "injection workflow run scripts are left to ci-workflow-security",
+      "ruleId": "github-actions-hardening.expression-injection",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "boolean true trigger key from YAML 1.1 tooling is still recognized",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "message": "A pull_request_target or workflow_run workflow checks out untrusted pull-request code",
+          "key": "cel",
+          "fingerprint": "f13dc9fc369ceb7bc91ea52d9a51ffbcb3bcc954b7582fea82b596a721204b94",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged checkout of base ref passes",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "pull request target fork repository input fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "message": "A pull_request_target or workflow_run workflow checks out untrusted pull-request code",
+          "key": "cel",
+          "fingerprint": "f13dc9fc369ceb7bc91ea52d9a51ffbcb3bcc954b7582fea82b596a721204b94",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pull request target list trigger with head ref in second job fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "message": "A pull_request_target or workflow_run workflow checks out untrusted pull-request code",
+          "key": "cel",
+          "fingerprint": "f13dc9fc369ceb7bc91ea52d9a51ffbcb3bcc954b7582fea82b596a721204b94",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "pull request target refs pull merge ref fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "message": "A pull_request_target or workflow_run workflow checks out untrusted pull-request code",
+          "key": "cel",
+          "fingerprint": "f13dc9fc369ceb7bc91ea52d9a51ffbcb3bcc954b7582fea82b596a721204b94",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "quoted on key with pull request target fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "message": "A pull_request_target or workflow_run workflow checks out untrusted pull-request code",
+          "key": "cel",
+          "fingerprint": "f13dc9fc369ceb7bc91ea52d9a51ffbcb3bcc954b7582fea82b596a721204b94",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "unprivileged pull request checkout of head passes",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "workflow run checkout of head sha fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "message": "A pull_request_target or workflow_run workflow checks out untrusted pull-request code",
+          "key": "cel",
+          "fingerprint": "f13dc9fc369ceb7bc91ea52d9a51ffbcb3bcc954b7582fea82b596a721204b94",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "workflow run head checkout guarded by push event job condition passes",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "workflow run head checkout with only a branch filter fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "message": "A pull_request_target or workflow_run workflow checks out untrusted pull-request code",
+          "key": "cel",
+          "fingerprint": "f13dc9fc369ceb7bc91ea52d9a51ffbcb3bcc954b7582fea82b596a721204b94",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "local secrets inherit and explicit remote secrets pass",
+      "ruleId": "github-actions-hardening.reusable-secrets-inherit",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "remote reusable workflow with secrets inherit fails",
+      "ruleId": "github-actions-hardening.reusable-secrets-inherit",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.reusable-secrets-inherit",
+          "severity": "warning",
+          "message": "A job passes secrets inherit to a reusable workflow outside this repository",
+          "key": "cel",
+          "fingerprint": "edbf9b317960d30d3748f6c045e5a306dc1d25e5b261c7efd1bfb60b9c58a39f",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "same organization remote reusable workflow still fails",
+      "ruleId": "github-actions-hardening.reusable-secrets-inherit",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.reusable-secrets-inherit",
+          "severity": "warning",
+          "message": "A job passes secrets inherit to a reusable workflow outside this repository",
+          "key": "cel",
+          "fingerprint": "edbf9b317960d30d3748f6c045e5a306dc1d25e5b261c7efd1bfb60b9c58a39f",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "each workflow without permissions is reported by path",
+      "ruleId": "github-actions-hardening.top-level-permissions",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.top-level-permissions",
+          "severity": "error",
+          "path": ".github/workflows/b.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Workflow token permissions are implicit: Field \"/permissions\" is required",
+          "key": "document:0:/permissions:is required",
+          "fingerprint": "f9fae3959eeffe1d9645bc3239608a45fb7b9746e44410972e69283e191c1a2a",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "github-actions-hardening.top-level-permissions",
+          "severity": "error",
+          "path": ".github/workflows/c.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Workflow token permissions are implicit: Field \"/permissions\" is required",
+          "key": "document:0:/permissions:is required",
+          "fingerprint": "10f35b68849e20c912dc984b79d936fa9df3c30b499f7d8dd879b3c15ef3a015",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "job only permissions fail top level requirement",
+      "ruleId": "github-actions-hardening.top-level-permissions",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.top-level-permissions",
+          "severity": "error",
+          "path": ".github/workflows/release.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Workflow token permissions are implicit: Field \"/permissions\" is required",
+          "key": "document:0:/permissions:is required",
+          "fingerprint": "36d15c35a1589765a9b55ffb1b634b97ee36f5af8d7972b24ff67a58e6ab48df",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "nested workflow directory is not selected",
+      "ruleId": "github-actions-hardening.top-level-permissions",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "no workflows passes",
+      "ruleId": "github-actions-hardening.top-level-permissions",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "top level permissions declared passes",
+      "ruleId": "github-actions-hardening.top-level-permissions",
+      "outcome": "pass",
+      "findings": []
+    }
+  ]
+}

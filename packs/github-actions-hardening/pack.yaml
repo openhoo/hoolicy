@@ -1,0 +1,214 @@
+version: 1
+name: github-actions-hardening
+release: 0.1.0
+description: Structured GitHub Actions hardening checks that complement ci-workflow-security.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: >-
+  Rules use structured.cel and structured.fields only. Hoolicy 0.5 CEL rules return one repository-level finding
+  per rule without a file path, so a waiver or baseline covers every occurrence of that rule; the permissions rule
+  reports each workflow path. Detection inspects literal workflow and composite-action structure: values computed
+  through matrix, env, or input expressions, git or gh commands in run scripts, and string literals inside
+  expressions are not interpreted. The privileged-checkout same-repository guard is matched literally in the job
+  if condition and is not proven to be unbypassable by other OR branches. Third-party pinning has no trusted-owner tag allowlist because pack parameters
+  cannot be interpolated into CEL expressions. Graduation awaits reviewed measurements on unrelated repositories.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.5.0-0 <0.5.0 || >=0.5.0 <2.0.0'
+parameters:
+  workflow_globs:
+    type: string_list
+    description: GitHub Actions workflow files inspected by workflow rules.
+    default: ['.github/workflows/*.{yml,yaml}']
+  action_metadata_globs:
+    type: string_list
+    description: Composite and Docker action metadata files inspected alongside workflows.
+    default: ['**/action.{yml,yaml}']
+  pinning_globs:
+    type: string_list
+    description: Files whose action references must be immutable; add workflow globs when ci-workflow-security.github is not enabled.
+    default: ['**/action.{yml,yaml}']
+  excluded_paths:
+    type: string_list
+    description: Reviewed narrow exclusions such as vendored policy or dependency trees.
+    default: ['.hoolicy/vendor/**', '**/node_modules/**']
+rules:
+  - id: github-actions-hardening.action-pinning
+    title: Action references are immutable
+    description: >-
+      Requires every non-local action reference in composite action steps, Docker action images, and any selected
+      workflow steps or reusable workflow calls to use a full 40-character commit SHA or a docker sha256 digest.
+    rationale: Tags and branches are mutable, so a moved reference silently changes code executed with workflow credentials.
+    remediation: >-
+      Replace tag or branch references with the reviewed full commit SHA (keep the tag as a trailing comment), use
+      docker://image@sha256 digests, or reference local ./ actions.
+    severity: error
+    kind: structured.cel
+    files: ['{{ pinning_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: SLSA, id: build-l2}]
+    spec:
+      format: yaml
+      costLimit: 500000
+      message: An action or reusable workflow reference is not pinned to a full commit SHA or sha256 digest
+      expression: >-
+        documents.all(d, type(d.data) != map || (
+          (!('jobs' in d.data) || type(d.data.jobs) != map || d.data.jobs.all(j,
+            type(d.data.jobs[j]) != map
+            || ((!('uses' in d.data.jobs[j]) || type(d.data.jobs[j].uses) == string && (
+                  d.data.jobs[j].uses.startsWith('./')
+                  || d.data.jobs[j].uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$")))
+              && (!('steps' in d.data.jobs[j]) || type(d.data.jobs[j].steps) != list || d.data.jobs[j].steps.all(s,
+                type(s) != map || !('uses' in s) || type(s.uses) == string && (
+                  s.uses.startsWith('./')
+                  || s.uses.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$")
+                  || s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$")))))))
+          && (!('runs' in d.data) || type(d.data.runs) != map || (
+            (!('image' in d.data.runs) || type(d.data.runs.image) == string && (
+              !d.data.runs.image.startsWith('docker://')
+              || d.data.runs.image.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$")))
+            && (!('steps' in d.data.runs) || type(d.data.runs.steps) != list || d.data.runs.steps.all(s,
+              type(s) != map || !('uses' in s) || type(s.uses) == string && (
+                s.uses.startsWith('./')
+                || s.uses.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$")
+                || s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$"))))))))
+  - id: github-actions-hardening.expression-injection
+    title: Untrusted event data is not interpolated into scripts
+    description: >-
+      Rejects github.event and github.head_ref expressions interpolated into composite action run scripts and into
+      actions/github-script script inputs in workflows or composite actions.
+    rationale: >-
+      Expression interpolation happens before the script runs, so attacker-controlled titles, branch names, or
+      bodies become shell or JavaScript code executed with the job token.
+    remediation: >-
+      Pass the value through an env entry and read it as a quoted shell variable or process.env value instead of
+      interpolating it into the script text.
+    severity: error
+    kind: structured.cel
+    files: ['{{ workflow_globs }}', '{{ action_metadata_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    spec:
+      format: yaml
+      costLimit: 500000
+      message: A composite run script or github-script input interpolates untrusted github.event or github.head_ref data
+      expression: >-
+        documents.all(d, type(d.data) != map || (
+          (!('jobs' in d.data) || type(d.data.jobs) != map || d.data.jobs.all(j,
+            type(d.data.jobs[j]) != map || !('steps' in d.data.jobs[j]) || type(d.data.jobs[j].steps) != list
+            || d.data.jobs[j].steps.all(s,
+              type(s) != map || !('uses' in s) || type(s.uses) != string || !s.uses.startsWith('actions/github-script@')
+              || !('with' in s) || type(s.with) != map || !('script' in s.with) || type(s.with.script) != string
+              || !s.with.script.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])"))))
+          && (!('runs' in d.data) || type(d.data.runs) != map || !('steps' in d.data.runs) || type(d.data.runs.steps) != list
+            || d.data.runs.steps.all(s,
+              type(s) != map || (
+                (!('run' in s) || type(s.run) != string
+                  || !s.run.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])"))
+                && (!('uses' in s) || type(s.uses) != string || !s.uses.startsWith('actions/github-script@')
+                  || !('with' in s) || type(s.with) != map || !('script' in s.with) || type(s.with.script) != string
+                  || !s.with.script.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")))))))
+  - id: github-actions-hardening.privileged-checkout
+    title: Privileged triggers do not check out untrusted pull-request code
+    description: >-
+      In workflows triggered by pull_request_target or workflow_run, rejects actions/checkout steps whose ref or
+      repository input selects the pull-request head, the workflow_run head, or a refs/pull/ ref. Jobs whose if
+      condition literally compares workflow_run.event to 'push' or the head repository full_name to
+      github.repository are treated as same-repository guarded.
+    rationale: >-
+      These triggers run with base-repository secrets and a write-capable token; building or executing fork code in
+      that context lets a pull request steal credentials or tamper with releases.
+    remediation: >-
+      Check out only the trusted base ref in privileged workflows, or move untrusted builds to an unprivileged
+      pull_request workflow and exchange data as inert artifacts.
+    severity: error
+    kind: structured.cel
+    files: ['{{ workflow_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    spec:
+      format: yaml
+      costLimit: 500000
+      message: A pull_request_target or workflow_run workflow checks out untrusted pull-request code
+      expression: >-
+        documents.all(d, type(d.data) != map || (
+          !['on', 'true'].exists(k, k in d.data && (
+            d.data[k] == 'pull_request_target' || d.data[k] == 'workflow_run'
+            || type(d.data[k]) == list && ('pull_request_target' in d.data[k] || 'workflow_run' in d.data[k])
+            || type(d.data[k]) == map && ('pull_request_target' in d.data[k] || 'workflow_run' in d.data[k])))
+          || !('jobs' in d.data) || type(d.data.jobs) != map || d.data.jobs.all(j,
+            type(d.data.jobs[j]) != map || !('steps' in d.data.jobs[j]) || type(d.data.jobs[j].steps) != list
+            || 'if' in d.data.jobs[j] && type(d.data.jobs[j]['if']) == string
+              && d.data.jobs[j]['if'].matches(r"github\s*\.\s*event\s*\.\s*(?:workflow_run\s*\.\s*(?:event\s*==\s*'push'|head_repository\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)|pull_request\s*\.\s*head\s*\.\s*repo\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)")
+            || d.data.jobs[j].steps.all(s,
+              type(s) != map || !('uses' in s) || type(s.uses) != string || !s.uses.startsWith('actions/checkout@')
+              || !('with' in s) || type(s.with) != map
+              || ['ref', 'repository'].all(input, !(input in s.with) || type(s.with[input]) != string
+                || !s.with[input].matches(r"github\s*\.\s*(?:head_ref\b|event\s*\.\s*(?:pull_request\s*\.\s*(?:head\b|merge_commit_sha\b)|workflow_run\s*\.\s*head_(?:sha|branch|repository|commit)\b))|refs/pull/"))))))
+  - id: github-actions-hardening.checkout-persist-credentials
+    title: Checkout does not persist the job token
+    description: Requires every actions/checkout step in workflows and composite actions to set persist-credentials to false.
+    rationale: >-
+      By default actions/checkout writes the job token into .git/config, where later steps, uploaded artifacts, or
+      compromised tools can read and reuse it.
+    remediation: >-
+      Add with: persist-credentials: false to the checkout step and pass a scoped token explicitly only to the step
+      that needs to push.
+    severity: warning
+    kind: structured.cel
+    files: ['{{ workflow_globs }}', '{{ action_metadata_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    spec:
+      format: yaml
+      costLimit: 500000
+      message: An actions/checkout step does not set persist-credentials to false
+      expression: >-
+        documents.all(d, type(d.data) != map || (
+          (!('jobs' in d.data) || type(d.data.jobs) != map || d.data.jobs.all(j,
+            type(d.data.jobs[j]) != map || !('steps' in d.data.jobs[j]) || type(d.data.jobs[j].steps) != list
+            || d.data.jobs[j].steps.all(s,
+              type(s) != map || !('uses' in s) || type(s.uses) != string || !s.uses.startsWith('actions/checkout@')
+              || 'with' in s && type(s.with) == map && 'persist-credentials' in s.with
+                && (s.with['persist-credentials'] == false || s.with['persist-credentials'] == 'false'))))
+          && (!('runs' in d.data) || type(d.data.runs) != map || !('steps' in d.data.runs) || type(d.data.runs.steps) != list
+            || d.data.runs.steps.all(s,
+              type(s) != map || !('uses' in s) || type(s.uses) != string || !s.uses.startsWith('actions/checkout@')
+              || 'with' in s && type(s.with) == map && 'persist-credentials' in s.with
+                && (s.with['persist-credentials'] == false || s.with['persist-credentials'] == 'false')))))
+  - id: github-actions-hardening.top-level-permissions
+    title: Workflows declare top-level token permissions
+    description: Requires each selected workflow to declare a top-level permissions key.
+    rationale: >-
+      Without an explicit declaration the job token inherits repository or organization defaults, which may grant
+      write access to contents, packages, and pull requests.
+    remediation: >-
+      Add a top-level permissions block (for example permissions: contents: read) and widen individual jobs only
+      where a reviewed step needs it.
+    severity: error
+    kind: structured.fields
+    files: ['{{ workflow_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    spec:
+      format: yaml
+      allowNoFiles: true
+      message: Workflow token permissions are implicit
+      fields:
+        - pointer: /permissions
+          required: true
+  - id: github-actions-hardening.reusable-secrets-inherit
+    title: Remote reusable workflows do not inherit all secrets
+    description: Warns when a job calls a non-local reusable workflow with secrets set to inherit.
+    rationale: secrets inherit hands every repository and organization secret to code maintained outside this repository.
+    remediation: Pass only the named secrets the called workflow declares under on.workflow_call.secrets.
+    severity: warning
+    kind: structured.cel
+    files: ['{{ workflow_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    spec:
+      format: yaml
+      costLimit: 500000
+      message: A job passes secrets inherit to a reusable workflow outside this repository
+      expression: >-
+        documents.all(d, type(d.data) != map || (
+          !('jobs' in d.data) || type(d.data.jobs) != map || d.data.jobs.all(j,
+            type(d.data.jobs[j]) != map || !('uses' in d.data.jobs[j]) || type(d.data.jobs[j].uses) != string
+            || d.data.jobs[j].uses.startsWith('./') || !('secrets' in d.data.jobs[j])
+            || d.data.jobs[j].secrets != 'inherit')))
