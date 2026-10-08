@@ -66,6 +66,12 @@ type Rule struct {
 	Spec         map[string]any `json:"spec,omitempty" yaml:"spec,omitempty"`
 	Pack         string         `json:"pack,omitempty" yaml:"-"`
 	PackVersion  string         `json:"packVersion,omitempty" yaml:"-"`
+	// PackParameters holds the pack's checked parameter values (defaults
+	// plus the project's with: values) for rule kinds that read them at
+	// evaluation time, currently structured.cel. It is set only by pack
+	// instantiation, never decoded from policy YAML, and is part of
+	// RuleDigest, so changing a value changes the rule's policy identity.
+	PackParameters map[string]any `json:"packParameters,omitempty" yaml:"-"`
 }
 
 type Location struct {

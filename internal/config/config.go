@@ -814,9 +814,40 @@ func (p *Pack) Instantiate(values map[string]any) ([]sdk.Rule, error) {
 		}
 		rule.Pack = p.Name
 		rule.PackVersion = p.Release
+		if packParameterKinds[rule.Kind] {
+			rule.PackParameters = copyPackParameters(parameters)
+		}
 		rules = append(rules, rule)
 	}
 	return rules, nil
+}
+
+// packParameterKinds lists rule kinds that receive the pack parameter map at
+// evaluation time. The map is part of the rule digest, so attaching it only
+// where it is consumed keeps other pack rules' policy identity, and thus
+// existing baselines, unchanged when an unrelated parameter changes.
+var packParameterKinds = map[string]bool{"structured.cel": true}
+
+// copyPackParameters returns an independent copy of checked parameter values
+// so rules cannot share or mutate each other's maps. String lists become
+// []any for a uniform CEL list representation.
+func copyPackParameters(parameters map[string]any) map[string]any {
+	result := make(map[string]any, len(parameters))
+	for name, value := range parameters {
+		switch current := value.(type) {
+		case []string:
+			list := make([]any, len(current))
+			for index, entry := range current {
+				list[index] = entry
+			}
+			result[name] = list
+		case []any:
+			result[name] = append([]any{}, current...)
+		default:
+			result[name] = current
+		}
+	}
+	return result
 }
 
 func sortedMapKeys[V any](values map[string]V) []string {

@@ -97,6 +97,7 @@ func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Ru
 		"git":   map[string]any{"branch": git.Branch, "commit": git.Commit, "dirty": git.Dirty, "mergeRequestTitle": git.MergeRequestTitle},
 		"files": fileValues, "documents": documents, "items": documents,
 		"params": input.Parameters, "now": input.Now,
+		"pack": packParameters(rule),
 	}
 	result, details, err := program.ContextEval(ctx, variables)
 	if err != nil {
@@ -124,6 +125,16 @@ func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Ru
 		findings = append(findings, finding(rule, violation.message, violation.path, violation.key, violation.line, violation.column))
 	}
 	return findings, nil
+}
+
+// packParameters exposes the rule's own pack parameters. It is deliberately
+// separate from params so a project parameter can never shadow or redefine a
+// pack's reviewed input. Rules outside packs get an empty map.
+func packParameters(rule sdk.Rule) map[string]any {
+	if rule.PackParameters == nil {
+		return map[string]any{}
+	}
+	return rule.PackParameters
 }
 
 type celViolationFields struct {
@@ -196,6 +207,7 @@ func newCEL() (CEL, error) {
 		cel.Variable("files", cel.ListType(cel.DynType)), cel.Variable("documents", cel.ListType(cel.DynType)),
 		cel.Variable("items", cel.ListType(cel.DynType)), cel.Variable("params", cel.DynType),
 		cel.Variable("now", cel.TimestampType),
+		cel.Variable("pack", cel.MapType(cel.StringType, cel.DynType)),
 	)
 	if err != nil {
 		return CEL{}, err

@@ -45,9 +45,31 @@ Parses JSON, YAML, TOML, XML, dotenv, or INI and evaluates CEL. Variables:
 - `repo`: repository root and project directory name.
 - `git`: branch, commit, dirty state, and merge-request title.
 - `params`: project parameters.
+- `pack`: the enclosing pack's checked parameters, its defaults plus the
+  project's `with:` values, as a string-keyed map. It is separate from
+  `params`, so a project parameter with the same name never shadows a pack
+  value. Rules defined directly in the project see an empty map. Parameter
+  values are part of the rule's policy digest, so changing a `with:` value
+  makes existing baseline entries for that rule stale.
 - `now`: timestamp.
 
-Expression returns `true` for pass, `false` for one finding, or a list of objects with optional `message`, `path`, `key`, `line`, and `column`. Default cost limit is 100,000; maximum is 1,000,000.
+Expression returns `true` for pass, `false` for one finding, or a list of objects with optional `message`, `path`, `key`, `line`, and `column`. Violation fields must have the documented types (strings, or non-negative integers for `line` and `column`), and `path` must be repository-relative; other fields are ignored. Default cost limit is 100,000; maximum is 1,000,000.
+
+Inside a pack, prefer `pack` over whole-value `{{ }}` substitution when an
+expression needs a parameter value:
+
+```yaml
+parameters:
+  minimum_replicas: {type: number, default: 2, description: Replica floor.}
+rules:
+  - id: example.replicas
+    kind: structured.cel
+    files: [deploy/*.json]
+    spec:
+      format: json
+      expression: documents.all(d, d.data.replicas >= pack.minimum_replicas)
+      message: Deployments need the configured replica floor
+```
 
 ```yaml
 kind: structured.cel
@@ -82,7 +104,7 @@ Compares one authoritative JSON pointer against target file pointers. Empty poin
 
 ### `sources.allowed`
 
-Parses npm registry entries, NuGet XML sources, Dockerfile `FROM`, and structured `image` or `repository` values. Supports registry hosts in `registries`, absolute HTTP(S) URLs in `npm` and `nuget`, plus `requireDigest`. Credentials, URL queries, and fragments in allowlists are rejected.
+Parses npm registry entries, NuGet XML sources, Dockerfile `FROM`, and structured `image` or `repository` values. Supports registry hosts in `registries`, absolute HTTP(S) URLs in `npm` and `nuget`, plus `requireDigest`. Credentials, URL queries, and fragments in allowlists are rejected. Scanned YAML may repeat mapping keys, as GitLab CI allows; every occurrence is checked, merge keys and custom tags such as `!reference` are resolved, and malformed YAML still fails closed. Hoolicy's own configuration, pack, and waiver files keep strict duplicate-key rejection.
 
 ### `dependency.governance`
 
