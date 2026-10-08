@@ -358,7 +358,69 @@ func (e *Engine) evaluate(ctx context.Context, project *config.Project, rules []
 	if err := executionContextError(ctx, totalContext); err != nil {
 		return nil, metrics, err
 	}
+	disambiguateFingerprints(findings, rulesByID(rules))
 	return findings, metrics, nil
+}
+
+func rulesByID(rules []sdk.Rule) map[string]sdk.Rule {
+	result := make(map[string]sdk.Rule, len(rules))
+	for _, rule := range rules {
+		result[rule.ID] = rule
+	}
+	return result
+}
+
+// disambiguateFingerprints gives every finding a distinct fingerprint. A rule
+// can report several violations at one location under one key, for example
+// two identical image references in one YAML document. Shared fingerprints
+// would let a single baseline entry or base-revision finding accept every
+// occurrence and would make baseline creation fail. The first occurrence
+// keeps its fingerprint; later ones get an occurrence suffix in their key,
+// assigned in finding-digest order so the result does not depend on rule
+// iteration order.
+func disambiguateFingerprints(findings []sdk.Finding, rules map[string]sdk.Rule) {
+	groups := make(map[string][]int)
+	for index := range findings {
+		groups[findings[index].Fingerprint] = append(groups[findings[index].Fingerprint], index)
+	}
+	taken := make(map[string]bool, len(findings))
+	for fingerprint := range groups {
+		taken[fingerprint] = true
+	}
+	fingerprints := make([]string, 0, len(groups))
+	for fingerprint, members := range groups {
+		if len(members) > 1 {
+			fingerprints = append(fingerprints, fingerprint)
+		}
+	}
+	sort.Strings(fingerprints)
+	for _, fingerprint := range fingerprints {
+		members := groups[fingerprint]
+		sort.SliceStable(members, func(i, j int) bool {
+			left, right := findings[members[i]], findings[members[j]]
+			if left.FindingDigest != right.FindingDigest {
+				return left.FindingDigest < right.FindingDigest
+			}
+			return members[i] < members[j]
+		})
+		occurrence := 1
+		for _, index := range members[1:] {
+			original := findings[index].Key
+			rule, exists := rules[findings[index].RuleID]
+			if !exists {
+				continue
+			}
+			for {
+				occurrence++
+				findings[index].Key = fmt.Sprintf("%s#%d", original, occurrence)
+				findings[index].Finalize(rule)
+				if !taken[findings[index].Fingerprint] {
+					break
+				}
+			}
+			taken[findings[index].Fingerprint] = true
+		}
+	}
 }
 
 func executionContextError(parent, total context.Context) error {

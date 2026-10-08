@@ -195,3 +195,39 @@ func TestPreciseJSONParserParity(t *testing.T) {
 		t.Fatal("private precision mode exposed as document format")
 	}
 }
+
+// Keys with distinct YAML spellings that normalize to one map key made the
+// surviving value depend on map iteration order.
+func TestYAMLRejectsKeysThatCollideAfterNormalization(t *testing.T) {
+	t.Parallel()
+	for _, data := range []string{"1: first\n1.0: second\n", "null: a\n~: b\n", "true: a\nTrue: b\n", "0x10: a\n16: b\n"} {
+		if _, err := Parse(sdk.File{Path: "collide.yaml", Data: []byte(data)}, "yaml"); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+			t.Fatalf("normalized collision accepted for %q: %v", data, err)
+		}
+	}
+	documents, err := Parse(sdk.File{Path: "distinct.yaml", Data: []byte("\"1\": quoted\n1.5: number\nname: value\n")}, "yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := documents[0].Data.(map[string]any); len(got) != 3 {
+		t.Fatalf("distinct keys merged: %#v", got)
+	}
+}
+
+func TestForeignYAMLNodesRetainDuplicateKeysButRejectSyntaxErrors(t *testing.T) {
+	t.Parallel()
+	file := sdk.File{Path: t.Name() + ".yml", Data: []byte("build: {image: a}\nbuild: {image: b}\n---\nother: !reference [.x]\n")}
+	documents, _, err := ParseCachedYAMLNodes(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(documents) != 2 || len(documents[0].Node.Content) != 4 || documents[0].Data != nil {
+		t.Fatalf("duplicate keys not retained as syntax: %#v", documents)
+	}
+	if _, err := Parse(file, "yaml"); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("strict parser must still reject duplicates: %v", err)
+	}
+	if _, _, err := ParseCachedYAMLNodes(sdk.File{Path: t.Name() + "-bad.yml", Data: []byte("a: [b\n")}); err == nil {
+		t.Fatal("foreign YAML syntax error accepted")
+	}
+}

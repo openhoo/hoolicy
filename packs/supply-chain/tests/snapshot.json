@@ -10,6 +10,43 @@
       "findings": []
     },
     {
+      "name": "forge YAML duplicate key cannot hide an unapproved image",
+      "ruleId": "supply-chain.approved-sources",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "supply-chain.approved-sources",
+          "severity": "error",
+          "path": ".gitlab-ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Artifact source is outside the approved supply chain: registry docker.io is not allowed",
+          "key": "image:docker.io/library/alpine:latest#2",
+          "fingerprint": "93b0be547d1cf68e93186a2bfe93d260f9ebd6bae03a095ad290eeee2d68ddb6",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "supply-chain.approved-sources",
+          "severity": "error",
+          "path": ".gitlab-ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Artifact source is outside the approved supply chain: registry docker.io is not allowed",
+          "key": "image:docker.io/library/alpine:latest",
+          "fingerprint": "bea862a3ef5e5cdd141251815a65fd4a56c4806ce6082bb8181be004e47fa820",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "forge YAML with duplicate keys, custom tags, and merge anchors passes",
+      "ruleId": "supply-chain.approved-sources",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
       "name": "malformed structured source input fails closed",
       "ruleId": "supply-chain.approved-sources",
       "outcome": "error",

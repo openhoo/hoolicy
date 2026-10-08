@@ -4,17 +4,23 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 
 	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/common/types/traits"
 	"github.com/openhoo/hoolicy/internal/document"
 	"github.com/openhoo/hoolicy/sdk"
 )
 
 const celProgramCacheLimit = 128
+
+// celInterruptCheckFrequency lets comprehensions observe the rule deadline
+// so a timed-out evaluation stops instead of running on in the background.
+const celInterruptCheckFrequency = 100
 
 type CEL struct {
 	compiler *celCompiler
@@ -54,7 +60,7 @@ func (kind CEL) Validate(rule sdk.Rule) error {
 	return err
 }
 
-func (kind CEL) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Rule) ([]sdk.Finding, error) {
+func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Rule) ([]sdk.Finding, error) {
 	var spec celSpec
 	if err := decodeSpec(rule, &spec); err != nil {
 		return nil, err
@@ -92,47 +98,96 @@ func (kind CEL) Evaluate(_ context.Context, input sdk.EvalContext, rule sdk.Rule
 		"files": fileValues, "documents": documents, "items": documents,
 		"params": input.Parameters, "now": input.Now,
 	}
-	result, details, err := program.Eval(variables)
+	result, details, err := program.ContextEval(ctx, variables)
 	if err != nil {
 		return nil, fmt.Errorf("rule %s: CEL evaluation: %w", rule.ID, err)
 	}
 	if input.Metrics != nil && details != nil && details.ActualCost() != nil {
 		input.Metrics.CELCost = *details.ActualCost()
 	}
-	if boolean, ok := result.Value().(bool); ok {
+	if boolean, ok := result.(types.Bool); ok {
 		if boolean {
 			return nil, nil
 		}
 		return []sdk.Finding{finding(rule, spec.Message, "", "cel", 0, 0)}, nil
 	}
-	native, err := result.ConvertToNative(reflect.TypeOf([]any{}))
-	if err != nil {
-		return nil, fmt.Errorf("rule %s: CEL must return bool or list of violations: %w", rule.ID, err)
-	}
-	entries, ok := native.([]any)
+	list, ok := result.(traits.Lister)
 	if !ok {
-		return nil, fmt.Errorf("rule %s: CEL returned %T, expected bool or list", rule.ID, native)
+		return nil, fmt.Errorf("rule %s: CEL must return bool or list of violations, got %s", rule.ID, result.Type().TypeName())
 	}
-	findings := make([]sdk.Finding, 0, len(entries))
-	for index, entry := range entries {
-		violation, ok := entry.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("rule %s: violation %d must be an object", rule.ID, index)
-		}
-		message := stringValue(violation["message"], spec.Message)
-		path := stringValue(violation["path"], "")
-		key := stringValue(violation["key"], fmt.Sprintf("cel:%d", index))
-		line, err := locationValue(violation["line"])
+	var findings []sdk.Finding
+	for index, iterator := 0, list.Iterator(); iterator.HasNext() == types.True; index++ {
+		violation, err := celViolation(iterator.Next(), spec.Message, index)
 		if err != nil {
-			return nil, fmt.Errorf("rule %s: violation %d line: %w", rule.ID, index, err)
+			return nil, fmt.Errorf("rule %s: violation %d %w", rule.ID, index, err)
 		}
-		column, err := locationValue(violation["column"])
-		if err != nil {
-			return nil, fmt.Errorf("rule %s: violation %d column: %w", rule.ID, index, err)
-		}
-		findings = append(findings, finding(rule, message, path, key, line, column))
+		findings = append(findings, finding(rule, violation.message, violation.path, violation.key, violation.line, violation.column))
 	}
 	return findings, nil
+}
+
+type celViolationFields struct {
+	message, path, key string
+	line, column       int
+}
+
+// celViolation converts one CEL violation object. CEL maps arrive as
+// ref.Val values rather than map[string]any, so fields are read through the
+// Mapper trait. Keys must be strings and documented fields must have their
+// documented type; violations are operational errors rather than silently
+// weakened findings. Undocumented fields are ignored.
+func celViolation(value ref.Val, fallbackMessage string, index int) (celViolationFields, error) {
+	result := celViolationFields{message: fallbackMessage, key: fmt.Sprintf("cel:%d", index)}
+	object, ok := value.(traits.Mapper)
+	if !ok {
+		return result, fmt.Errorf("must be an object, got %s", value.Type().TypeName())
+	}
+	for iterator := object.Iterator(); iterator.HasNext() == types.True; {
+		rawKey := iterator.Next()
+		key, ok := rawKey.(types.String)
+		if !ok {
+			return result, fmt.Errorf("has non-string key of type %s", rawKey.Type().TypeName())
+		}
+		field := object.Get(rawKey)
+		if types.IsError(field) {
+			return result, fmt.Errorf("field %s: %v", key, field)
+		}
+		switch string(key) {
+		case "message", "path", "key":
+			text, ok := field.(types.String)
+			if !ok {
+				return result, fmt.Errorf("field %s must be a string, got %s", key, field.Type().TypeName())
+			}
+			switch string(key) {
+			case "message":
+				if strings.TrimSpace(string(text)) != "" {
+					result.message = string(text)
+				}
+			case "path":
+				if text != "" && !safeRelativeRulePath(string(text)) {
+					return result, fmt.Errorf("path %q must be a safe repository-relative path", string(text))
+				}
+				result.path = string(text)
+			case "key":
+				if strings.TrimSpace(string(text)) != "" {
+					result.key = string(text)
+				}
+			}
+		case "line", "column":
+			number, err := locationValue(field.Value())
+			if err != nil {
+				return result, fmt.Errorf("%s: %w", key, err)
+			}
+			if key == "line" {
+				result.line = number
+			} else {
+				result.column = number
+			}
+		}
+		// Other fields are ignored so filtered document records, which also
+		// carry index and data, remain valid violations.
+	}
+	return result, nil
 }
 
 func newCEL() (CEL, error) {
@@ -185,7 +240,7 @@ func compileCEL(environment *cel.Env, expression string, limit uint64) (cel.Prog
 	if issues != nil && issues.Err() != nil {
 		return nil, fmt.Errorf("CEL compile: %w", issues.Err())
 	}
-	program, err := environment.Program(ast, cel.CostLimit(limit))
+	program, err := environment.Program(ast, cel.CostLimit(limit), cel.InterruptCheckFrequency(celInterruptCheckFrequency))
 	if err != nil {
 		return nil, err
 	}
