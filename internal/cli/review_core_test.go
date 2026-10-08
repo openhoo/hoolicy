@@ -205,3 +205,93 @@ func TestStructuredCELViolationListKeepsCostLimit(t *testing.T) {
 		t.Fatalf("cost limit not enforced: code=%d stderr=%q", code, stderr)
 	}
 }
+
+func TestLintCountsCELPackParameterReadsAsUsed(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	manifest := `version: 1
+name: limits
+release: 0.1.0
+description: Reads parameters inside CEL.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibility: {config: '>=1 <2', hoolicy: '>=0.0.0 <2.0.0'}
+parameters:
+  minimum_replicas: {type: number, default: 2, description: Replica floor read through pack.}
+%s
+rules:
+  - id: limits.replicas
+    title: Replica floor
+    description: Reads the replica floor through the pack variable.
+    rationale: Production services need redundancy.
+    remediation: Raise replicas to at least the configured floor.
+    severity: error
+    kind: structured.cel
+    files: [deploy.json]
+    spec:
+      format: json
+      expression: documents.all(d, d.data.replicas >= pack.minimum_replicas)
+      message: Replica floor violated
+`
+	writeCLIFile(t, filepath.Join(root, "clean", "pack.yaml"), strings.Replace(manifest, "%s\n", "", 1))
+	writeCLIFile(t, filepath.Join(root, "unread", "pack.yaml"), strings.Replace(manifest, "%s", "  maximum_timeout_ms: {type: number, default: 30000, description: Declared but never read.}", 1))
+	app, stdout, stderr := testApplication(t)
+	if code := app.run(context.Background(), []string{"lint", "--format", "json", filepath.Join(root, "clean")}); code != 0 || strings.Contains(stdout.String(), "unused-parameter") {
+		t.Fatalf("pack.x read reported unused: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	app.run(context.Background(), []string{"lint", "--format", "json", filepath.Join(root, "unread")})
+	if !strings.Contains(stdout.String(), "parameter:maximum_timeout_ms") || strings.Contains(stdout.String(), "parameter:minimum_replicas") {
+		t.Fatalf("unexpected unused-parameter findings: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestStructuredCELExtensionsFlattenFindingsWithinCostLimit(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeCLIFile(t, filepath.Join(root, "hoolicy.yaml"), strings.Replace(celProject, "%s",
+		`"documents.map(d, d.data.services.transformList(name, service, service.replicas < 2 ? [{'message': [name, 'needs', 'replicas'].join(' '), 'path': d.path, 'key': name}] : [])).flatten(2)"`, 1))
+	writeCLIFile(t, filepath.Join(root, "config.json"), `{"services":{"api":{"replicas":1},"web":{"replicas":3},"worker":{"replicas":0}}}`)
+	code, report, stderr := checkJSON(t, root)
+	if code != 1 || len(report.Findings) != 2 {
+		t.Fatalf("code=%d findings=%+v stderr=%q", code, report.Findings, stderr)
+	}
+	messages := []string{report.Findings[0].Message, report.Findings[1].Message}
+	sort.Strings(messages)
+	if messages[0] != "api needs replicas" || messages[1] != "worker needs replicas" {
+		t.Fatalf("unexpected per-occurrence findings: %v", messages)
+	}
+}
+
+func TestStructuredCELExtensionCostLimitIsOperationalError(t *testing.T) {
+	t.Parallel()
+	var nested, words strings.Builder
+	nested.WriteString(`{"nested":[`)
+	words.WriteString(`"words":[`)
+	for index := range 60000 {
+		if index > 0 {
+			nested.WriteByte(',')
+			words.WriteByte(',')
+		}
+		nested.WriteString("[1]")
+		words.WriteString(`"word"`)
+	}
+	data := nested.String() + "]," + words.String() + "]}"
+	for name, expression := range map[string]string{
+		"flatten": `"documents[0].data.nested.flatten().size() > 0"`,
+		"join":    `"documents[0].data.words.join(',').size() > 0"`,
+		"range":   `"lists.range(100000).map(i, [i]).flatten().size() > 0"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			project := strings.Replace(celProject, "%s", expression, 1)
+			writeCLIFile(t, filepath.Join(root, "hoolicy.yaml"), strings.Replace(project, "      message: Fallback message\n", "      message: Fallback message\n      costLimit: 50000\n", 1))
+			writeCLIFile(t, filepath.Join(root, "config.json"), data)
+			if code, _, stderr := checkJSON(t, root); code != 2 || !strings.Contains(stderr, "cost limit exceeded") {
+				t.Fatalf("extension cost not bounded: code=%d stderr=%q", code, stderr)
+			}
+		})
+	}
+}

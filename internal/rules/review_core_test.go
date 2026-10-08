@@ -83,3 +83,25 @@ func (emptyRepository) Read(path string) (sdk.File, error) {
 	return sdk.File{}, errors.New("missing " + path)
 }
 func (emptyRepository) Git() sdk.GitContext { return sdk.GitContext{} }
+
+func TestCELExtensionEvaluationObservesRuleTimeout(t *testing.T) {
+	t.Parallel()
+	kind, err := newCEL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := baseRule("demo.cel", "structured.cel", []string{"none.json"}, map[string]any{
+		"expression": "lists.range(100000).all(a, lists.range(100000).map(b, [a, b]).flatten().size() > 0)",
+		"message":    "x", "costLimit": 1_000_000,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err = kind.Evaluate(ctx, sdk.EvalContext{Repository: emptyRepository{}}, rule)
+	if err == nil || !strings.Contains(err.Error(), "interrupted") {
+		t.Fatalf("extension evaluation was not interrupted: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("extension evaluation ignored its deadline for %s", elapsed)
+	}
+}

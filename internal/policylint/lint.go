@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/openhoo/hoolicy/internal/celenv"
 	"github.com/openhoo/hoolicy/internal/config"
 	"github.com/openhoo/hoolicy/sdk"
 	"go.yaml.in/yaml/v3"
@@ -19,6 +20,48 @@ type Finding struct {
 	Message     string `json:"message"`
 	Heuristic   string `json:"heuristic"`
 	Remediation string `json:"remediation"`
+}
+
+// packCELReads collects parameter names that structured.cel rules read from
+// the pack variable in their type-checked AST. A read that cannot be resolved
+// to a constant name, such as pack[key], makes every parameter potentially
+// used, so the second result reports that no parameter can be called unused.
+// Expressions that do not compile are skipped; rule validation reports them.
+func packCELReads(rules []sdk.Rule) (map[string]bool, bool) {
+	names := map[string]bool{}
+	environment, err := celenv.New()
+	if err != nil {
+		return names, false
+	}
+	for _, rule := range rules {
+		if rule.Kind != "structured.cel" {
+			continue
+		}
+		expression, ok := rule.Spec["expression"].(string)
+		if !ok {
+			continue
+		}
+		reads, err := celenv.ReadsOfPack(environment, expression)
+		if err != nil {
+			continue
+		}
+		if reads.Dynamic {
+			return names, true
+		}
+		for name := range reads.Names {
+			names[name] = true
+		}
+	}
+	return names, false
+}
+
+func sortedParameterNames(parameters map[string]config.Parameter) []string {
+	names := make([]string, 0, len(parameters))
+	for name := range parameters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func Pack(pack *config.Pack, previous *config.Pack, disabled []string) []Finding {
@@ -34,9 +77,13 @@ func Pack(pack *config.Pack, previous *config.Pack, disabled []string) []Finding
 		}
 	}
 	serialized, _ := yaml.Marshal(pack.Rules)
-	for name := range pack.Parameters {
+	celReads, allCELReads := packCELReads(pack.Rules)
+	for _, name := range sortedParameterNames(pack.Parameters) {
+		if allCELReads || celReads[name] {
+			continue
+		}
 		if !strings.Contains(string(serialized), "{{ "+name+" }}") && !strings.Contains(string(serialized), "{{"+name+"}}") {
-			add(Finding{Check: "unused-parameter", Scope: "parameter:" + name, Message: "parameter is declared but unused", Heuristic: "No exact typed parameter placeholder appears in any rule.", Remediation: "Remove the parameter or reference it as {{ " + name + " }}."})
+			add(Finding{Check: "unused-parameter", Scope: "parameter:" + name, Message: "parameter is declared but unused", Heuristic: "No exact typed parameter placeholder appears in any rule, and no structured.cel expression reads pack." + name + ".", Remediation: "Remove the parameter, reference it as {{ " + name + " }}, or read it in CEL as pack." + name + "."})
 		}
 	}
 	redundant := make(map[string]string)

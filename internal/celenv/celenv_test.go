@@ -1,6 +1,12 @@
 package celenv
 
-import "testing"
+import (
+	"sort"
+	"strings"
+	"testing"
+
+	"cel.dev/cel-go/cel"
+)
 
 func TestReferencesPackUsesCheckedAST(t *testing.T) {
 	t.Parallel()
@@ -33,5 +39,86 @@ func TestReferencesPackUsesCheckedAST(t *testing.T) {
 	}
 	if _, err := ReferencesPack(environment, "pack =="); err == nil {
 		t.Fatal("invalid expression accepted")
+	}
+}
+
+func TestEnvironmentProvidesOnlyDeterministicPinnedExtensions(t *testing.T) {
+	t.Parallel()
+	environment, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expression := range []string{
+		"[[1], [2, [3]]].flatten() == [1, 2, [3]]",
+		"[[1], [2, [3]]].flatten(2) == [1, 2, 3]",
+		"[3, 1, 2].sort() == [1, 2, 3]",
+		"[1, 1, 2].distinct() == [1, 2]",
+		"lists.range(3) == [0, 1, 2]",
+		"['a', 'b'].join(',') == 'a,b'",
+		"'a,b'.split(',') == ['a', 'b']",
+		"'%s=%d'.format(['x', 1]) == 'x=1'",
+		"{'a': 1}.all(k, v, k == 'a' && v == 1)",
+		"[10, 20].exists(i, v, i == 1 && v == 20)",
+		"{'a': 1}.transformList(k, v, k + string(v)) == ['a1']",
+	} {
+		program, err := compileAndProgram(environment, expression)
+		if err != nil {
+			t.Fatalf("%s: %v", expression, err)
+		}
+		result, _, err := program.Eval(map[string]any{})
+		if err != nil || result.Value() != true {
+			t.Fatalf("%s: result=%v err=%v", expression, result, err)
+		}
+	}
+	for _, expression := range []string{
+		"sets.contains([1], [1])",
+		"math.greatest(1, 2) == 2",
+		"isIP('127.0.0.1')",
+		"regex.extract('a', 'a') == optional.of('a')",
+		"base64.encode(b'a') == 'YQ=='",
+	} {
+		if _, issues := environment.Compile(expression); issues == nil || issues.Err() == nil {
+			t.Fatalf("unexpected extension available: %s", expression)
+		}
+	}
+}
+
+func compileAndProgram(environment *cel.Env, expression string) (cel.Program, error) {
+	checked, issues := environment.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		return nil, issues.Err()
+	}
+	return environment.Program(checked)
+}
+
+func TestReadsOfPackDistinguishesConstantAndDynamicReads(t *testing.T) {
+	t.Parallel()
+	environment, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for expression, want := range map[string]struct {
+		names   string
+		dynamic bool
+	}{
+		"pack.limit > 1 && has(pack.optional)": {names: "limit,optional"},
+		"pack['environment'] == 'prod'":        {names: "environment"},
+		"'limit' in pack":                      {dynamic: true},
+		"documents.all(d, pack[d.path] == 1)":  {dynamic: true},
+		"pack.size() == 0":                     {dynamic: true},
+		"params.limit == 1":                    {},
+	} {
+		reads, err := ReadsOfPack(environment, expression)
+		if err != nil {
+			t.Fatalf("%s: %v", expression, err)
+		}
+		var names []string
+		for name := range reads.Names {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		if strings.Join(names, ",") != want.names || reads.Dynamic != want.dynamic {
+			t.Fatalf("%s: names=%v dynamic=%v", expression, names, reads.Dynamic)
+		}
 	}
 }

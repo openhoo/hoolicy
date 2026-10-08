@@ -54,9 +54,44 @@ Parses JSON, YAML, TOML, XML, dotenv, or INI and evaluates CEL. Variables:
   `pack` do not count). For such a rule the values are part of its policy
   digest, so changing a `with:` value makes that rule's baseline entries
   stale; rules that do not read `pack` keep their existing digest.
+  `hoolicy lint` counts `pack.name` and `pack['name']` reads as parameter
+  use; dynamic reads such as `pack[key]` mark every pack parameter as used.
 - `now`: timestamp.
 
 Expression returns `true` for pass, `false` for one finding, or a list of objects with optional `message`, `path`, `key`, `line`, and `column`. Violation fields must have the documented types (strings, or non-negative integers for `line` and `column`), and `path` must be repository-relative; other fields are ignored. Default cost limit is 100,000; maximum is 1,000,000.
+
+Besides the CEL standard library, expressions can use these deterministic,
+offline extensions. Library versions are pinned and every function is
+charged against `costLimit`, so an oversized `flatten`, `join`, or `sort`
+fails the check as an operational error (exit 2) like any other budget breach.
+
+- Lists (version 4): `slice`, `flatten`, `flatten(depth)`, `distinct`,
+  `reverse`, `sort`, `sortBy`, `first`, `last`, and `lists.range(n)` with
+  `n` at most 100,000.
+- Strings (version 5): `charAt`, `indexOf`, `lastIndexOf`, `lowerAscii`,
+  `upperAscii`, `replace`, `split`, `substring`, `trim`, `reverse`, `join`,
+  `format` (format strings are checked at compile time), and `strings.quote`.
+- Two-variable comprehensions: `all`, `exists`, `existsOne`,
+  `transformList`, `transformMap`, and `transformMapEntry` over `(index, value)`
+  for lists or `(key, value)` for maps.
+
+Set, math, regex-extraction, encoding, network, and additional clock
+functions are not available. `flatten` and `transformList` combine naturally
+into one finding per occurrence:
+
+```yaml
+spec:
+  format: json
+  expression: >-
+    documents.map(d, d.data.services.transformList(name, service,
+      service.replicas < 2
+        ? [{'message': [name, 'needs at least two replicas'].join(' '), 'path': d.path, 'key': name}]
+        : [])).flatten(2)
+  message: Services need at least two replicas
+```
+
+`flatten()` removes one nesting level; nested `map`/`transformList` results
+need `flatten(2)`.
 
 Inside a pack, prefer `pack` over whole-value `{{ }}` substitution when an
 expression needs a parameter value:
