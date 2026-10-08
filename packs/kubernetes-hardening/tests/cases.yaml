@@ -1,0 +1,1312 @@
+version: 1
+cases:
+  - name: "privileged: hardened Deployment passes"
+    rule: kubernetes-hardening.privileged
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "privilege-escalation: hardened Deployment passes"
+    rule: kubernetes-hardening.privilege-escalation
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "host-namespaces: hardened Deployment passes"
+    rule: kubernetes-hardening.host-namespaces
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "host-path-volumes: hardened Deployment passes"
+    rule: kubernetes-hardening.host-path-volumes
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "capabilities-drop-all: hardened Deployment passes"
+    rule: kubernetes-hardening.capabilities-drop-all
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "added-capabilities: hardened Deployment passes"
+    rule: kubernetes-hardening.added-capabilities
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "read-only-root-filesystem: hardened Deployment passes"
+    rule: kubernetes-hardening.read-only-root-filesystem
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "seccomp-profile: hardened Deployment passes"
+    rule: kubernetes-hardening.seccomp-profile
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "service-account-token: hardened Deployment passes"
+    rule: kubernetes-hardening.service-account-token
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "probes: hardened Deployment passes"
+    rule: kubernetes-hardening.probes
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "explicit-namespace: hardened Deployment passes"
+    rule: kubernetes-hardening.explicit-namespace
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "privileged: privileged initContainer and container both fail"
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              initContainers:
+                - name: init
+                  image: registry.example.com/init:1
+                  securityContext: {privileged: true, allowPrivilegeEscalation: false}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {privileged: true}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app initContainer \"init\" sets securityContext.privileged: true", "key": "document:0:Deployment/app initContainer \"init\" sets securityContext.privileged: true"}
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"app\" sets securityContext.privileged: true"}
+    findingCount: 2
+  - name: "privileged: explicit false passes"
+    rule: kubernetes-hardening.privileged
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {privileged: false}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "privileged: ephemeralContainer is checked"
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      k8s/pod.yaml: |
+        apiVersion: v1
+        kind: Pod
+        metadata: {name: debug, namespace: shop}
+        spec:
+          containers: [{name: app}]
+          ephemeralContainers: [{name: shell, securityContext: {privileged: true}}]
+    expect:
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "k8s/pod.yaml", "line": 1, "messageContains": "Pod/debug ephemeralContainer \"shell\" sets securityContext.privileged: true"}
+    findingCount: 1
+  - name: "privileged: allowlisted workload passes"
+    rule: kubernetes-hardening.privileged
+    outcome: pass
+    parameters: {"privileged_allowed_workloads": ["DaemonSet/node-agent"]}
+    files:
+      deploy/agent.yaml: |
+        apiVersion: apps/v1
+        kind: DaemonSet
+        metadata: {name: node-agent, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: agent
+                  image: registry.example.com/agent:1
+                  securityContext: {privileged: true}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "privileged: allowlist is exact Kind/name"
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    parameters: {"privileged_allowed_workloads": ["DaemonSet/node-agent"]}
+    files:
+      deploy/agent.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: node-agent, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: agent
+                  image: registry.example.com/agent:1
+                  securityContext: {privileged: true}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "deploy/agent.yaml", "line": 1, "messageContains": "Deployment/node-agent container \"agent\""}
+    findingCount: 1
+  - name: "privilege-escalation: missing field and true value fail"
+    rule: kubernetes-hardening.privilege-escalation
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {readOnlyRootFilesystem: true}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+                - name: worker
+                  image: registry.example.com/worker:1
+                  securityContext: {allowPrivilegeEscalation: true}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.privilege-escalation", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"app\" does not set securityContext.allowPrivilegeEscalation: false"}
+      - {"ruleId": "kubernetes-hardening.privilege-escalation", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"worker\" does not set"}
+    findingCount: 2
+  - name: "privilege-escalation: string false is not boolean false"
+    rule: kubernetes-hardening.privilege-escalation
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: 'false'}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.privilege-escalation", "path": "deploy/app.yaml", "line": 1, "messageContains": "container \"app\""}
+    findingCount: 1
+  - name: "privilege-escalation: pod securityContext cannot satisfy container field"
+    rule: kubernetes-hardening.privilege-escalation
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, allowPrivilegeEscalation: false}
+              hostname: app
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.privilege-escalation", "path": "deploy/app.yaml", "line": 1, "messageContains": "container \"app\""}
+    findingCount: 1
+  - name: "host-namespaces: each true namespace is reported"
+    rule: kubernetes-hardening.host-namespaces
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              hostNetwork: true
+              hostPID: true
+              hostIPC: false
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.host-namespaces", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app sets hostNetwork: true"}
+      - {"ruleId": "kubernetes-hardening.host-namespaces", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app sets hostPID: true"}
+    findingCount: 2
+  - name: "host-namespaces: explicit false passes"
+    rule: kubernetes-hardening.host-namespaces
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              hostNetwork: false
+              hostPID: false
+              hostIPC: false
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "host-namespaces: allowlisted node agent passes"
+    rule: kubernetes-hardening.host-namespaces
+    outcome: pass
+    parameters: {"host_namespace_allowed_workloads": ["DaemonSet/node-exporter"]}
+    files:
+      deploy/agent.yaml: |
+        apiVersion: apps/v1
+        kind: DaemonSet
+        metadata: {name: node-exporter, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              hostNetwork: true
+              hostPID: true
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "host-path-volumes: every hostPath volume is named"
+    rule: kubernetes-hardening.host-path-volumes
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              volumes:
+                - {name: logs, hostPath: {path: /var/log}}
+                - {name: sock, hostPath: {path: /var/run/docker.sock, type: Socket}}
+                - {name: tmp, emptyDir: {}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.host-path-volumes", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app volume \"logs\" mounts hostPath /var/log"}
+      - {"ruleId": "kubernetes-hardening.host-path-volumes", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app volume \"sock\" mounts hostPath /var/run/docker.sock"}
+    findingCount: 2
+  - name: "host-path-volumes: allowlisted path passes, others still fail"
+    rule: kubernetes-hardening.host-path-volumes
+    outcome: fail
+    parameters: {"host_path_allowed_paths": ["/var/log"]}
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              volumes:
+                - {name: logs, hostPath: {path: /var/log}}
+                - {name: sock, hostPath: {path: /var/run/docker.sock, type: Socket}}
+                - {name: tmp, emptyDir: {}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.host-path-volumes", "path": "deploy/app.yaml", "line": 1, "messageContains": "/var/run/docker.sock"}
+    findingCount: 1
+  - name: "host-path-volumes: all paths allowlisted passes"
+    rule: kubernetes-hardening.host-path-volumes
+    outcome: pass
+    parameters: {"host_path_allowed_paths": ["/var/log", "/var/run/docker.sock"]}
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              volumes:
+                - {name: logs, hostPath: {path: /var/log}}
+                - {name: sock, hostPath: {path: /var/run/docker.sock, type: Socket}}
+                - {name: tmp, emptyDir: {}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "host-path-volumes: allowlist does not match path prefixes"
+    rule: kubernetes-hardening.host-path-volumes
+    outcome: fail
+    parameters: {"host_path_allowed_paths": ["/var/log"]}
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              volumes: [{name: root, hostPath: {path: /var/log/../../}}]
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.host-path-volumes", "path": "deploy/app.yaml", "line": 1, "messageContains": "/var/log/../../"}
+    findingCount: 1
+  - name: "capabilities-drop-all: missing and partial drops fail"
+    rule: kubernetes-hardening.capabilities-drop-all
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {capabilities: {drop: [NET_RAW]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+                - name: sidecar
+                  image: registry.example.com/sidecar:1
+                  securityContext: {}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.capabilities-drop-all", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"app\" does not drop ALL capabilities"}
+      - {"ruleId": "kubernetes-hardening.capabilities-drop-all", "path": "deploy/app.yaml", "line": 1, "messageContains": "container \"sidecar\" does not drop ALL"}
+    findingCount: 2
+  - name: "capabilities-drop-all: lowercase all is not ALL"
+    rule: kubernetes-hardening.capabilities-drop-all
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {capabilities: {drop: [all]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.capabilities-drop-all", "path": "deploy/app.yaml", "line": 1, "messageContains": "container \"app\""}
+    findingCount: 1
+  - name: "added-capabilities: dangerous additions are named per container"
+    rule: kubernetes-hardening.added-capabilities
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {capabilities: {drop: [ALL], add: [NET_BIND_SERVICE, SYS_ADMIN]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+                - name: net
+                  image: registry.example.com/net:1
+                  securityContext: {capabilities: {drop: [ALL], add: [NET_RAW, CAP_NET_ADMIN]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.added-capabilities", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"app\" adds capability SYS_ADMIN"}
+      - {"ruleId": "kubernetes-hardening.added-capabilities", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"net\" adds capability NET_RAW"}
+      - {"ruleId": "kubernetes-hardening.added-capabilities", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"net\" adds capability CAP_NET_ADMIN"}
+    findingCount: 3
+  - name: "added-capabilities: default allowlist accepts NET_BIND_SERVICE with or without CAP_ prefix"
+    rule: kubernetes-hardening.added-capabilities
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {capabilities: {drop: [ALL], add: [NET_BIND_SERVICE, CAP_NET_BIND_SERVICE]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "added-capabilities: custom allowlist replaces the default"
+    rule: kubernetes-hardening.added-capabilities
+    outcome: fail
+    parameters: {"allowed_added_capabilities": ["CHOWN"]}
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {capabilities: {drop: [ALL], add: [CHOWN, NET_BIND_SERVICE]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.added-capabilities", "path": "deploy/app.yaml", "line": 1, "messageContains": "adds capability NET_BIND_SERVICE"}
+    findingCount: 1
+  - name: "added-capabilities: empty allowlist rejects every addition"
+    rule: kubernetes-hardening.added-capabilities
+    outcome: fail
+    parameters: {"allowed_added_capabilities": []}
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {capabilities: {drop: [ALL], add: [NET_BIND_SERVICE]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.added-capabilities", "path": "deploy/app.yaml", "line": 1, "messageContains": "adds capability NET_BIND_SERVICE"}
+    findingCount: 1
+  - name: "read-only-root-filesystem: false and missing values warn"
+    rule: kubernetes-hardening.read-only-root-filesystem
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              initContainers:
+                - name: migrate
+                  image: registry.example.com/migrate:1
+                  securityContext: {readOnlyRootFilesystem: false}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.read-only-root-filesystem", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app initContainer \"migrate\" does not set securityContext.readOnlyRootFilesystem: true"}
+      - {"ruleId": "kubernetes-hardening.read-only-root-filesystem", "path": "deploy/app.yaml", "line": 1, "messageContains": "container \"app\""}
+    findingCount: 2
+  - name: "seccomp-profile: pod-level RuntimeDefault is inherited by every container"
+    rule: kubernetes-hardening.seccomp-profile
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              initContainers:
+                - name: init
+                  image: registry.example.com/init:1
+                  securityContext: {}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "seccomp-profile: container Localhost passes without pod profile"
+    rule: kubernetes-hardening.seccomp-profile
+    outcome: pass
+    files:
+      deploy/db.yaml: |
+        apiVersion: apps/v1
+        kind: StatefulSet
+        metadata: {name: db, namespace: data}
+        spec:
+          template:
+            spec:
+              securityContext: {runAsNonRoot: true}
+              containers:
+                - {name: db, securityContext: {seccompProfile: {type: Localhost, localhostProfile: db.json}}}
+  - name: "seccomp-profile: missing pod and container profiles warn"
+    rule: kubernetes-hardening.seccomp-profile
+    outcome: fail
+    files:
+      deploy/db.yaml: |
+        apiVersion: apps/v1
+        kind: StatefulSet
+        metadata: {name: db, namespace: data}
+        spec:
+          template:
+            spec:
+              securityContext: {runAsNonRoot: true}
+              containers:
+                - {name: db}
+    expect:
+      - {"ruleId": "kubernetes-hardening.seccomp-profile", "path": "deploy/db.yaml", "line": 1, "messageContains": "StatefulSet/db container \"db\" has no effective seccompProfile"}
+    findingCount: 1
+  - name: "seccomp-profile: container Unconfined overrides pod RuntimeDefault"
+    rule: kubernetes-hardening.seccomp-profile
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {seccompProfile: {type: Unconfined}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.seccomp-profile", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"app\" has no effective seccompProfile"}
+    findingCount: 1
+  - name: "seccomp-profile: restricted allowlist rejects Localhost"
+    rule: kubernetes-hardening.seccomp-profile
+    outcome: fail
+    parameters: {"allowed_seccomp_profile_types": ["RuntimeDefault"]}
+    files:
+      deploy/db.yaml: |
+        apiVersion: apps/v1
+        kind: StatefulSet
+        metadata: {name: db, namespace: data}
+        spec:
+          template:
+            spec:
+              securityContext: {runAsNonRoot: true}
+              containers:
+                - {name: db, securityContext: {seccompProfile: {type: Localhost, localhostProfile: db.json}}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.seccomp-profile", "path": "deploy/db.yaml", "line": 1, "messageContains": "container \"db\""}
+    findingCount: 1
+  - name: "service-account-token: automount default warns and names the service account"
+    rule: kubernetes-hardening.service-account-token
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              serviceAccountName: operator
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.service-account-token", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app does not set automountServiceAccountToken: false (serviceAccountName operator)"}
+    findingCount: 1
+  - name: "service-account-token: explicit true warns"
+    rule: kubernetes-hardening.service-account-token
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: true
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.service-account-token", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app does not set automountServiceAccountToken: false"}
+    findingCount: 1
+  - name: "service-account-token: allowlisted service account passes"
+    rule: kubernetes-hardening.service-account-token
+    outcome: pass
+    parameters: {"automount_allowed_service_accounts": ["operator"]}
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              serviceAccountName: operator
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "probes: missing liveness, readiness, or both are distinguished"
+    rule: kubernetes-hardening.probes
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                - name: live
+                  image: registry.example.com/live:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {tcpSocket: {port: 80}}
+                - name: ready
+                  image: registry.example.com/ready:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  readinessProbe: {tcpSocket: {port: 80}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.probes", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"app\" has no livenessProbe or readinessProbe"}
+      - {"ruleId": "kubernetes-hardening.probes", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"live\" has no readinessProbe"}
+      - {"ruleId": "kubernetes-hardening.probes", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app container \"ready\" has no livenessProbe"}
+    findingCount: 3
+  - name: "probes: Jobs, CronJobs, and bare Pods are not long-running workloads"
+    rule: kubernetes-hardening.probes
+    outcome: pass
+    files:
+      deploy/job.yaml: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata: {name: migrate, namespace: shop}
+        spec:
+          template:
+            spec:
+              restartPolicy: Never
+              containers: [{name: migrate}]
+      deploy/cron.yaml: |
+        apiVersion: batch/v1
+        kind: CronJob
+        metadata: {name: backup, namespace: shop}
+        spec:
+          schedule: '0 3 * * *'
+          jobTemplate:
+            spec:
+              template:
+                spec:
+                  containers: [{name: backup}]
+      deploy/pod.yaml: |
+        apiVersion: v1
+        kind: Pod
+        metadata: {name: p}
+        spec:
+          containers: [{name: c}]
+  - name: "probes: ordinary initContainers need no probes but restartable sidecars do"
+    rule: kubernetes-hardening.probes
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              initContainers:
+                - name: migrate
+                  image: registry.example.com/migrate:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                - name: proxy
+                  image: registry.example.com/proxy:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  restartPolicy: Always
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.probes", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app initContainer \"proxy\" has no livenessProbe or readinessProbe"}
+    findingCount: 1
+  - name: "explicit-namespace: default namespace warns"
+    rule: kubernetes-hardening.explicit-namespace
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: default}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.explicit-namespace", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app uses forbidden namespace default"}
+    findingCount: 1
+  - name: "explicit-namespace: missing namespace passes unless required"
+    rule: kubernetes-hardening.explicit-namespace
+    outcome: pass
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "explicit-namespace: required namespace reports omission"
+    rule: kubernetes-hardening.explicit-namespace
+    outcome: fail
+    parameters: {"require_namespace": true}
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.explicit-namespace", "path": "deploy/app.yaml", "line": 1, "messageContains": "Deployment/app does not set metadata.namespace"}
+    findingCount: 1
+  - name: "explicit-namespace: custom forbidden namespaces"
+    rule: kubernetes-hardening.explicit-namespace
+    outcome: fail
+    parameters: {"forbidden_namespaces": ["default", "kube-system"]}
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: kube-system}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.explicit-namespace", "path": "deploy/app.yaml", "line": 1, "messageContains": "uses forbidden namespace kube-system"}
+    findingCount: 1
+  - name: "edge: List items and CronJob jobTemplate are inspected"
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/list.yaml: |
+        apiVersion: v1
+        kind: List
+        items:
+          - apiVersion: v1
+            kind: Service
+            metadata: {name: svc}
+            spec: {ports: [{port: 80}]}
+          - apiVersion: batch/v1
+            kind: CronJob
+            metadata: {name: nightly, namespace: shop}
+            spec:
+              jobTemplate:
+                spec:
+                  template:
+                    spec:
+                      containers: [{name: report, securityContext: {privileged: true}}]
+          - apiVersion: v1
+            kind: Pod
+            metadata: {name: debug}
+            spec:
+              containers: [{name: shell, securityContext: {privileged: true}}]
+    expect:
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "deploy/list.yaml", "line": 1, "messageContains": "CronJob/nightly container \"report\" sets securityContext.privileged: true", "key": "document:0:CronJob/nightly container \"report\" sets securityContext.privileged: true"}
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "deploy/list.yaml", "line": 1, "messageContains": "Pod/debug container \"shell\""}
+    findingCount: 2
+  - name: "edge: empty documents are skipped and lines point at each document"
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/multi.yaml: |
+        ---
+        ---
+        # comment only
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: safe, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: bad, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {privileged: true}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "deploy/multi.yaml", "line": 20, "messageContains": "Deployment/bad container \"app\""}
+    findingCount: 1
+  - name: "edge: non-workload kinds and malformed workloads are ignored"
+    rule: kubernetes-hardening.privilege-escalation
+    outcome: pass
+    files:
+      deploy/other.yaml: |
+        apiVersion: v1
+        kind: ConfigMap
+        metadata: {name: c}
+        data: {privileged: 'true'}
+        ---
+        apiVersion: example.com/v1
+        kind: Rollout
+        spec: {template: {spec: {containers: [{name: x}]}}}
+        ---
+        kind: Deployment
+        spec: {template: {spec: {containers: notalist}}}
+        ---
+        - just
+        - a list
+        ---
+        plain scalar
+  - name: "edge: container securityContext false overrides nothing at pod level"
+    rule: kubernetes-hardening.read-only-root-filesystem
+    outcome: fail
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, readOnlyRootFilesystem: true}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.read-only-root-filesystem", "path": "deploy/app.yaml", "line": 1, "messageContains": "container \"app\" does not set securityContext.readOnlyRootFilesystem: true"}
+    findingCount: 1
+  - name: "edge: unnamed workload and container are labelled"
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/pod.yaml: |
+        kind: Pod
+        spec:
+          containers: [{securityContext: {privileged: true}}]
+    expect:
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "deploy/pod.yaml", "line": 1, "messageContains": "Pod/(unnamed) container \"(unnamed)\" sets securityContext.privileged: true"}
+    findingCount: 1
+  - name: "edge: JSON manifests are inspected"
+    rule: kubernetes-hardening.host-namespaces
+    outcome: fail
+    parameters: {"manifest_globs": ["k8s/**/*.json"]}
+    files:
+      k8s/pod.json: "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"name\":\"j\"},\"spec\":{\"hostIPC\":true,\"containers\":[{\"name\":\"c\"}]}}"
+    expect:
+      - {"ruleId": "kubernetes-hardening.host-namespaces", "path": "k8s/pod.json", "line": 1, "messageContains": "Pod/j sets hostIPC: true"}
+    findingCount: 1
+  - name: "edge: Helm templates are excluded by default"
+    rule: kubernetes-hardening.privileged
+    outcome: pass
+    files:
+      deploy/chart/templates/deployment.yaml: |
+        kind: Pod
+        metadata: {name: '{{ .Release.Name }}'}
+        spec:
+          containers: [{name: c, securityContext: {privileged: true}}]
+  - name: "edge: excluded_paths and manifest_globs are honoured"
+    rule: kubernetes-hardening.privileged
+    outcome: pass
+    parameters: {"manifest_globs": ["deploy/**/*.yaml"], "excluded_paths": ["deploy/app.yaml"]}
+    files:
+      deploy/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {privileged: true}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+      manifests/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {privileged: true}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+  - name: "edge: custom manifest_globs select other directories"
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    parameters: {"manifest_globs": ["manifests/*.yaml"]}
+    files:
+      manifests/app.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: app, namespace: shop}
+        spec:
+          template:
+            spec:
+              automountServiceAccountToken: false
+              securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+              containers:
+                - name: app
+                  image: registry.example.com/app:1
+                  securityContext: {privileged: true}
+                  livenessProbe: {httpGet: {path: /healthz, port: 8080}}
+                  readinessProbe: {httpGet: {path: /ready, port: 8080}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "manifests/app.yaml", "line": 1, "messageContains": "Deployment/app container \"app\""}
+    findingCount: 1
+  - name: "edge: duplicate YAML keys are operational errors"
+    rule: kubernetes-hardening.privileged
+    outcome: error
+    files:
+      deploy/app.yaml: |
+        kind: Pod
+        kind: Pod
+    errorContains: "deploy/app.yaml"
+  - name: "edge: malformed YAML is an operational error"
+    rule: kubernetes-hardening.privileged
+    outcome: error
+    files:
+      deploy/app.yaml: |
+        kind: [Pod
+    errorContains: "deploy/app.yaml"
+  - name: "edge: every offending container in a large List gets its own finding"
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/big.yaml: |
+        kind: List
+        items:
+          - {kind: Deployment, metadata: {name: d0, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d1, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d2, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d3, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d4, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d5, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d6, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d7, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d8, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d9, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d10, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+          - {kind: Deployment, metadata: {name: d11, namespace: s}, spec: {template: {spec: {containers: [{name: c0, securityContext: {privileged: true}}, {name: c1, securityContext: {privileged: true}}, {name: c2, securityContext: {privileged: true}}, {name: c3, securityContext: {privileged: true}}, {name: c4, securityContext: {privileged: true}}]}}}}
+    expect:
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "deploy/big.yaml", "line": 1, "messageContains": "Deployment/d0 container \"c0\" sets", "key": "document:0:Deployment/d0 container \"c0\" sets securityContext.privileged: true"}
+      - {"ruleId": "kubernetes-hardening.privileged", "path": "deploy/big.yaml", "line": 1, "messageContains": "Deployment/d11 container \"c4\" sets"}
+    findingCount: 60
+  - name: "edge: no manifests passes"
+    rule: kubernetes-hardening.privileged
+    outcome: pass
+    files:
+      README.md: |
+        no manifests

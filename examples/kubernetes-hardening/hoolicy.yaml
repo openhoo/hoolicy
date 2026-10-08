@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/v1/hoolicy.schema.json
+version: 1
+project: kubernetes-hardening-example
+failOn: error
+packs:
+  - name: kubernetes-hardening
+    path: policy/kubernetes-hardening
+    with:
+      manifest_globs: ['deploy/**/*.yaml']
+      host_path_allowed_paths: []
+      allowed_added_capabilities: [NET_BIND_SERVICE]
+      automount_allowed_service_accounts: []
+      require_namespace: true

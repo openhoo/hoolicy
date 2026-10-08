@@ -1,0 +1,651 @@
+# Rules share one workload-traversal prelude; keep it identical across rules when editing.
+version: 1
+name: kubernetes-hardening
+release: 0.1.0
+description: Pod security hardening for literal Kubernetes workload manifests, reported per workload and container.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibilityNotes: >-
+  Inspects literal YAML/JSON manifests only. Helm templates, Kustomize overlays, Jsonnet, and other generators
+  are not rendered; check rendered output instead. Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job,
+  and CronJob (jobTemplate) pod specs are checked, including List items; other kinds, including custom
+  resources with embedded pod templates, are ignored. Findings point at the YAML document start, not the
+  container line. Allowlists are exact parameter values; anything else needs a narrow waiver or file
+  exclusion. Requires Hoolicy with structured.cel object-list results, pack parameters, and the CEL lists extension.
+compatibility:
+  config: '>=1 <2'
+  hoolicy: '>=0.5.1-0 <2.0.0'
+parameters:
+  manifest_globs:
+    type: string_list
+    description: Literal Kubernetes manifest files to inspect.
+    default: ['deploy/**/*.{yaml,yml}', 'k8s/**/*.{yaml,yml}']
+  excluded_paths:
+    type: string_list
+    description: Reviewed narrow exclusions for templates, generated, vendored, or non-workload YAML.
+    default: ['.hoolicy/vendor/**', '**/templates/**', '**/kustomization.{yaml,yml}', '**/Chart.yaml', '**/values*.{yaml,yml}']
+  privileged_allowed_workloads:
+    type: string_list
+    description: "Reviewed workloads, as Kind/name, allowed to run privileged containers."
+    default: []
+  host_namespace_allowed_workloads:
+    type: string_list
+    description: "Reviewed workloads, as Kind/name, allowed to use hostNetwork, hostPID, or hostIPC."
+    default: []
+  host_path_allowed_paths:
+    type: string_list
+    description: "Exact hostPath paths reviewed as safe to mount, such as /var/log."
+    default: []
+  allowed_added_capabilities:
+    type: string_list
+    description: "Capabilities containers may add, without the CAP_ prefix."
+    default: ["NET_BIND_SERVICE"]
+  allowed_seccomp_profile_types:
+    type: string_list
+    description: "Accepted effective seccompProfile types."
+    default: ["RuntimeDefault", "Localhost"]
+  automount_allowed_service_accounts:
+    type: string_list
+    description: "serviceAccountName values whose pods may automount API tokens."
+    default: []
+  require_namespace:
+    type: bool
+    description: "Also require metadata.namespace on every workload; keep false when Kustomize, Argo CD, or the deployer assigns it."
+    default: false
+  forbidden_namespaces:
+    type: string_list
+    description: "Namespaces workloads must not use."
+    default: ["default"]
+rules:
+  - id: kubernetes-hardening.privileged
+    title: "Containers are not privileged"
+    description: "Rejects securityContext.privileged: true on every container, initContainer, and ephemeralContainer unless the workload is allowlisted."
+    rationale: "A privileged container has host-level device and kernel access and defeats namespace isolation."
+    remediation: "Remove privileged: true; grant only the specific capability or device the workload needs through a reviewed exception."
+    severity: error
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: privileged}]
+    spec:
+      message: "Containers are not privileged"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('ephemeralContainers' in w.pod && type(w.pod.ephemeralContainers) == list
+                    ? w.pod.ephemeralContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'ephemeralContainers', 'ref': w.id + ' ephemeralContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, w.containers.filter(c, 'privileged' in c.sc && c.sc.privileged == true && !(w.id in pack.privileged_allowed_workloads)).map(c, c.ref + ' sets securityContext.privileged: true'))
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
+  - id: kubernetes-hardening.privilege-escalation
+    title: "Containers explicitly disable privilege escalation"
+    description: "Requires securityContext.allowPrivilegeEscalation: false on every container; the field has no pod-level form."
+    rationale: "Without no_new_privs, setuid binaries and file capabilities can raise a process above its starting privileges."
+    remediation: "Set securityContext.allowPrivilegeEscalation: false on each container, initContainer, and ephemeralContainer."
+    severity: error
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: privilege-escalation}]
+    spec:
+      message: "Containers explicitly disable privilege escalation"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('ephemeralContainers' in w.pod && type(w.pod.ephemeralContainers) == list
+                    ? w.pod.ephemeralContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'ephemeralContainers', 'ref': w.id + ' ephemeralContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, w.containers.filter(c, !('allowPrivilegeEscalation' in c.sc && c.sc.allowPrivilegeEscalation == false)).map(c, c.ref + ' does not set securityContext.allowPrivilegeEscalation: false'))
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
+  - id: kubernetes-hardening.host-namespaces
+    title: "Pods do not share host namespaces"
+    description: "Rejects hostNetwork, hostPID, or hostIPC set to true unless the workload is allowlisted as Kind/name."
+    rationale: "Host namespaces expose host network interfaces, processes, and IPC objects to the workload."
+    remediation: "Remove hostNetwork, hostPID, and hostIPC; use Services, sidecars, or a reviewed node agent exception instead."
+    severity: error
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: host-namespaces}]
+    spec:
+      message: "Pods do not share host namespaces"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('ephemeralContainers' in w.pod && type(w.pod.ephemeralContainers) == list
+                    ? w.pod.ephemeralContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'ephemeralContainers', 'ref': w.id + ' ephemeralContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, w.id in pack.host_namespace_allowed_workloads ? [] : ['hostNetwork', 'hostPID', 'hostIPC'].filter(f, f in w.pod && w.pod[f] == true).map(f, w.id + ' sets ' + f + ': true'))
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
+  - id: kubernetes-hardening.host-path-volumes
+    title: "Pods do not mount hostPath volumes"
+    description: "Rejects hostPath volumes whose path is not in host_path_allowed_paths and names each path."
+    rationale: "hostPath volumes give the workload read or write access to the node filesystem and can enable node takeover."
+    remediation: "Replace hostPath with a PersistentVolumeClaim, emptyDir, ConfigMap, Secret, or CSI volume; waive reviewed node agents narrowly."
+    severity: error
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: host-path-volumes}]
+    spec:
+      message: "Pods do not mount hostPath volumes"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('ephemeralContainers' in w.pod && type(w.pod.ephemeralContainers) == list
+                    ? w.pod.ephemeralContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'ephemeralContainers', 'ref': w.id + ' ephemeralContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, ('volumes' in w.pod && type(w.pod.volumes) == list ? w.pod.volumes : [])
+                .filter(v, type(v) == map && 'hostPath' in v
+                  && !(type(v.hostPath) == map && 'path' in v.hostPath && v.hostPath.path in pack.host_path_allowed_paths))
+                .map(v, w.id + ' volume "' + ('name' in v && type(v.name) == string ? v.name : '(unnamed)') + '" mounts hostPath '
+                  + (type(v.hostPath) == map && 'path' in v.hostPath && type(v.hostPath.path) == string ? v.hostPath.path : '(no path)')))
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
+  - id: kubernetes-hardening.capabilities-drop-all
+    title: "Containers drop all Linux capabilities"
+    description: "Requires securityContext.capabilities.drop to contain ALL on every container."
+    rationale: "The default runtime capability set includes privileges such as NET_RAW that most workloads never need."
+    remediation: "Set securityContext.capabilities.drop: [ALL] and add back only reviewed capabilities such as NET_BIND_SERVICE."
+    severity: error
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: capabilities}]
+    spec:
+      message: "Containers drop all Linux capabilities"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('ephemeralContainers' in w.pod && type(w.pod.ephemeralContainers) == list
+                    ? w.pod.ephemeralContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'ephemeralContainers', 'ref': w.id + ' ephemeralContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, w.containers.filter(c, !('drop' in ('capabilities' in c.sc && type(c.sc.capabilities) == map ? c.sc.capabilities : {}) && type(('capabilities' in c.sc && type(c.sc.capabilities) == map ? c.sc.capabilities : {}).drop) == list && 'ALL' in ('capabilities' in c.sc && type(c.sc.capabilities) == map ? c.sc.capabilities : {}).drop)).map(c, c.ref + ' does not drop ALL capabilities'))
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
+  - id: kubernetes-hardening.added-capabilities
+    title: "Containers add only allowlisted capabilities"
+    description: "Rejects every capabilities.add entry outside allowed_added_capabilities (default NET_BIND_SERVICE), naming each capability."
+    rationale: "Capabilities such as SYS_ADMIN, NET_ADMIN, NET_RAW, or SYS_PTRACE enable container escape and network attacks."
+    remediation: "Remove added capabilities, or add a reviewed capability to allowed_added_capabilities for this repository."
+    severity: error
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: capabilities}]
+    spec:
+      message: "Containers add only allowlisted capabilities"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('ephemeralContainers' in w.pod && type(w.pod.ephemeralContainers) == list
+                    ? w.pod.ephemeralContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'ephemeralContainers', 'ref': w.id + ' ephemeralContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, w.containers
+                .filter(c, 'add' in ('capabilities' in c.sc && type(c.sc.capabilities) == map ? c.sc.capabilities : {}) && type(('capabilities' in c.sc && type(c.sc.capabilities) == map ? c.sc.capabilities : {}).add) == list)
+                .map(c, ('capabilities' in c.sc && type(c.sc.capabilities) == map ? c.sc.capabilities : {}).add.filter(x, !(x in pack.allowed_added_capabilities)
+                  && !pack.allowed_added_capabilities.exists(a, x == 'CAP_' + a))
+                  .map(x, c.ref + ' adds capability ' + (type(x) == string ? x : '(non-string entry)')))
+                .flatten())
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
+  - id: kubernetes-hardening.read-only-root-filesystem
+    title: "Containers use a read-only root filesystem"
+    description: "Warns unless securityContext.readOnlyRootFilesystem is true on every container."
+    rationale: "A writable root filesystem lets an attacker persist tooling and modify binaries inside the running container."
+    remediation: "Set readOnlyRootFilesystem: true and mount emptyDir volumes for paths the process must write."
+    severity: warning
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: read-only-root}]
+    spec:
+      message: "Containers use a read-only root filesystem"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('ephemeralContainers' in w.pod && type(w.pod.ephemeralContainers) == list
+                    ? w.pod.ephemeralContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'ephemeralContainers', 'ref': w.id + ' ephemeralContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, w.containers.filter(c, !('readOnlyRootFilesystem' in c.sc && c.sc.readOnlyRootFilesystem == true)).map(c, c.ref + ' does not set securityContext.readOnlyRootFilesystem: true'))
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
+  - id: kubernetes-hardening.seccomp-profile
+    title: "Containers run with a seccomp profile"
+    description: "Warns unless the container seccompProfile, or the pod profile it inherits, has an allowed type (default RuntimeDefault or Localhost)."
+    rationale: "Unconfined syscalls widen the kernel attack surface available to a compromised process."
+    remediation: "Set spec.securityContext.seccompProfile.type: RuntimeDefault at pod level, or a reviewed Localhost profile per container."
+    severity: warning
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: seccomp}]
+    spec:
+      message: "Containers run with a seccomp profile"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('ephemeralContainers' in w.pod && type(w.pod.ephemeralContainers) == list
+                    ? w.pod.ephemeralContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'ephemeralContainers', 'ref': w.id + ' ephemeralContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, w.containers.filter(c, !((('seccompProfile' in c.sc && type(c.sc.seccompProfile) == map && 'type' in c.sc.seccompProfile) ? c.sc.seccompProfile.type : ('seccompProfile' in w.psc && type(w.psc.seccompProfile) == map && 'type' in w.psc.seccompProfile) ? w.psc.seccompProfile.type : '') in pack.allowed_seccomp_profile_types)).map(c, c.ref + ' has no effective seccompProfile of an allowed type (container or pod level)'))
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
+  - id: kubernetes-hardening.service-account-token
+    title: "Pods opt out of service account token automounting"
+    description: "Warns unless the pod spec sets automountServiceAccountToken: false or uses an allowlisted serviceAccountName."
+    rationale: "An automounted API token gives any compromised container the service account's Kubernetes API permissions."
+    remediation: "Set automountServiceAccountToken: false in the pod spec; waive workloads that genuinely call the Kubernetes API."
+    severity: warning
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: service-account-token}]
+    spec:
+      message: "Pods opt out of service account token automounting"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('ephemeralContainers' in w.pod && type(w.pod.ephemeralContainers) == list
+                    ? w.pod.ephemeralContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'ephemeralContainers', 'ref': w.id + ' ephemeralContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, ('automountServiceAccountToken' in w.pod && w.pod.automountServiceAccountToken == false) || ('serviceAccountName' in w.pod && w.pod.serviceAccountName in pack.automount_allowed_service_accounts) ? [] : [w.id + ' does not set automountServiceAccountToken: false' + ('serviceAccountName' in w.pod && type(w.pod.serviceAccountName) == string ? ' (serviceAccountName ' + w.pod.serviceAccountName + ')' : '')])
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
+  - id: kubernetes-hardening.probes
+    title: "Long-running containers define liveness and readiness probes"
+    description: "Warns when Deployment, StatefulSet, DaemonSet, or ReplicaSet containers and restartPolicy Always sidecars lack either probe."
+    rationale: "Without probes, Kubernetes routes traffic to unready pods and cannot restart hung processes."
+    remediation: "Add livenessProbe and readinessProbe to each long-running container; waive containers with no meaningful health signal."
+    severity: warning
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: availability}]
+    spec:
+      message: "Long-running containers define liveness and readiness probes"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, w.containers
+                .filter(c, c.group == 'containers' || ('restartPolicy' in c.c && c.c.restartPolicy == 'Always'))
+                .filter(c, !('livenessProbe' in c.c && type(c.c.livenessProbe) == map) || !('readinessProbe' in c.c && type(c.c.readinessProbe) == map))
+                .map(c, c.ref + (!('livenessProbe' in c.c && type(c.c.livenessProbe) == map) && !('readinessProbe' in c.c && type(c.c.readinessProbe) == map) ? ' has no livenessProbe or readinessProbe'
+                  : !('livenessProbe' in c.c && type(c.c.livenessProbe) == map) ? ' has no livenessProbe' : ' has no readinessProbe')))
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
+  - id: kubernetes-hardening.explicit-namespace
+    title: "Workloads declare an approved namespace"
+    description: "Warns when a workload uses a forbidden namespace (default: default) and, if require_namespace is true, when it omits metadata.namespace."
+    rationale: "Workloads in the default namespace share policy and RBAC scope with unrelated resources and are easily misplaced."
+    remediation: "Set metadata.namespace to the owning application namespace; exclude files whose namespace is set by Kustomize or the deployer."
+    severity: warning
+    kind: structured.cel
+    files: ['{{ manifest_globs }}']
+    exclude: ['{{ excluded_paths }}']
+    controls: [{framework: Kubernetes-Pod-Security-Standards, id: namespaces}]
+    spec:
+      message: "Workloads declare an approved namespace"
+      costLimit: 1000000
+      expression: |
+        documents
+          .filter(d, type(d.data) == map && 'kind' in d.data && type(d.data.kind) == string)
+          .map(d, (d.data.kind == 'List' && 'items' in d.data && type(d.data.items) == list ? d.data.items : [d.data])
+            .filter(o, type(o) == map && 'kind' in o && o.kind in ['Pod', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Job', 'CronJob'])
+            .map(o, {'kind': o.kind, 'meta': 'metadata' in o && type(o.metadata) == map ? o.metadata : {}, 'pod': o.kind == 'Pod'
+                  ? ('spec' in o && type(o.spec) == map ? o.spec : {})
+                  : o.kind == 'CronJob'
+                    ? ('spec' in o && type(o.spec) == map && 'jobTemplate' in o.spec && type(o.spec.jobTemplate) == map && 'spec' in o.spec.jobTemplate && type(o.spec.jobTemplate.spec) == map
+                       && 'template' in o.spec.jobTemplate.spec && type(o.spec.jobTemplate.spec.template) == map && 'spec' in o.spec.jobTemplate.spec.template && type(o.spec.jobTemplate.spec.template.spec) == map
+                       ? o.spec.jobTemplate.spec.template.spec : {})
+                    : ('spec' in o && type(o.spec) == map && 'template' in o.spec && type(o.spec.template) == map && 'spec' in o.spec.template && type(o.spec.template.spec) == map
+                       ? o.spec.template.spec : {})})
+            .map(w, {'pod': w.pod, 'meta': w.meta,
+              'id': w.kind + '/' + ('name' in w.meta && type(w.meta.name) == string ? w.meta.name : '(unnamed)')})
+            .map(w, {'pod': w.pod, 'meta': w.meta, 'id': w.id,
+              'psc': 'securityContext' in w.pod && type(w.pod.securityContext) == map ? w.pod.securityContext : {},
+              'containers': ('initContainers' in w.pod && type(w.pod.initContainers) == list
+                    ? w.pod.initContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'initContainers', 'ref': w.id + ' initContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('containers' in w.pod && type(w.pod.containers) == list
+                    ? w.pod.containers.filter(c, type(c) == map).map(c, {
+                        'group': 'containers', 'ref': w.id + ' container "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])
+                  + ('ephemeralContainers' in w.pod && type(w.pod.ephemeralContainers) == list
+                    ? w.pod.ephemeralContainers.filter(c, type(c) == map).map(c, {
+                        'group': 'ephemeralContainers', 'ref': w.id + ' ephemeralContainer "' + ('name' in c && type(c.name) == string ? c.name : '(unnamed)') + '"',
+                        'sc': 'securityContext' in c && type(c.securityContext) == map ? c.securityContext : {},
+                        'c': c})
+                    : [])})
+            .map(w, !('namespace' in w.meta) || type(w.meta.namespace) != string || w.meta.namespace == ''
+                ? (pack.require_namespace ? [w.id + ' does not set metadata.namespace'] : [])
+                : w.meta.namespace in pack.forbidden_namespaces ? [w.id + ' uses forbidden namespace ' + w.meta.namespace] : [])
+            .flatten()
+            .map(message, {'path': d.path, 'line': d.line, 'column': d.column,
+              'key': 'document:' + string(d.index) + ':' + message, 'message': message}))
+          .flatten()
