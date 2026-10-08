@@ -5,18 +5,19 @@ description: Structured GitHub Actions hardening checks that complement ci-workf
 maturity: experimental
 owner: openhoo/hoolicy-maintainers
 compatibilityNotes: >-
-  Rules use structured.cel and structured.fields only and need the structured.cel pack variable. Each CEL rule
-  reports at most one finding per affected file, located at the file and keyed and described by its first
-  offending job and step (jobs are ordered by name), with a count when several jobs or steps are affected;
-  fixing that first occurrence changes the finding key. Per-occurrence findings need a list-flattening CEL
-  extension. Detection inspects literal workflow and composite-action structure: values computed through matrix,
-  env, or input expressions, git or gh commands in run scripts, and string literals inside expressions are not
-  interpreted. The privileged-checkout same-repository guard is matched literally in the job if condition and is
-  not proven to be unbypassable by other OR branches. trusted_action_owners exempts whole owners from SHA pinning
-  and is matched exactly and case-sensitively. Graduation awaits reviewed measurements on unrelated repositories.
+  Rules use structured.cel and structured.fields only and need the structured.cel pack variable plus the bounded
+  lists, strings, and two-variable comprehension extensions. CEL rules report one finding per offending step, job,
+  or Docker image. Findings are located at the file's document start, because parsed document records carry no
+  per-step line numbers. Keys name the job and step (step:id:<id> when the step has an id, otherwise its 1-based
+  position), so adding or removing earlier steps without ids changes keys of later ones. Detection inspects literal
+  workflow and composite-action structure: values computed through matrix, env, or input expressions, git or gh
+  commands in run scripts, and string literals inside expressions are not interpreted. The privileged-checkout
+  same-repository guard is matched literally in the job if condition and is not proven to be unbypassable by
+  other OR branches. trusted_action_owners exempts whole owners from SHA pinning and is matched exactly and
+  case-sensitively. Graduation awaits reviewed measurements on unrelated repositories.
 compatibility:
   config: '>=1 <2'
-  hoolicy: '>=0.5.1-0 <2.0.0'
+  hoolicy: '>=0.5.1-0 <0.5.1 || >=0.6.0 <2.0.0'
 parameters:
   workflow_globs:
     type: string_list
@@ -60,21 +61,27 @@ rules:
       message: An action or reusable workflow reference is not pinned to a full commit SHA or sha256 digest
       expression: |-
         documents.filter(d, type(d.data) == map && 'jobs' in d.data && type(d.data.jobs) == map
-            && true
-            && d.data.jobs.exists(j, type(d.data.jobs[j]) == map && (('uses' in d.data.jobs[j] && !(type(d.data.jobs[j].uses) == string && (d.data.jobs[j].uses.startsWith('./') || d.data.jobs[j].uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (d.data.jobs[j].uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && d.data.jobs[j].uses.startsWith(o + '/')))))) || ('steps' in d.data.jobs[j] && type(d.data.jobs[j].steps) == list && d.data.jobs[j].steps.exists(s, (type(s) == map && 'uses' in s && !(type(s.uses) == string && (s.uses.startsWith('./') || s.uses.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$") || s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && s.uses.startsWith(o + '/')))))))))))
-          .map(d, [d.data.jobs.filter(j, type(d.data.jobs[j]) == map && (('uses' in d.data.jobs[j] && !(type(d.data.jobs[j].uses) == string && (d.data.jobs[j].uses.startsWith('./') || d.data.jobs[j].uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (d.data.jobs[j].uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && d.data.jobs[j].uses.startsWith(o + '/')))))) || ('steps' in d.data.jobs[j] && type(d.data.jobs[j].steps) == list && d.data.jobs[j].steps.exists(s, (type(s) == map && 'uses' in s && !(type(s.uses) == string && (s.uses.startsWith('./') || s.uses.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$") || s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && s.uses.startsWith(o + '/'))))))))))].map(jobs,
-            [jobs.filter(j, jobs.all(k, j <= k))[0]].map(name, [d.data.jobs[name]].map(job,
-              [(('uses' in job && !(type(job.uses) == string && (job.uses.startsWith('./') || job.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (job.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && job.uses.startsWith(o + '/')))))) ? job : job.steps.filter(s, (type(s) == map && 'uses' in s && !(type(s.uses) == string && (s.uses.startsWith('./') || s.uses.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$") || s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && s.uses.startsWith(o + '/')))))))[0])].map(step, {
-                'path': d.path, 'line': d.line, 'column': d.column,
-                'message': (('uses' in job && !(type(job.uses) == string && (job.uses.startsWith('./') || job.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (job.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && job.uses.startsWith(o + '/')))))) ? 'Job ' + name + ' calls reusable workflow ' + (type(job.uses) == string ? job.uses : 'a non-string reference') + ', which is not pinned to a full commit SHA' : 'Job ' + name + ' ' + ('name' in step && type(step.name) == string ? 'step "' + step.name + '"' : 'id' in step && type(step.id) == string ? 'step ' + step.id : 'step') + ' uses ' + (type(step.uses) == string ? step.uses : 'a non-string reference') + ', which is not pinned to a full commit SHA or sha256 digest') + (jobs.size() > 1 ? ' (' + string(jobs.size()) + ' affected jobs in this file)' : ''),
-                'key': 'job:' + name + (('uses' in job && !(type(job.uses) == string && (job.uses.startsWith('./') || job.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (job.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && job.uses.startsWith(o + '/')))))) ? ':uses' : ':step:' + ('id' in step && type(step.id) == string ? 'id:' + step.id : 'name' in step && type(step.name) == string ? 'name:' + step.name : 'uses' in step && type(step.uses) == string ? 'uses:' + step.uses : 'run-step'))})[0])[0])[0])[0])
-        + documents.filter(d, type(d.data) == map && 'runs' in d.data && type(d.data.runs) == map
-            && 'steps' in d.data.runs && type(d.data.runs.steps) == list
-            && d.data.runs.steps.exists(s, (type(s) == map && 'uses' in s && !(type(s.uses) == string && (s.uses.startsWith('./') || s.uses.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$") || s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && s.uses.startsWith(o + '/'))))))))
-          .map(d, [d.data.runs.steps.filter(s, (type(s) == map && 'uses' in s && !(type(s.uses) == string && (s.uses.startsWith('./') || s.uses.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$") || s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (s.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && s.uses.startsWith(o + '/')))))))].map(steps, [steps[0]].map(step, {
+            && true)
+          .map(d, d.data.jobs.transformList(name, job,
+            type(job) == map && 'steps' in job && type(job.steps) == list && true,
+            job.steps.transformList(i, step, (type(step) == map && 'uses' in step && !(type(step.uses) == string && (step.uses.startsWith('./') || step.uses.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$") || step.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (step.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && step.uses.startsWith(o + '/')))))), {
+              'path': d.path, 'line': d.line, 'column': d.column,
+              'message': 'Job ' + name + ' ' + 'step ' + string(i + 1) + ('name' in step && type(step.name) == string ? ' "' + step.name + '"' : 'id' in step && type(step.id) == string ? ' (' + step.id + ')' : '') + ' uses ' + (type(step.uses) == string ? step.uses : 'a non-string reference') + ', which is not pinned to a full commit SHA or sha256 digest',
+              'key': 'job:' + name + ':' + ('id' in step && type(step.id) == string ? 'step:id:' + step.id : 'step:' + string(i + 1)) + ':uses'})))
+          .flatten(2)
+        + documents.filter(d, type(d.data) == map && 'jobs' in d.data && type(d.data.jobs) == map)
+          .map(d, d.data.jobs.transformList(name, job, type(job) == map && ('uses' in job && !(type(job.uses) == string && (job.uses.startsWith('./') || job.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (job.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && job.uses.startsWith(o + '/')))))), {
             'path': d.path, 'line': d.line, 'column': d.column,
-            'message': 'Composite action ' + ('name' in step && type(step.name) == string ? 'step "' + step.name + '"' : 'id' in step && type(step.id) == string ? 'step ' + step.id : 'step') + ' uses ' + (type(step.uses) == string ? step.uses : 'a non-string reference') + ', which is not pinned to a full commit SHA or sha256 digest' + (steps.size() > 1 ? ' (' + string(steps.size()) + ' affected steps in this file)' : ''),
-            'key': 'runs:step:' + ('id' in step && type(step.id) == string ? 'id:' + step.id : 'name' in step && type(step.name) == string ? 'name:' + step.name : 'uses' in step && type(step.uses) == string ? 'uses:' + step.uses : 'run-step')})[0])[0])
+            'message': 'Job ' + name + ' calls reusable workflow ' + (type(job.uses) == string ? job.uses : 'a non-string reference') + ', which is not pinned to a full commit SHA',
+            'key': 'job:' + name + ':uses'}))
+          .flatten()
+        + documents.filter(d, type(d.data) == map && 'runs' in d.data && type(d.data.runs) == map
+            && 'steps' in d.data.runs && type(d.data.runs.steps) == list)
+          .map(d, d.data.runs.steps.transformList(i, step, (type(step) == map && 'uses' in step && !(type(step.uses) == string && (step.uses.startsWith('./') || step.uses.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$") || step.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$") || (step.uses.matches(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.+/-]+$") && 'trusted_action_owners' in pack && type(pack.trusted_action_owners) == list && pack.trusted_action_owners.exists(o, type(o) == string && o != '' && step.uses.startsWith(o + '/')))))), {
+            'path': d.path, 'line': d.line, 'column': d.column,
+            'message': 'Composite action ' + 'step ' + string(i + 1) + ('name' in step && type(step.name) == string ? ' "' + step.name + '"' : 'id' in step && type(step.id) == string ? ' (' + step.id + ')' : '') + ' uses ' + (type(step.uses) == string ? step.uses : 'a non-string reference') + ', which is not pinned to a full commit SHA or sha256 digest',
+            'key': 'runs:' + ('id' in step && type(step.id) == string ? 'step:id:' + step.id : 'step:' + string(i + 1)) + ':uses'}))
+          .flatten()
         + documents.filter(d, type(d.data) == map && 'runs' in d.data && type(d.data.runs) == map && 'image' in d.data.runs
             && !(type(d.data.runs.image) == string && (!d.data.runs.image.startsWith('docker://') || d.data.runs.image.matches(r"^docker://[^@\s]+@sha256:[0-9a-f]{64}$"))))
           .map(d, {'path': d.path, 'line': d.line, 'column': d.column,
@@ -101,21 +108,21 @@ rules:
       message: A composite run script or github-script input interpolates untrusted github.event or github.head_ref data
       expression: |-
         documents.filter(d, type(d.data) == map && 'jobs' in d.data && type(d.data.jobs) == map
-            && true
-            && d.data.jobs.exists(j, type(d.data.jobs[j]) == map && ('steps' in d.data.jobs[j] && type(d.data.jobs[j].steps) == list && d.data.jobs[j].steps.exists(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/github-script@') && 'with' in s && type(s.with) == map && 'script' in s.with && type(s.with.script) == string && s.with.script.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])"))))))
-          .map(d, [d.data.jobs.filter(j, type(d.data.jobs[j]) == map && ('steps' in d.data.jobs[j] && type(d.data.jobs[j].steps) == list && d.data.jobs[j].steps.exists(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/github-script@') && 'with' in s && type(s.with) == map && 'script' in s.with && type(s.with.script) == string && s.with.script.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")))))].map(jobs,
-            [jobs.filter(j, jobs.all(k, j <= k))[0]].map(name, [d.data.jobs[name]].map(job,
-              [job.steps.filter(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/github-script@') && 'with' in s && type(s.with) == map && 'script' in s.with && type(s.with.script) == string && s.with.script.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")))[0]].map(step, {
-                'path': d.path, 'line': d.line, 'column': d.column,
-                'message': 'Job ' + name + ' ' + ('name' in step && type(step.name) == string ? 'step "' + step.name + '"' : 'id' in step && type(step.id) == string ? 'step ' + step.id : 'uses' in step && type(step.uses) == string ? 'step ' + step.uses : 'run step') + ' interpolates untrusted github.event or github.head_ref data into its github-script input' + (jobs.size() > 1 ? ' (' + string(jobs.size()) + ' affected jobs in this file)' : ''),
-                'key': 'job:' + name + ':step:' + ('id' in step && type(step.id) == string ? 'id:' + step.id : 'name' in step && type(step.name) == string ? 'name:' + step.name : 'uses' in step && type(step.uses) == string ? 'uses:' + step.uses : 'run-step') + ':github-script'})[0])[0])[0])[0])
+            && true)
+          .map(d, d.data.jobs.transformList(name, job,
+            type(job) == map && 'steps' in job && type(job.steps) == list && true,
+            job.steps.transformList(i, step, (type(step) == map && 'uses' in step && type(step.uses) == string && step.uses.startsWith('actions/github-script@') && 'with' in step && type(step.with) == map && 'script' in step.with && type(step.with.script) == string && step.with.script.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")), {
+              'path': d.path, 'line': d.line, 'column': d.column,
+              'message': 'Job ' + name + ' ' + 'step ' + string(i + 1) + ('name' in step && type(step.name) == string ? ' "' + step.name + '"' : 'id' in step && type(step.id) == string ? ' (' + step.id + ')' : '') + ' interpolates untrusted github.event or github.head_ref data into its ' + 'github-script input',
+              'key': 'job:' + name + ':' + ('id' in step && type(step.id) == string ? 'step:id:' + step.id : 'step:' + string(i + 1)) + ':github-script'})))
+          .flatten(2)
         + documents.filter(d, type(d.data) == map && 'runs' in d.data && type(d.data.runs) == map
-            && 'steps' in d.data.runs && type(d.data.runs.steps) == list
-            && d.data.runs.steps.exists(s, ((type(s) == map && 'run' in s && type(s.run) == string && s.run.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")) || (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/github-script@') && 'with' in s && type(s.with) == map && 'script' in s.with && type(s.with.script) == string && s.with.script.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")))))
-          .map(d, [d.data.runs.steps.filter(s, ((type(s) == map && 'run' in s && type(s.run) == string && s.run.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")) || (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/github-script@') && 'with' in s && type(s.with) == map && 'script' in s.with && type(s.with.script) == string && s.with.script.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])"))))].map(steps, [steps[0]].map(step, {
+            && 'steps' in d.data.runs && type(d.data.runs.steps) == list)
+          .map(d, d.data.runs.steps.transformList(i, step, ((type(step) == map && 'run' in step && type(step.run) == string && step.run.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")) || (type(step) == map && 'uses' in step && type(step.uses) == string && step.uses.startsWith('actions/github-script@') && 'with' in step && type(step.with) == map && 'script' in step.with && type(step.with.script) == string && step.with.script.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])"))), {
             'path': d.path, 'line': d.line, 'column': d.column,
-            'message': 'Composite action ' + ('name' in step && type(step.name) == string ? 'step "' + step.name + '"' : 'id' in step && type(step.id) == string ? 'step ' + step.id : 'uses' in step && type(step.uses) == string ? 'step ' + step.uses : 'run step') + ' interpolates untrusted github.event or github.head_ref data into its ' + ((type(step) == map && 'run' in step && type(step.run) == string && step.run.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")) ? 'run script' : 'github-script input') + (steps.size() > 1 ? ' (' + string(steps.size()) + ' affected steps in this file)' : ''),
-            'key': 'runs:step:' + ('id' in step && type(step.id) == string ? 'id:' + step.id : 'name' in step && type(step.name) == string ? 'name:' + step.name : 'uses' in step && type(step.uses) == string ? 'uses:' + step.uses : 'run-step') + ((type(step) == map && 'run' in step && type(step.run) == string && step.run.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")) ? ':run-script' : ':github-script')})[0])[0])
+            'message': 'Composite action ' + 'step ' + string(i + 1) + ('name' in step && type(step.name) == string ? ' "' + step.name + '"' : 'id' in step && type(step.id) == string ? ' (' + step.id + ')' : '') + ' interpolates untrusted github.event or github.head_ref data into its ' + ((type(step) == map && 'run' in step && type(step.run) == string && step.run.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")) ? 'run script' : 'github-script input'),
+            'key': 'runs:' + ('id' in step && type(step.id) == string ? 'step:id:' + step.id : 'step:' + string(i + 1)) + ((type(step) == map && 'run' in step && type(step.run) == string && step.run.matches(r"\$\{\{(?:(?:[^}]|\}[^}])*[^\w.])?github\s*(?:\.\s*(?:event|head_ref)\b|\[\s*'(?:event|head_ref)'\s*\])")) ? ':run-script' : ':github-script')}))
+          .flatten()
   - id: github-actions-hardening.privileged-checkout
     title: Privileged triggers do not check out untrusted pull-request code
     description: >-
@@ -141,14 +148,14 @@ rules:
         documents.filter(d, type(d.data) == map && 'jobs' in d.data && type(d.data.jobs) == map
             && ['on', 'true'].exists(t, t in d.data && (d.data[t] == 'pull_request_target' || d.data[t] == 'workflow_run'
               || type(d.data[t]) == list && ('pull_request_target' in d.data[t] || 'workflow_run' in d.data[t])
-              || type(d.data[t]) == map && ('pull_request_target' in d.data[t] || 'workflow_run' in d.data[t])))
-            && d.data.jobs.exists(j, type(d.data.jobs[j]) == map && (!('if' in d.data.jobs[j] && type(d.data.jobs[j]['if']) == string && d.data.jobs[j]['if'].matches(r"github\s*\.\s*event\s*\.\s*(?:workflow_run\s*\.\s*(?:event\s*==\s*'push'|head_repository\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)|pull_request\s*\.\s*head\s*\.\s*repo\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)")) && ('steps' in d.data.jobs[j] && type(d.data.jobs[j].steps) == list && d.data.jobs[j].steps.exists(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/checkout@') && 'with' in s && type(s.with) == map && ['ref', 'repository'].exists(i, i in s.with && type(s.with[i]) == string && s.with[i].matches(r"github\s*\.\s*(?:head_ref\b|event\s*\.\s*(?:pull_request\s*\.\s*(?:head\b|merge_commit_sha\b)|workflow_run\s*\.\s*head_(?:sha|branch|repository|commit)\b))|refs/pull/"))))))))
-          .map(d, [d.data.jobs.filter(j, type(d.data.jobs[j]) == map && (!('if' in d.data.jobs[j] && type(d.data.jobs[j]['if']) == string && d.data.jobs[j]['if'].matches(r"github\s*\.\s*event\s*\.\s*(?:workflow_run\s*\.\s*(?:event\s*==\s*'push'|head_repository\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)|pull_request\s*\.\s*head\s*\.\s*repo\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)")) && ('steps' in d.data.jobs[j] && type(d.data.jobs[j].steps) == list && d.data.jobs[j].steps.exists(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/checkout@') && 'with' in s && type(s.with) == map && ['ref', 'repository'].exists(i, i in s.with && type(s.with[i]) == string && s.with[i].matches(r"github\s*\.\s*(?:head_ref\b|event\s*\.\s*(?:pull_request\s*\.\s*(?:head\b|merge_commit_sha\b)|workflow_run\s*\.\s*head_(?:sha|branch|repository|commit)\b))|refs/pull/")))))))].map(jobs,
-            [jobs.filter(j, jobs.all(k, j <= k))[0]].map(name, [d.data.jobs[name]].map(job,
-              [job.steps.filter(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/checkout@') && 'with' in s && type(s.with) == map && ['ref', 'repository'].exists(i, i in s.with && type(s.with[i]) == string && s.with[i].matches(r"github\s*\.\s*(?:head_ref\b|event\s*\.\s*(?:pull_request\s*\.\s*(?:head\b|merge_commit_sha\b)|workflow_run\s*\.\s*head_(?:sha|branch|repository|commit)\b))|refs/pull/"))))[0]].map(step, {
-                'path': d.path, 'line': d.line, 'column': d.column,
-                'message': 'Job ' + name + ' ' + ('name' in step && type(step.name) == string ? 'step "' + step.name + '"' : 'id' in step && type(step.id) == string ? 'step ' + step.id : 'uses' in step && type(step.uses) == string ? 'step ' + step.uses : 'run step') + ' checks out untrusted pull-request code in a pull_request_target or workflow_run workflow' + (jobs.size() > 1 ? ' (' + string(jobs.size()) + ' affected jobs in this file)' : ''),
-                'key': 'job:' + name + ':step:' + ('id' in step && type(step.id) == string ? 'id:' + step.id : 'name' in step && type(step.name) == string ? 'name:' + step.name : 'uses' in step && type(step.uses) == string ? 'uses:' + step.uses : 'run-step') + ':privileged-checkout'})[0])[0])[0])[0])
+              || type(d.data[t]) == map && ('pull_request_target' in d.data[t] || 'workflow_run' in d.data[t]))))
+          .map(d, d.data.jobs.transformList(name, job,
+            type(job) == map && 'steps' in job && type(job.steps) == list && !('if' in job && type(job['if']) == string && job['if'].matches(r"github\s*\.\s*event\s*\.\s*(?:workflow_run\s*\.\s*(?:event\s*==\s*'push'|head_repository\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)|pull_request\s*\.\s*head\s*\.\s*repo\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)")),
+            job.steps.transformList(i, step, (type(step) == map && 'uses' in step && type(step.uses) == string && step.uses.startsWith('actions/checkout@') && 'with' in step && type(step.with) == map && ['ref', 'repository'].exists(input, input in step.with && type(step.with[input]) == string && step.with[input].matches(r"github\s*\.\s*(?:head_ref\b|event\s*\.\s*(?:pull_request\s*\.\s*(?:head\b|merge_commit_sha\b)|workflow_run\s*\.\s*head_(?:sha|branch|repository|commit)\b))|refs/pull/"))), {
+              'path': d.path, 'line': d.line, 'column': d.column,
+              'message': 'Job ' + name + ' ' + 'step ' + string(i + 1) + ('name' in step && type(step.name) == string ? ' "' + step.name + '"' : 'id' in step && type(step.id) == string ? ' (' + step.id + ')' : '') + ' checks out untrusted pull-request code in a pull_request_target or workflow_run workflow',
+              'key': 'job:' + name + ':' + ('id' in step && type(step.id) == string ? 'step:id:' + step.id : 'step:' + string(i + 1)) + ':privileged-checkout'})))
+          .flatten(2)
   - id: github-actions-hardening.checkout-persist-credentials
     title: Checkout does not persist the job token
     description: Requires every actions/checkout step in workflows and composite actions to set persist-credentials to false.
@@ -168,21 +175,21 @@ rules:
       message: An actions/checkout step does not set persist-credentials to false
       expression: |-
         documents.filter(d, type(d.data) == map && 'jobs' in d.data && type(d.data.jobs) == map
-            && true
-            && d.data.jobs.exists(j, type(d.data.jobs[j]) == map && ('steps' in d.data.jobs[j] && type(d.data.jobs[j].steps) == list && d.data.jobs[j].steps.exists(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/checkout@') && !('with' in s && type(s.with) == map && 'persist-credentials' in s.with && (s.with['persist-credentials'] == false || s.with['persist-credentials'] == 'false')))))))
-          .map(d, [d.data.jobs.filter(j, type(d.data.jobs[j]) == map && ('steps' in d.data.jobs[j] && type(d.data.jobs[j].steps) == list && d.data.jobs[j].steps.exists(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/checkout@') && !('with' in s && type(s.with) == map && 'persist-credentials' in s.with && (s.with['persist-credentials'] == false || s.with['persist-credentials'] == 'false'))))))].map(jobs,
-            [jobs.filter(j, jobs.all(k, j <= k))[0]].map(name, [d.data.jobs[name]].map(job,
-              [job.steps.filter(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/checkout@') && !('with' in s && type(s.with) == map && 'persist-credentials' in s.with && (s.with['persist-credentials'] == false || s.with['persist-credentials'] == 'false'))))[0]].map(step, {
-                'path': d.path, 'line': d.line, 'column': d.column,
-                'message': 'Job ' + name + ' ' + ('name' in step && type(step.name) == string ? 'step "' + step.name + '"' : 'id' in step && type(step.id) == string ? 'step ' + step.id : 'uses' in step && type(step.uses) == string ? 'step ' + step.uses : 'run step') + ' runs actions/checkout without persist-credentials: false' + (jobs.size() > 1 ? ' (' + string(jobs.size()) + ' affected jobs in this file)' : ''),
-                'key': 'job:' + name + ':step:' + ('id' in step && type(step.id) == string ? 'id:' + step.id : 'name' in step && type(step.name) == string ? 'name:' + step.name : 'uses' in step && type(step.uses) == string ? 'uses:' + step.uses : 'run-step') + ':persist-credentials'})[0])[0])[0])[0])
+            && true)
+          .map(d, d.data.jobs.transformList(name, job,
+            type(job) == map && 'steps' in job && type(job.steps) == list && true,
+            job.steps.transformList(i, step, (type(step) == map && 'uses' in step && type(step.uses) == string && step.uses.startsWith('actions/checkout@') && !('with' in step && type(step.with) == map && 'persist-credentials' in step.with && (step.with['persist-credentials'] == false || step.with['persist-credentials'] == 'false'))), {
+              'path': d.path, 'line': d.line, 'column': d.column,
+              'message': 'Job ' + name + ' ' + 'step ' + string(i + 1) + ('name' in step && type(step.name) == string ? ' "' + step.name + '"' : 'id' in step && type(step.id) == string ? ' (' + step.id + ')' : '') + ' runs actions/checkout without persist-credentials: false',
+              'key': 'job:' + name + ':' + ('id' in step && type(step.id) == string ? 'step:id:' + step.id : 'step:' + string(i + 1)) + ':persist-credentials'})))
+          .flatten(2)
         + documents.filter(d, type(d.data) == map && 'runs' in d.data && type(d.data.runs) == map
-            && 'steps' in d.data.runs && type(d.data.runs.steps) == list
-            && d.data.runs.steps.exists(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/checkout@') && !('with' in s && type(s.with) == map && 'persist-credentials' in s.with && (s.with['persist-credentials'] == false || s.with['persist-credentials'] == 'false')))))
-          .map(d, [d.data.runs.steps.filter(s, (type(s) == map && 'uses' in s && type(s.uses) == string && s.uses.startsWith('actions/checkout@') && !('with' in s && type(s.with) == map && 'persist-credentials' in s.with && (s.with['persist-credentials'] == false || s.with['persist-credentials'] == 'false'))))].map(steps, [steps[0]].map(step, {
+            && 'steps' in d.data.runs && type(d.data.runs.steps) == list)
+          .map(d, d.data.runs.steps.transformList(i, step, (type(step) == map && 'uses' in step && type(step.uses) == string && step.uses.startsWith('actions/checkout@') && !('with' in step && type(step.with) == map && 'persist-credentials' in step.with && (step.with['persist-credentials'] == false || step.with['persist-credentials'] == 'false'))), {
             'path': d.path, 'line': d.line, 'column': d.column,
-            'message': 'Composite action ' + ('name' in step && type(step.name) == string ? 'step "' + step.name + '"' : 'id' in step && type(step.id) == string ? 'step ' + step.id : 'uses' in step && type(step.uses) == string ? 'step ' + step.uses : 'run step') + ' runs actions/checkout without persist-credentials: false' + (steps.size() > 1 ? ' (' + string(steps.size()) + ' affected steps in this file)' : ''),
-            'key': 'runs:step:' + ('id' in step && type(step.id) == string ? 'id:' + step.id : 'name' in step && type(step.name) == string ? 'name:' + step.name : 'uses' in step && type(step.uses) == string ? 'uses:' + step.uses : 'run-step') + ':persist-credentials'})[0])[0])
+            'message': 'Composite action ' + 'step ' + string(i + 1) + ('name' in step && type(step.name) == string ? ' "' + step.name + '"' : 'id' in step && type(step.id) == string ? ' (' + step.id + ')' : '') + ' runs actions/checkout without persist-credentials: false',
+            'key': 'runs:' + ('id' in step && type(step.id) == string ? 'step:id:' + step.id : 'step:' + string(i + 1)) + ':persist-credentials'}))
+          .flatten()
   - id: github-actions-hardening.top-level-permissions
     title: Workflows declare top-level token permissions
     description: Requires each selected workflow to declare a top-level permissions key.
@@ -217,12 +224,9 @@ rules:
       costLimit: 500000
       message: A job passes secrets inherit to a reusable workflow outside this repository
       expression: |-
-        documents.filter(d, type(d.data) == map && 'jobs' in d.data && type(d.data.jobs) == map
-            && true
-            && d.data.jobs.exists(j, type(d.data.jobs[j]) == map && ('uses' in d.data.jobs[j] && type(d.data.jobs[j].uses) == string && !d.data.jobs[j].uses.startsWith('./') && 'secrets' in d.data.jobs[j] && d.data.jobs[j].secrets == 'inherit')))
-          .map(d, [d.data.jobs.filter(j, type(d.data.jobs[j]) == map && ('uses' in d.data.jobs[j] && type(d.data.jobs[j].uses) == string && !d.data.jobs[j].uses.startsWith('./') && 'secrets' in d.data.jobs[j] && d.data.jobs[j].secrets == 'inherit'))].map(jobs,
-            [jobs.filter(j, jobs.all(k, j <= k))[0]].map(name, [d.data.jobs[name]].map(job,
-              [job].map(step, {
-                'path': d.path, 'line': d.line, 'column': d.column,
-                'message': 'Job ' + name + ' passes secrets inherit to reusable workflow ' + job.uses + ', which is outside this repository' + (jobs.size() > 1 ? ' (' + string(jobs.size()) + ' affected jobs in this file)' : ''),
-                'key': 'job:' + name + ':secrets-inherit'})[0])[0])[0])[0])
+        documents.filter(d, type(d.data) == map && 'jobs' in d.data && type(d.data.jobs) == map)
+          .map(d, d.data.jobs.transformList(name, job, type(job) == map && ('uses' in job && type(job.uses) == string && !job.uses.startsWith('./') && 'secrets' in job && job.secrets == 'inherit'), {
+            'path': d.path, 'line': d.line, 'column': d.column,
+            'message': 'Job ' + name + ' passes secrets inherit to reusable workflow ' + job.uses + ', which is outside this repository',
+            'key': 'job:' + name + ':secrets-inherit'}))
+          .flatten()

@@ -29,8 +29,8 @@ cases:
       - ruleId: github-actions-hardening.action-pinning
         path: action.yaml
         line: 1
-        key: 'runs:step:uses:actions/setup-node@v4'
-        messageContains: 'Composite action step uses actions/setup-node@v4, which is not pinned'
+        key: 'runs:step:1:uses'
+        messageContains: 'Composite action step 1 uses actions/setup-node@v4, which is not pinned to a full commit SHA or sha256 digest'
     findingCount: 1
   - name: pinning short sha in nested action fails
     rule: github-actions-hardening.action-pinning
@@ -45,8 +45,8 @@ cases:
       - ruleId: github-actions-hardening.action-pinning
         path: tools/release/action.yml
         line: 1
-        key: 'runs:step:uses:vendor/tool/sub@b7ad1da'
-        messageContains: 'uses vendor/tool/sub@b7ad1da'
+        key: 'runs:step:1:uses'
+        messageContains: 'uses vendor/tool/sub@b7ad1da, which is not pinned to a full commit SHA or sha256 digest'
     findingCount: 1
   - name: pinning uppercase sha fails
     rule: github-actions-hardening.action-pinning
@@ -61,8 +61,8 @@ cases:
       - ruleId: github-actions-hardening.action-pinning
         path: action.yml
         line: 1
-        key: 'runs:step:uses:vendor/tool@B7AD1DAD31E06C5925EF5D2FC7AD053EF454303E'
-        messageContains: 'not pinned to a full commit SHA'
+        key: 'runs:step:1:uses'
+        messageContains: 'uses vendor/tool@B7AD1DAD31E06C5925EF5D2FC7AD053EF454303E, which is not pinned to a full commit SHA or sha256 digest'
     findingCount: 1
   - name: pinning docker image tag in docker action fails
     rule: github-actions-hardening.action-pinning
@@ -93,8 +93,8 @@ cases:
       - ruleId: github-actions-hardening.action-pinning
         path: action.yml
         line: 1
-        key: 'runs:step:uses:docker://alpine:3.20'
-        messageContains: 'uses docker://alpine:3.20'
+        key: 'runs:step:1:uses'
+        messageContains: 'uses docker://alpine:3.20, which is not pinned to a full commit SHA or sha256 digest'
     findingCount: 1
   - name: pinning local dockerfile and digest docker action pass
     rule: github-actions-hardening.action-pinning
@@ -166,7 +166,7 @@ cases:
         path: .github/workflows/ci.yml
         line: 1
         key: 'job:call:uses'
-        messageContains: 'Job call calls reusable workflow vendor/repo/.github/workflows/ci.yml@main, which is not pinned'
+        messageContains: 'Job call calls reusable workflow vendor/repo/.github/workflows/ci.yml@main, which is not pinned to a full commit SHA'
     findingCount: 1
   - name: pinning selected workflow expression ref fails
     rule: github-actions-hardening.action-pinning
@@ -185,8 +185,8 @@ cases:
       - ruleId: github-actions-hardening.action-pinning
         path: .github/workflows/ci.yml
         line: 1
-        key: 'job:build:step:uses:vendor/tool@${{ matrix.ref }}'
-        messageContains: 'Job build step uses vendor/tool@${{ matrix.ref }}'
+        key: 'job:build:step:1:uses'
+        messageContains: 'Job build step 1 uses vendor/tool@${{ matrix.ref }}, which is not pinned to a full commit SHA or sha256 digest'
     findingCount: 1
   - name: pinning excluded vendored action passes
     rule: github-actions-hardening.action-pinning
@@ -204,7 +204,7 @@ cases:
       action.yml: |
         runs: [unterminated
     errorContains: action.yml
-  - name: pinning reports one finding per file naming the first job and count
+  - name: pinning reports every unpinned step and job across files
     rule: github-actions-hardening.action-pinning
     outcome: fail
     parameters:
@@ -245,19 +245,29 @@ cases:
       - ruleId: github-actions-hardening.action-pinning
         path: .github/workflows/b.yml
         line: 1
-        key: 'job:alpha:step:name:Set up tool'
-        messageContains: 'Job alpha step "Set up tool" uses vendor/a@main, which is not pinned to a full commit SHA or sha256 digest (2 affected jobs in this file)'
+        key: 'job:zeta:step:1:uses'
+        messageContains: 'Job zeta step 1 uses vendor/z@v1, which is not pinned to a full commit SHA or sha256 digest'
+      - ruleId: github-actions-hardening.action-pinning
+        path: .github/workflows/b.yml
+        line: 1
+        key: 'job:alpha:step:2:uses'
+        messageContains: 'Job alpha step 2 "Set up tool" uses vendor/a@main, which is not pinned to a full commit SHA or sha256 digest'
       - ruleId: github-actions-hardening.action-pinning
         path: .github/workflows/a.yaml
         line: 1
-        key: 'job:build:step:id:fetch'
-        messageContains: 'Job build step fetch uses vendor/b@v2'
+        key: 'job:build:step:id:fetch:uses'
+        messageContains: 'Job build step 1 (fetch) uses vendor/b@v2, which is not pinned to a full commit SHA or sha256 digest'
       - ruleId: github-actions-hardening.action-pinning
         path: .github/actions/setup/action.yml
         line: 1
-        key: 'runs:step:uses:vendor/c@v3'
-        messageContains: 'Composite action step uses vendor/c@v3, which is not pinned to a full commit SHA or sha256 digest (2 affected steps in this file)'
-    findingCount: 3
+        key: 'runs:step:1:uses'
+        messageContains: 'Composite action step 1 uses vendor/c@v3, which is not pinned to a full commit SHA or sha256 digest'
+      - ruleId: github-actions-hardening.action-pinning
+        path: .github/actions/setup/action.yml
+        line: 1
+        key: 'runs:step:2:uses'
+        messageContains: 'Composite action step 2 uses vendor/d@v4, which is not pinned to a full commit SHA or sha256 digest'
+    findingCount: 5
   - name: trusted owner may use tags in actions and reusable workflows
     rule: github-actions-hardening.action-pinning
     outcome: pass
@@ -299,9 +309,19 @@ cases:
       - ruleId: github-actions-hardening.action-pinning
         path: action.yml
         line: 1
-        key: 'runs:step:uses:actions-evil/checkout@v4'
-        messageContains: 'Composite action step uses actions-evil/checkout@v4, which is not pinned to a full commit SHA or sha256 digest (3 affected steps in this file)'
-    findingCount: 1
+        key: 'runs:step:2:uses'
+        messageContains: 'step 2 uses actions-evil/checkout@v4, which is not pinned to a full commit SHA or sha256 digest'
+      - ruleId: github-actions-hardening.action-pinning
+        path: action.yml
+        line: 1
+        key: 'runs:step:3:uses'
+        messageContains: 'step 3 uses Actions/checkout@v4, which is not pinned to a full commit SHA or sha256 digest'
+      - ruleId: github-actions-hardening.action-pinning
+        path: action.yml
+        line: 1
+        key: 'runs:step:4:uses'
+        messageContains: 'step 4 uses vendor/tool@v1, which is not pinned to a full commit SHA or sha256 digest'
+    findingCount: 3
   - name: trusted owner without a ref or docker tag still fails
     rule: github-actions-hardening.action-pinning
     outcome: fail
@@ -326,18 +346,18 @@ cases:
       - ruleId: github-actions-hardening.action-pinning
         path: a/action.yml
         line: 1
-        key: 'runs:step:uses:actions/checkout'
-        messageContains: 'uses actions/checkout,'
+        key: 'runs:step:1:uses'
+        messageContains: 'step 1 uses actions/checkout,'
       - ruleId: github-actions-hardening.action-pinning
         path: b/action.yml
         line: 1
-        key: 'runs:step:uses:docker://docker/alpine:3.20'
-        messageContains: 'uses docker://docker/alpine:3.20'
+        key: 'runs:step:1:uses'
+        messageContains: 'step 1 uses docker://docker/alpine:3.20, which is not pinned to a full commit SHA or sha256 digest'
       - ruleId: github-actions-hardening.action-pinning
         path: c/action.yml
         line: 1
         key: 'runs:image'
-        messageContains: 'Docker action image docker://docker/tool:1'
+        messageContains: 'Docker action image docker://docker/tool:1 is not pinned to a sha256 digest'
     findingCount: 3
   - name: default trusted owner list is empty
     rule: github-actions-hardening.action-pinning
@@ -352,9 +372,38 @@ cases:
       - ruleId: github-actions-hardening.action-pinning
         path: action.yml
         line: 1
-        key: 'runs:step:uses:actions/checkout@v4'
-        messageContains: 'uses actions/checkout@v4'
+        key: 'runs:step:1:uses'
+        messageContains: 'step 1 uses actions/checkout@v4, which is not pinned to a full commit SHA or sha256 digest'
     findingCount: 1
+  - name: step id key is stable when earlier steps are inserted
+    rule: github-actions-hardening.action-pinning
+    outcome: fail
+    parameters:
+      pinning_globs: ['.github/workflows/*.{yml,yaml}']
+    files:
+      .github/workflows/ci.yml: |
+        on: push
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+              - run: echo inserted
+              - run: echo inserted again
+              - id: fetch
+                uses: vendor/b@v2
+              - uses: vendor/c@v3
+    expect:
+      - ruleId: github-actions-hardening.action-pinning
+        path: .github/workflows/ci.yml
+        line: 1
+        key: 'job:build:step:id:fetch:uses'
+        messageContains: 'Job build step 3 (fetch) uses vendor/b@v2'
+      - ruleId: github-actions-hardening.action-pinning
+        path: .github/workflows/ci.yml
+        line: 1
+        key: 'job:build:step:4:uses'
+        messageContains: 'Job build step 4 uses vendor/c@v3'
+    findingCount: 2
   # expression-injection
   - name: injection safe env handling passes
     rule: github-actions-hardening.expression-injection
@@ -396,8 +445,8 @@ cases:
       - ruleId: github-actions-hardening.expression-injection
         path: .github/actions/comment/action.yml
         line: 1
-        key: 'runs:step:run-step:run-script'
-        messageContains: 'Composite action run step interpolates untrusted github.event or github.head_ref data into its run script'
+        key: 'runs:step:1:run-script'
+        messageContains: 'Composite action step 1 interpolates untrusted github.event or github.head_ref data into its run script'
     findingCount: 1
   - name: injection composite run head ref inside function fails
     rule: github-actions-hardening.expression-injection
@@ -415,8 +464,8 @@ cases:
       - ruleId: github-actions-hardening.expression-injection
         path: action.yml
         line: 1
-        key: 'runs:step:run-step:run-script'
-        messageContains: 'into its run script'
+        key: 'runs:step:1:run-script'
+        messageContains: 'step 1 interpolates untrusted github.event or github.head_ref data into its run script'
     findingCount: 1
   - name: injection bracket event access fails
     rule: github-actions-hardening.expression-injection
@@ -432,8 +481,8 @@ cases:
       - ruleId: github-actions-hardening.expression-injection
         path: action.yml
         line: 1
-        key: 'runs:step:run-step:run-script'
-        messageContains: 'into its run script'
+        key: 'runs:step:1:run-script'
+        messageContains: 'step 1 interpolates untrusted github.event or github.head_ref data into its run script'
     findingCount: 1
   - name: injection workflow github-script interpolation fails
     rule: github-actions-hardening.expression-injection
@@ -455,8 +504,8 @@ cases:
       - ruleId: github-actions-hardening.expression-injection
         path: .github/workflows/comment.yaml
         line: 1
-        key: 'job:reply:step:uses:actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea:github-script'
-        messageContains: 'Job reply step actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea interpolates untrusted github.event or github.head_ref data into its github-script input'
+        key: 'job:reply:step:1:github-script'
+        messageContains: 'Job reply step 1 interpolates untrusted github.event or github.head_ref data into its github-script input'
     findingCount: 1
   - name: injection workflow run scripts are left to ci-workflow-security
     rule: github-actions-hardening.expression-injection
@@ -505,14 +554,19 @@ cases:
       - ruleId: github-actions-hardening.expression-injection
         path: .github/actions/one/action.yml
         line: 1
-        key: 'runs:step:name:Comment:github-script'
-        messageContains: 'Composite action step "Comment" interpolates untrusted github.event or github.head_ref data into its github-script input (2 affected steps in this file)'
+        key: 'runs:step:1:github-script'
+        messageContains: 'Composite action step 1 "Comment" interpolates untrusted github.event or github.head_ref data into its github-script input'
+      - ruleId: github-actions-hardening.expression-injection
+        path: .github/actions/one/action.yml
+        line: 1
+        key: 'runs:step:2:run-script'
+        messageContains: 'Composite action step 2 interpolates untrusted github.event or github.head_ref data into its run script'
       - ruleId: github-actions-hardening.expression-injection
         path: .github/actions/two/action.yml
         line: 1
         key: 'runs:step:id:greet:run-script'
-        messageContains: 'Composite action step greet interpolates untrusted github.event or github.head_ref data into its run script'
-    findingCount: 2
+        messageContains: 'Composite action step 1 (greet) interpolates untrusted github.event or github.head_ref data into its run script'
+    findingCount: 3
   # privileged-checkout
   - name: privileged checkout of base ref passes
     rule: github-actions-hardening.privileged-checkout
@@ -566,8 +620,8 @@ cases:
       - ruleId: github-actions-hardening.privileged-checkout
         path: .github/workflows/report.yml
         line: 1
-        key: 'job:report:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:privileged-checkout'
-        messageContains: 'Job report step actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
+        key: 'job:report:step:1:privileged-checkout'
+        messageContains: 'Job report step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
     findingCount: 1
   - name: pull request target list trigger with head ref in second job fails
     rule: github-actions-hardening.privileged-checkout
@@ -592,8 +646,8 @@ cases:
       - ruleId: github-actions-hardening.privileged-checkout
         path: .github/workflows/multi.yml
         line: 1
-        key: 'job:unsafe:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:privileged-checkout'
-        messageContains: 'Job unsafe step'
+        key: 'job:unsafe:step:2:privileged-checkout'
+        messageContains: 'Job unsafe step 2 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
     findingCount: 1
   - name: pull request target refs pull merge ref fails
     rule: github-actions-hardening.privileged-checkout
@@ -615,8 +669,8 @@ cases:
       - ruleId: github-actions-hardening.privileged-checkout
         path: .github/workflows/pr.yml
         line: 1
-        key: 'job:build:step:uses:actions/checkout@v4:privileged-checkout'
-        messageContains: 'Job build step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
+        key: 'job:build:step:1:privileged-checkout'
+        messageContains: 'Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
     findingCount: 1
   - name: pull request target fork repository input fails
     rule: github-actions-hardening.privileged-checkout
@@ -637,8 +691,8 @@ cases:
       - ruleId: github-actions-hardening.privileged-checkout
         path: .github/workflows/pr.yml
         line: 1
-        key: 'job:build:step:uses:actions/checkout@v4:privileged-checkout'
-        messageContains: 'Job build step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
+        key: 'job:build:step:1:privileged-checkout'
+        messageContains: 'Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
     findingCount: 1
   - name: boolean true trigger key from YAML 1.1 tooling is still recognized
     rule: github-actions-hardening.privileged-checkout
@@ -658,8 +712,8 @@ cases:
       - ruleId: github-actions-hardening.privileged-checkout
         path: .github/workflows/legacy.yml
         line: 1
-        key: 'job:build:step:uses:actions/checkout@v4:privileged-checkout'
-        messageContains: 'Job build step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
+        key: 'job:build:step:1:privileged-checkout'
+        messageContains: 'Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
     findingCount: 1
   - name: quoted on key with pull request target fails
     rule: github-actions-hardening.privileged-checkout
@@ -678,8 +732,8 @@ cases:
       - ruleId: github-actions-hardening.privileged-checkout
         path: .github/workflows/quoted.yml
         line: 1
-        key: 'job:build:step:uses:actions/checkout@v4:privileged-checkout'
-        messageContains: 'Job build step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
+        key: 'job:build:step:1:privileged-checkout'
+        messageContains: 'Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
     findingCount: 1
   - name: workflow run head checkout guarded by push event job condition passes
     rule: github-actions-hardening.privileged-checkout
@@ -735,8 +789,8 @@ cases:
       - ruleId: github-actions-hardening.privileged-checkout
         path: .github/workflows/release.yml
         line: 1
-        key: 'job:release:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:privileged-checkout'
-        messageContains: 'Job release step'
+        key: 'job:release:step:1:privileged-checkout'
+        messageContains: 'Job release step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
     findingCount: 1
   - name: privileged checkout reports each workflow and only unguarded jobs
     rule: github-actions-hardening.privileged-checkout
@@ -780,14 +834,19 @@ cases:
       - ruleId: github-actions-hardening.privileged-checkout
         path: .github/workflows/one.yml
         line: 1
-        key: 'job:untrusted-a:step:uses:actions/checkout@v4:privileged-checkout'
-        messageContains: 'Job untrusted-a step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow (2 affected jobs in this file)'
+        key: 'job:untrusted-a:step:1:privileged-checkout'
+        messageContains: 'Job untrusted-a step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
+      - ruleId: github-actions-hardening.privileged-checkout
+        path: .github/workflows/one.yml
+        line: 1
+        key: 'job:untrusted-b:step:1:privileged-checkout'
+        messageContains: 'Job untrusted-b step 1 "Fetch PR" checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
       - ruleId: github-actions-hardening.privileged-checkout
         path: .github/workflows/two.yml
         line: 1
-        key: 'job:report:step:uses:actions/checkout@v4:privileged-checkout'
-        messageContains: 'Job report step'
-    findingCount: 2
+        key: 'job:report:step:1:privileged-checkout'
+        messageContains: 'Job report step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow'
+    findingCount: 3
   # checkout-persist-credentials
   - name: persist credentials false in workflow and composite passes
     rule: github-actions-hardening.checkout-persist-credentials
@@ -834,8 +893,8 @@ cases:
       - ruleId: github-actions-hardening.checkout-persist-credentials
         path: .github/workflows/ci.yml
         line: 1
-        key: 'job:test:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:persist-credentials'
-        messageContains: 'Job test step actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 runs actions/checkout without persist-credentials: false'
+        key: 'job:test:step:1:persist-credentials'
+        messageContains: 'Job test step 1 runs actions/checkout without persist-credentials: false'
     findingCount: 1
   - name: checkout persist credentials true in matrix job fails
     rule: github-actions-hardening.checkout-persist-credentials
@@ -858,8 +917,8 @@ cases:
       - ruleId: github-actions-hardening.checkout-persist-credentials
         path: .github/workflows/ci.yml
         line: 1
-        key: 'job:test:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:persist-credentials'
-        messageContains: 'runs actions/checkout without persist-credentials: false'
+        key: 'job:test:step:1:persist-credentials'
+        messageContains: 'Job test step 1 runs actions/checkout without persist-credentials: false'
     findingCount: 1
   - name: checkout persist credentials expression fails
     rule: github-actions-hardening.checkout-persist-credentials
@@ -876,8 +935,8 @@ cases:
       - ruleId: github-actions-hardening.checkout-persist-credentials
         path: action.yml
         line: 1
-        key: 'runs:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:persist-credentials'
-        messageContains: 'Composite action step actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 runs actions/checkout without persist-credentials: false'
+        key: 'runs:step:1:persist-credentials'
+        messageContains: 'Composite action step 1 runs actions/checkout without persist-credentials: false'
     findingCount: 1
   - name: checkout warning severity is advisory
     rule: github-actions-hardening.checkout-persist-credentials
@@ -896,8 +955,8 @@ cases:
       - ruleId: github-actions-hardening.checkout-persist-credentials
         path: .github/workflows/release.yaml
         line: 1
-        key: 'job:release:step:uses:actions/checkout@v4:persist-credentials'
-        messageContains: 'runs actions/checkout without persist-credentials: false'
+        key: 'job:release:step:1:persist-credentials'
+        messageContains: 'Job release step 1 runs actions/checkout without persist-credentials: false'
         waived: false
         hasFix: false
     findingCount: 1
@@ -929,13 +988,13 @@ cases:
       - ruleId: github-actions-hardening.checkout-persist-credentials
         path: .github/workflows/ci.yml
         line: 1
-        key: 'job:lint:step:name:Check out:persist-credentials'
-        messageContains: 'Job lint step "Check out" runs actions/checkout without persist-credentials: false'
+        key: 'job:lint:step:1:persist-credentials'
+        messageContains: 'Job lint step 1 "Check out" runs actions/checkout without persist-credentials: false'
       - ruleId: github-actions-hardening.checkout-persist-credentials
         path: action.yml
         line: 1
         key: 'runs:step:id:co:persist-credentials'
-        messageContains: 'Composite action step co runs actions/checkout without persist-credentials: false'
+        messageContains: 'Composite action step 1 (co) runs actions/checkout without persist-credentials: false'
     findingCount: 2
   # top-level-permissions
   - name: top level permissions declared passes
@@ -1078,9 +1137,9 @@ cases:
         path: .github/workflows/caller.yaml
         line: 1
         key: 'job:call:secrets-inherit'
-        messageContains: 'my-org/my-repo/.github/workflows/release.yml@main'
+        messageContains: 'my-org/my-repo/.github/workflows/release.yml@main, which is outside this repository'
     findingCount: 1
-  - name: secrets inherit counts every remote caller in one workflow
+  - name: secrets inherit reports every remote caller in one workflow
     rule: github-actions-hardening.reusable-secrets-inherit
     outcome: fail
     files:
@@ -1100,6 +1159,11 @@ cases:
       - ruleId: github-actions-hardening.reusable-secrets-inherit
         path: .github/workflows/deploy.yml
         line: 1
+        key: 'job:staging:secrets-inherit'
+        messageContains: 'Job staging passes secrets inherit to reusable workflow org/shared/.github/workflows/deploy.yml@v1, which is outside this repository'
+      - ruleId: github-actions-hardening.reusable-secrets-inherit
+        path: .github/workflows/deploy.yml
+        line: 1
         key: 'job:production:secrets-inherit'
-        messageContains: 'Job production passes secrets inherit to reusable workflow org/shared/.github/workflows/deploy.yml@v1, which is outside this repository (2 affected jobs in this file)'
-    findingCount: 1
+        messageContains: 'Job production passes secrets inherit'
+    findingCount: 2

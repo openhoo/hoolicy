@@ -14,9 +14,9 @@
           "path": "action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step uses actions/checkout@v4, which is not pinned to a full commit SHA or sha256 digest",
-          "key": "runs:step:uses:actions/checkout@v4",
-          "fingerprint": "ea6c28434e9bad0642239dafeb406a4e42b569da066338f6a25a25c23b3fe6dd",
+          "message": "Composite action step 1 uses actions/checkout@v4, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:1:uses",
+          "fingerprint": "19f102cf4b40be8767a86be8fae7aaba89762f53d54b363d79f65fff4cf20163",
           "waived": false,
           "hasFix": false
         }
@@ -58,9 +58,9 @@
           "path": "action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step uses docker://alpine:3.20, which is not pinned to a full commit SHA or sha256 digest",
-          "key": "runs:step:uses:docker://alpine:3.20",
-          "fingerprint": "0f40985368eefa006c17561ff4f251d98bac9607bb9bac39d6877039c49f80e3",
+          "message": "Composite action step 1 uses docker://alpine:3.20, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:1:uses",
+          "fingerprint": "19f102cf4b40be8767a86be8fae7aaba89762f53d54b363d79f65fff4cf20163",
           "waived": false,
           "hasFix": false
         }
@@ -86,7 +86,7 @@
       "error": "rule github-actions-hardening.action-pinning: action.yml: yaml: line 1: did not find expected ',' or ']'"
     },
     {
-      "name": "pinning reports one finding per file naming the first job and count",
+      "name": "pinning reports every unpinned step and job across files",
       "ruleId": "github-actions-hardening.action-pinning",
       "outcome": "fail",
       "findings": [
@@ -96,9 +96,21 @@
           "path": ".github/actions/setup/action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step uses vendor/c@v3, which is not pinned to a full commit SHA or sha256 digest (2 affected steps in this file)",
-          "key": "runs:step:uses:vendor/c@v3",
-          "fingerprint": "a12868fd3ba4eefe90dee33422d350423692a9928b7513cee46c4ef88d850daa",
+          "message": "Composite action step 2 uses vendor/d@v4, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:2:uses",
+          "fingerprint": "a741d878630589aa1a030664e8cd269c74e06dcace357e6b3dbda3a9d557f44a",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "path": ".github/actions/setup/action.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Composite action step 1 uses vendor/c@v3, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:1:uses",
+          "fingerprint": "e80873bb65e0b3fef86ad6ce991415ec3123fdd341a968c1ecb1133cec3684fe",
           "waived": false,
           "hasFix": false
         },
@@ -108,9 +120,9 @@
           "path": ".github/workflows/a.yaml",
           "line": 1,
           "column": 1,
-          "message": "Job build step fetch uses vendor/b@v2, which is not pinned to a full commit SHA or sha256 digest",
-          "key": "job:build:step:id:fetch",
-          "fingerprint": "650e9af7fdb46f690fbc16704f85ce7413e9428434ed81bf151a4a816eafa935",
+          "message": "Job build step 1 (fetch) uses vendor/b@v2, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "job:build:step:id:fetch:uses",
+          "fingerprint": "c38c198e9520a7d7bee152acf1a4ffc7359b737a125c27d61f3615a8f872951e",
           "waived": false,
           "hasFix": false
         },
@@ -120,9 +132,21 @@
           "path": ".github/workflows/b.yml",
           "line": 1,
           "column": 1,
-          "message": "Job alpha step \"Set up tool\" uses vendor/a@main, which is not pinned to a full commit SHA or sha256 digest (2 affected jobs in this file)",
-          "key": "job:alpha:step:name:Set up tool",
-          "fingerprint": "d72443c0bc18af558f8fca309271b5102e2cb299da2ff91c31b68bf97eb9486e",
+          "message": "Job zeta step 1 uses vendor/z@v1, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "job:zeta:step:1:uses",
+          "fingerprint": "92f1b7ce71c5aea268db56aade13528643cc6cd1e319bb1f979a3b84bf35da6d",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "path": ".github/workflows/b.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job alpha step 2 \"Set up tool\" uses vendor/a@main, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "job:alpha:step:2:uses",
+          "fingerprint": "b0638ebacb2b816a0a7104da8ef5e1b1ad429b5a14b74a90618d689d922e0ba3",
           "waived": false,
           "hasFix": false
         }
@@ -158,9 +182,9 @@
           "path": ".github/workflows/ci.yml",
           "line": 1,
           "column": 1,
-          "message": "Job build step uses vendor/tool@${{ matrix.ref }}, which is not pinned to a full commit SHA or sha256 digest",
-          "key": "job:build:step:uses:vendor/tool@${{ matrix.ref }}",
-          "fingerprint": "b6bee30f555587f0ac4ef8a0aa8ac46a4dc524d6499e36aae34fe834a4784de8",
+          "message": "Job build step 1 uses vendor/tool@${{ matrix.ref }}, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "job:build:step:1:uses",
+          "fingerprint": "3b5e1c3fbeb35a64a29ba48ec5728308a5e7cb4db1f355a04ef371979b90f043",
           "waived": false,
           "hasFix": false
         }
@@ -183,9 +207,9 @@
           "path": "tools/release/action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step uses vendor/tool/sub@b7ad1da, which is not pinned to a full commit SHA or sha256 digest",
-          "key": "runs:step:uses:vendor/tool/sub@b7ad1da",
-          "fingerprint": "134cfad5c8d89517653b60d7510a1908f0195a8ca46e3a131c86b08166e496e6",
+          "message": "Composite action step 1 uses vendor/tool/sub@b7ad1da, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:1:uses",
+          "fingerprint": "f44edd48cf8383da0a38349e46d1f9d1addc44e518eddd10b0ee9d0300618027",
           "waived": false,
           "hasFix": false
         }
@@ -202,9 +226,9 @@
           "path": "action.yaml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step uses actions/setup-node@v4, which is not pinned to a full commit SHA or sha256 digest",
-          "key": "runs:step:uses:actions/setup-node@v4",
-          "fingerprint": "0adababb7377b04d48da2e5c042ddde27b8c9c3cf2c8042e43bd00ad803f8cec",
+          "message": "Composite action step 1 uses actions/setup-node@v4, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:1:uses",
+          "fingerprint": "b20c52d6a9ed81869970211d1bff0b1f58604bae9180374fad1c8ad0fb04288b",
           "waived": false,
           "hasFix": false
         }
@@ -221,9 +245,9 @@
           "path": "action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step uses vendor/tool@B7AD1DAD31E06C5925EF5D2FC7AD053EF454303E, which is not pinned to a full commit SHA or sha256 digest",
-          "key": "runs:step:uses:vendor/tool@B7AD1DAD31E06C5925EF5D2FC7AD053EF454303E",
-          "fingerprint": "eb0d64c13b59a19fcd39d2bd3121b01343332c03dd1e2f84e8cf075c207c19b7",
+          "message": "Composite action step 1 uses vendor/tool@B7AD1DAD31E06C5925EF5D2FC7AD053EF454303E, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:1:uses",
+          "fingerprint": "19f102cf4b40be8767a86be8fae7aaba89762f53d54b363d79f65fff4cf20163",
           "waived": false,
           "hasFix": false
         }
@@ -236,6 +260,37 @@
       "findings": []
     },
     {
+      "name": "step id key is stable when earlier steps are inserted",
+      "ruleId": "github-actions-hardening.action-pinning",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 4 uses vendor/c@v3, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "job:build:step:4:uses",
+          "fingerprint": "1afec60fb92e62cea89107265f8c60d2b49b26a33b49051cc16ef240f4a4b840",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 3 (fetch) uses vendor/b@v2, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "job:build:step:id:fetch:uses",
+          "fingerprint": "44833b41f378c00e9edd47cc889303e79ced5ad1097290fed5b62edd9648e72e",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
       "name": "trusted owner does not cover other or look-alike owners",
       "ruleId": "github-actions-hardening.action-pinning",
       "outcome": "fail",
@@ -246,9 +301,33 @@
           "path": "action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step uses actions-evil/checkout@v4, which is not pinned to a full commit SHA or sha256 digest (3 affected steps in this file)",
-          "key": "runs:step:uses:actions-evil/checkout@v4",
-          "fingerprint": "420e2e15b9cffd807050c66087cdbf577aebbe2c6ec61b65083a0e4350e5d23d",
+          "message": "Composite action step 2 uses actions-evil/checkout@v4, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:2:uses",
+          "fingerprint": "ac6742c9cd3fa6148bcefe78d66eee8b263bd4b811130c997717134578cf9c7c",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "path": "action.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Composite action step 4 uses vendor/tool@v1, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:4:uses",
+          "fingerprint": "accccf470350b16c12ec092072ef0dd730e8303fcdf35d19d55c743f39b01f7a",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "github-actions-hardening.action-pinning",
+          "severity": "error",
+          "path": "action.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Composite action step 3 uses Actions/checkout@v4, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:3:uses",
+          "fingerprint": "daedc47af6192a413787f90731013bc7804b5b9c91910a2694c0b5c802f5798a",
           "waived": false,
           "hasFix": false
         }
@@ -271,9 +350,9 @@
           "path": "a/action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step uses actions/checkout, which is not pinned to a full commit SHA or sha256 digest",
-          "key": "runs:step:uses:actions/checkout",
-          "fingerprint": "7f37c53ea026de89dac6ab7a4258c6f5ba5921ef81276ebb36d9bddfb9aaec7c",
+          "message": "Composite action step 1 uses actions/checkout, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:1:uses",
+          "fingerprint": "90dd8f228442bd3daa00077f459d301a76341ebcbd2215a8928c35f4066acdc8",
           "waived": false,
           "hasFix": false
         },
@@ -283,9 +362,9 @@
           "path": "b/action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step uses docker://docker/alpine:3.20, which is not pinned to a full commit SHA or sha256 digest",
-          "key": "runs:step:uses:docker://docker/alpine:3.20",
-          "fingerprint": "193c2090a16e5affb0e517bef2aa361a15c30dc24645dd6657c0342fbed43035",
+          "message": "Composite action step 1 uses docker://docker/alpine:3.20, which is not pinned to a full commit SHA or sha256 digest",
+          "key": "runs:step:1:uses",
+          "fingerprint": "6899bdcc10e4aa4c3458491f2761213df34306a7556b34cdbbb2fd4c02e14fa0",
           "waived": false,
           "hasFix": false
         },
@@ -314,9 +393,9 @@
           "path": "action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 runs actions/checkout without persist-credentials: false",
-          "key": "runs:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:persist-credentials",
-          "fingerprint": "e51201e3eaa07aac9d48ccdf3fdddae9c411aeb07dfcdb8db0e72484998ee6cb",
+          "message": "Composite action step 1 runs actions/checkout without persist-credentials: false",
+          "key": "runs:step:1:persist-credentials",
+          "fingerprint": "45dae9373495cfa135d98c7be867d8a26db8b65e0235ab863b976a22233c6fa5",
           "waived": false,
           "hasFix": false
         }
@@ -333,9 +412,9 @@
           "path": ".github/workflows/ci.yml",
           "line": 1,
           "column": 1,
-          "message": "Job test step actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 runs actions/checkout without persist-credentials: false",
-          "key": "job:test:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:persist-credentials",
-          "fingerprint": "a586788fe3ee5674e65cc261e71ba78a2f8841871b3d2191ed0b78838226f084",
+          "message": "Job test step 1 runs actions/checkout without persist-credentials: false",
+          "key": "job:test:step:1:persist-credentials",
+          "fingerprint": "339fb6ab56c9d942d86bfdda273cd257eda3c3ff549ba15e301905628e89b3dd",
           "waived": false,
           "hasFix": false
         }
@@ -352,9 +431,9 @@
           "path": ".github/workflows/release.yaml",
           "line": 1,
           "column": 1,
-          "message": "Job release step actions/checkout@v4 runs actions/checkout without persist-credentials: false",
-          "key": "job:release:step:uses:actions/checkout@v4:persist-credentials",
-          "fingerprint": "45bde057f7d7c0212a536ddf76e326c023b46c241d5b8c938e3ade412e324be5",
+          "message": "Job release step 1 runs actions/checkout without persist-credentials: false",
+          "key": "job:release:step:1:persist-credentials",
+          "fingerprint": "1359382ef6c4f1e55cfbc7f4ec48d0a329f2cef7b2d4050cdb45a58fdf45dceb",
           "waived": false,
           "hasFix": false
         }
@@ -371,9 +450,9 @@
           "path": ".github/workflows/ci.yml",
           "line": 1,
           "column": 1,
-          "message": "Job test step actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 runs actions/checkout without persist-credentials: false",
-          "key": "job:test:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:persist-credentials",
-          "fingerprint": "a586788fe3ee5674e65cc261e71ba78a2f8841871b3d2191ed0b78838226f084",
+          "message": "Job test step 1 runs actions/checkout without persist-credentials: false",
+          "key": "job:test:step:1:persist-credentials",
+          "fingerprint": "339fb6ab56c9d942d86bfdda273cd257eda3c3ff549ba15e301905628e89b3dd",
           "waived": false,
           "hasFix": false
         }
@@ -396,9 +475,9 @@
           "path": ".github/workflows/ci.yml",
           "line": 1,
           "column": 1,
-          "message": "Job lint step \"Check out\" runs actions/checkout without persist-credentials: false",
-          "key": "job:lint:step:name:Check out:persist-credentials",
-          "fingerprint": "6e4edb1e02e88a7eb9cbaa8181cf7940f121acfecf0b8c8ccfc3439a43825921",
+          "message": "Job lint step 1 \"Check out\" runs actions/checkout without persist-credentials: false",
+          "key": "job:lint:step:1:persist-credentials",
+          "fingerprint": "b287dfad48b1a7bcddc7b319774da87afed1ac9c91c274a1c848640540072516",
           "waived": false,
           "hasFix": false
         },
@@ -408,7 +487,7 @@
           "path": "action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step co runs actions/checkout without persist-credentials: false",
+          "message": "Composite action step 1 (co) runs actions/checkout without persist-credentials: false",
           "key": "runs:step:id:co:persist-credentials",
           "fingerprint": "413b62eaacd84c7edc3569cfb160d6fc95495b549f0bd6453b6e3c639b6d2ab4",
           "waived": false,
@@ -427,9 +506,9 @@
           "path": "action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action run step interpolates untrusted github.event or github.head_ref data into its run script",
-          "key": "runs:step:run-step:run-script",
-          "fingerprint": "4a6ceb98cdb71ef4a420ee46160fecd80e9747c78c2ffd7c39f3f9ead86130d0",
+          "message": "Composite action step 1 interpolates untrusted github.event or github.head_ref data into its run script",
+          "key": "runs:step:1:run-script",
+          "fingerprint": "0d14b590e6045bed6f011b703303c6dbc4f2d687a9f7a9144870b6da4512409e",
           "waived": false,
           "hasFix": false
         }
@@ -446,9 +525,9 @@
           "path": "action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action run step interpolates untrusted github.event or github.head_ref data into its run script",
-          "key": "runs:step:run-step:run-script",
-          "fingerprint": "4a6ceb98cdb71ef4a420ee46160fecd80e9747c78c2ffd7c39f3f9ead86130d0",
+          "message": "Composite action step 1 interpolates untrusted github.event or github.head_ref data into its run script",
+          "key": "runs:step:1:run-script",
+          "fingerprint": "0d14b590e6045bed6f011b703303c6dbc4f2d687a9f7a9144870b6da4512409e",
           "waived": false,
           "hasFix": false
         }
@@ -465,9 +544,9 @@
           "path": ".github/actions/comment/action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action run step interpolates untrusted github.event or github.head_ref data into its run script",
-          "key": "runs:step:run-step:run-script",
-          "fingerprint": "b1e89fe8c163cefbb5aa4ce4b8480d6abcd79048db77ffdf6326b181e8ee0d0e",
+          "message": "Composite action step 1 interpolates untrusted github.event or github.head_ref data into its run script",
+          "key": "runs:step:1:run-script",
+          "fingerprint": "71e6594af67bddd2a93fa10353dc8d60aad56a8c8260373cfdac6a6d4f77c0e2",
           "waived": false,
           "hasFix": false
         }
@@ -484,9 +563,21 @@
           "path": ".github/actions/one/action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step \"Comment\" interpolates untrusted github.event or github.head_ref data into its github-script input (2 affected steps in this file)",
-          "key": "runs:step:name:Comment:github-script",
-          "fingerprint": "5dee9e5c6cd919ae59c23df4ee5fbd1917236f34f5fa209fbec5c4269fb9f2a3",
+          "message": "Composite action step 2 interpolates untrusted github.event or github.head_ref data into its run script",
+          "key": "runs:step:2:run-script",
+          "fingerprint": "05303f999623eb809d9d7aa389bd1b4c7dca9965ebe45704a3051230ccb757e5",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "github-actions-hardening.expression-injection",
+          "severity": "error",
+          "path": ".github/actions/one/action.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Composite action step 1 \"Comment\" interpolates untrusted github.event or github.head_ref data into its github-script input",
+          "key": "runs:step:1:github-script",
+          "fingerprint": "21401ed74511f701b06f7e710e5a596a85a8130da5bdfff7b15f98643183bb9a",
           "waived": false,
           "hasFix": false
         },
@@ -496,7 +587,7 @@
           "path": ".github/actions/two/action.yml",
           "line": 1,
           "column": 1,
-          "message": "Composite action step greet interpolates untrusted github.event or github.head_ref data into its run script",
+          "message": "Composite action step 1 (greet) interpolates untrusted github.event or github.head_ref data into its run script",
           "key": "runs:step:id:greet:run-script",
           "fingerprint": "62835ae61bae43b041197632829f7f11f700cfc10581fca544cdd9a0ff89c960",
           "waived": false,
@@ -527,9 +618,9 @@
           "path": ".github/workflows/comment.yaml",
           "line": 1,
           "column": 1,
-          "message": "Job reply step actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea interpolates untrusted github.event or github.head_ref data into its github-script input",
-          "key": "job:reply:step:uses:actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea:github-script",
-          "fingerprint": "b3e7a500aada97693051a1bcb074e427d9c8022471ce2d2adb023decd971a7ae",
+          "message": "Job reply step 1 interpolates untrusted github.event or github.head_ref data into its github-script input",
+          "key": "job:reply:step:1:github-script",
+          "fingerprint": "a91b72c981701f09753ecbbcb77e58aab355645b7a1dc521be050801ee39cfbc",
           "waived": false,
           "hasFix": false
         }
@@ -552,9 +643,9 @@
           "path": ".github/workflows/legacy.yml",
           "line": 1,
           "column": 1,
-          "message": "Job build step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
-          "key": "job:build:step:uses:actions/checkout@v4:privileged-checkout",
-          "fingerprint": "8b313dbd2e82f39489128d04c6afbf8a0b7b3beae72034ead218ac58310f3884",
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "ee8b5fd6572a5a7c673f618411816311cc46073fe649ef04465dc5ebcc2ff2d9",
           "waived": false,
           "hasFix": false
         }
@@ -577,9 +668,21 @@
           "path": ".github/workflows/one.yml",
           "line": 1,
           "column": 1,
-          "message": "Job untrusted-a step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow (2 affected jobs in this file)",
-          "key": "job:untrusted-a:step:uses:actions/checkout@v4:privileged-checkout",
-          "fingerprint": "f77ee2e7a29e8b3635c793983dffacda659d2cfd19ccd0503c83ce8c67ac4a86",
+          "message": "Job untrusted-a step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:untrusted-a:step:1:privileged-checkout",
+          "fingerprint": "6f2ec046fe823b6b147202160f7d2d72c39c461fa3a92ea7972fab5ec4dbc372",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/one.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job untrusted-b step 1 \"Fetch PR\" checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:untrusted-b:step:1:privileged-checkout",
+          "fingerprint": "8162db140ecce2f244f99e1117199fc9e5e0ead29a22b443866b6333865ab892",
           "waived": false,
           "hasFix": false
         },
@@ -589,9 +692,9 @@
           "path": ".github/workflows/two.yml",
           "line": 1,
           "column": 1,
-          "message": "Job report step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
-          "key": "job:report:step:uses:actions/checkout@v4:privileged-checkout",
-          "fingerprint": "9ff7242e37bf99c2a48fb1fae2a9ee5ae7d3cd0c4f0d9d9eb6a86d912ab95342",
+          "message": "Job report step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:report:step:1:privileged-checkout",
+          "fingerprint": "9d637e677158e9d29ba51e18fd73d6cc63c2110707175c3bacaa361f803191cc",
           "waived": false,
           "hasFix": false
         }
@@ -608,9 +711,9 @@
           "path": ".github/workflows/pr.yml",
           "line": 1,
           "column": 1,
-          "message": "Job build step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
-          "key": "job:build:step:uses:actions/checkout@v4:privileged-checkout",
-          "fingerprint": "77d9633805e498e1a42e9de06c3e5cb89490c60cdcd258fa1078f3833a527d5d",
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "50e4505cccd7855c2f3ec03ec32de3c1e90070928d228d1597545ad9a287502d",
           "waived": false,
           "hasFix": false
         }
@@ -627,9 +730,9 @@
           "path": ".github/workflows/multi.yml",
           "line": 1,
           "column": 1,
-          "message": "Job unsafe step actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
-          "key": "job:unsafe:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:privileged-checkout",
-          "fingerprint": "2fa63f246caa5175ade07777741287e2734cdf39121a5d5024be0bb3f8f2c000",
+          "message": "Job unsafe step 2 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:unsafe:step:2:privileged-checkout",
+          "fingerprint": "0bc301805dc45c3e175ba64899e31e2899fc7f291f8cbc74a15c39d7262b13bd",
           "waived": false,
           "hasFix": false
         }
@@ -646,9 +749,9 @@
           "path": ".github/workflows/pr.yml",
           "line": 1,
           "column": 1,
-          "message": "Job build step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
-          "key": "job:build:step:uses:actions/checkout@v4:privileged-checkout",
-          "fingerprint": "77d9633805e498e1a42e9de06c3e5cb89490c60cdcd258fa1078f3833a527d5d",
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "50e4505cccd7855c2f3ec03ec32de3c1e90070928d228d1597545ad9a287502d",
           "waived": false,
           "hasFix": false
         }
@@ -665,9 +768,9 @@
           "path": ".github/workflows/quoted.yml",
           "line": 1,
           "column": 1,
-          "message": "Job build step actions/checkout@v4 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
-          "key": "job:build:step:uses:actions/checkout@v4:privileged-checkout",
-          "fingerprint": "5812b9f40416df8c2cc91ad9859661883665e906106ff4ae503ce50b43004afa",
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "28edc044ab56200074f55bea613b1e68d984e2f3ab6214654d94b03056a80882",
           "waived": false,
           "hasFix": false
         }
@@ -690,9 +793,9 @@
           "path": ".github/workflows/report.yml",
           "line": 1,
           "column": 1,
-          "message": "Job report step actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
-          "key": "job:report:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:privileged-checkout",
-          "fingerprint": "f3ea0d505b396b5bb35a499e47cec79f03dda5d1dfec093920b1ea8d4bf0b9dc",
+          "message": "Job report step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:report:step:1:privileged-checkout",
+          "fingerprint": "3d67db81a604ae837992fc644f0b54e00b6fb68881c5dee92820f04855a2f8a9",
           "waived": false,
           "hasFix": false
         }
@@ -715,9 +818,9 @@
           "path": ".github/workflows/release.yml",
           "line": 1,
           "column": 1,
-          "message": "Job release step actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
-          "key": "job:release:step:uses:actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1:privileged-checkout",
-          "fingerprint": "37b0421076e050ae4139083aa72974dce7bee49a925c353ac3a83ec221daf626",
+          "message": "Job release step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:release:step:1:privileged-checkout",
+          "fingerprint": "2326a389b5d958946d2c02c5966c06eef829696fd004d1e19dd859ddc718d58e",
           "waived": false,
           "hasFix": false
         }
@@ -768,7 +871,7 @@
       ]
     },
     {
-      "name": "secrets inherit counts every remote caller in one workflow",
+      "name": "secrets inherit reports every remote caller in one workflow",
       "ruleId": "github-actions-hardening.reusable-secrets-inherit",
       "outcome": "fail",
       "findings": [
@@ -778,7 +881,19 @@
           "path": ".github/workflows/deploy.yml",
           "line": 1,
           "column": 1,
-          "message": "Job production passes secrets inherit to reusable workflow org/shared/.github/workflows/deploy.yml@v1, which is outside this repository (2 affected jobs in this file)",
+          "message": "Job staging passes secrets inherit to reusable workflow org/shared/.github/workflows/deploy.yml@v1, which is outside this repository",
+          "key": "job:staging:secrets-inherit",
+          "fingerprint": "03f777752e589b7b53f8af04064da0cece0b1cd850c2ce33fa2fabcbf9b40923",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "github-actions-hardening.reusable-secrets-inherit",
+          "severity": "warning",
+          "path": ".github/workflows/deploy.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job production passes secrets inherit to reusable workflow org/shared/.github/workflows/deploy.yml@v1, which is outside this repository",
           "key": "job:production:secrets-inherit",
           "fingerprint": "64d642a2ef6800cab3f257b0427873a47e4d9753ad51f467003e9f8aff60a989",
           "waived": false,
