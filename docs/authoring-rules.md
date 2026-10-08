@@ -64,6 +64,10 @@ Besides the CEL standard library, expressions can use these deterministic,
 offline extensions. Library versions are pinned and every function is
 charged against `costLimit`, so an oversized `flatten`, `join`, or `sort`
 fails the check as an operational error (exit 2) like any other budget breach.
+Calls whose output or work grows faster than their inputs (`flatten`,
+`distinct`, `sort`, `sortBy`, `join`, `replace`, and `format`) are rejected
+before they run when their known cost already exceeds the limit, and
+`format` is also charged for the text it renders.
 
 - Lists (version 4): `slice`, `flatten`, `flatten(depth)`, `distinct`,
   `reverse`, `sort`, `sortBy`, `first`, `last`, and `lists.range(n)` with

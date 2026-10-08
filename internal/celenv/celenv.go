@@ -79,11 +79,23 @@ func ReadsOfPack(environment *cel.Env, expression string) (PackReads, error) {
 	native := checked.NativeRep()
 	references := native.ReferenceMap()
 	identifiers := celast.MatchDescendants(celast.NavigateAST(native), func(expr celast.NavigableExpr) bool {
-		if expr.Kind() != celast.IdentKind || expr.AsIdent() != PackVariable {
+		if expr.Kind() != celast.IdentKind {
 			return false
 		}
 		reference, resolved := references[expr.ID()]
-		return resolved && reference.Name == PackVariable && !boundByComprehension(expr)
+		if !resolved {
+			return false
+		}
+		switch expr.AsIdent() {
+		case PackVariable:
+			return reference.Name == PackVariable && !boundByComprehension(expr)
+		case "." + PackVariable:
+			// The checker rewrites .pack to a root-qualified name when a
+			// comprehension variable shadows pack; it always means the
+			// declared variable.
+			return reference.Name == "."+PackVariable
+		}
+		return false
 	})
 	for _, identifier := range identifiers {
 		reads.Any = true

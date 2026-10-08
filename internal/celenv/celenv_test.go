@@ -122,3 +122,35 @@ func TestReadsOfPackDistinguishesConstantAndDynamicReads(t *testing.T) {
 		}
 	}
 }
+
+// A root-qualified .pack identifier reads the same variable as pack, even
+// inside a comprehension that binds a local variable named pack.
+func TestReadsOfPackRecognizesRootQualifiedIdentifier(t *testing.T) {
+	t.Parallel()
+	environment, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for expression, want := range map[string]struct {
+		names   string
+		dynamic bool
+	}{
+		"has(.pack.strict)":                   {names: "strict"},
+		".pack['limit'] > 1":                  {names: "limit"},
+		"[1].exists(pack, has(.pack.strict))": {names: "strict"},
+		"'limit' in .pack":                    {dynamic: true},
+	} {
+		reads, err := ReadsOfPack(environment, expression)
+		if err != nil {
+			t.Fatalf("%s: %v", expression, err)
+		}
+		var names []string
+		for name := range reads.Names {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		if !reads.Any || strings.Join(names, ",") != want.names || reads.Dynamic != want.dynamic {
+			t.Fatalf("%s: any=%v names=%v dynamic=%v", expression, reads.Any, names, reads.Dynamic)
+		}
+	}
+}

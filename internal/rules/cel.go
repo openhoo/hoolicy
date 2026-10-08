@@ -249,7 +249,12 @@ func compileCEL(environment *cel.Env, expression string, limit uint64) (cel.Prog
 	if issues != nil && issues.Err() != nil {
 		return nil, fmt.Errorf("CEL compile: %w", issues.Err())
 	}
-	program, err := environment.Program(ast, cel.CostLimit(limit), cel.InterruptCheckFrequency(celInterruptCheckFrequency))
+	guards, err := celenv.ProgramOptions(environment, limit)
+	if err != nil {
+		return nil, err
+	}
+	options := append([]cel.ProgramOption{cel.CostLimit(limit), cel.InterruptCheckFrequency(celInterruptCheckFrequency)}, guards...)
+	program, err := environment.Program(ast, options...)
 	if err != nil {
 		return nil, err
 	}

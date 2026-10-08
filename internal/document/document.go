@@ -57,7 +57,10 @@ func ParseCachedPreservingJSONNumbers(file sdk.File, format string) ([]Document,
 // Documents carry Node only; Data is nil. Syntax errors still fail closed.
 // Hoolicy's own policy inputs never use this lenient path.
 func ParseCachedYAMLNodes(file sdk.File) ([]Document, bool, error) {
-	return parseCachedMode(file, "yaml", parseYAMLNodes)
+	// The mode must differ from every strict ParseCached format: sharing the
+	// "yaml" key would hand node-only, duplicate-tolerant documents to strict
+	// consumers of the same file.
+	return parseCachedMode(file, "yaml\x00lenient-nodes", parseYAMLNodes)
 }
 
 func parseCached(file sdk.File, format string, preserveJSONNumbers bool) ([]Document, bool, error) {
