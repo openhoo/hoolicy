@@ -139,6 +139,52 @@ func TestCELPackParametersAreVisibleShadowFreeAndDigested(t *testing.T) {
 	}
 }
 
+// The digest was computed with the pre-feature engine (commit b24a2b0) for
+// the published pack and minimum_replicas: 3. A CEL rule that does not read
+// pack must keep its policy identity so existing baselines stay valid.
+const preFeatureNoWildcardOriginsDigest = "sha256:907bf0789f9a144d58558282fb75e496257894d5ff49e18f27c3cc8d4830cceb"
+
+func TestCELRuleWithoutPackReferenceKeepsPreFeatureDigest(t *testing.T) {
+	t.Parallel()
+	pack, err := config.LoadPack(filepath.Join("..", "..", "packs", "structured-configuration"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	instantiated, err := pack.Instantiate(map[string]any{"minimum_replicas": 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := ruleByID(t, instantiated, "structured-configuration.no-wildcard-origins")
+	if rule.PackParameters != nil {
+		t.Fatalf("pack parameters attached to a rule that never reads pack: %#v", rule.PackParameters)
+	}
+	if got := sdk.RuleDigest(rule); got != preFeatureNoWildcardOriginsDigest {
+		t.Fatalf("policy digest changed: %s", got)
+	}
+}
+
+func TestCELPackParametersAttachOnlyWhenExpressionReadsPack(t *testing.T) {
+	t.Parallel()
+	pack := &config.Pack{Name: "probe", Release: "0.1.0", Parameters: map[string]config.Parameter{
+		"limit": {Type: "number", Default: 1, Description: "Limit."},
+	}}
+	for expression, attached := range map[string]bool{
+		"pack.limit > 0":                     true,
+		"'pack' in params":                   false,
+		"[1].all(pack, pack > 0)":            false,
+		"documents.all(d, d.path != 'pack')": false,
+	} {
+		pack.Rules = []sdk.Rule{{ID: "probe.rule", Title: "Probe", Description: "Probe.", Rationale: "Probe.", Remediation: "Probe.", Severity: sdk.SeverityError, Kind: "structured.cel", Files: []string{"a.json"}, Spec: map[string]any{"expression": expression, "message": "m"}}}
+		rules, err := pack.Instantiate(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := rules[0].PackParameters != nil; got != attached {
+			t.Fatalf("%s: attached=%v, want %v", expression, got, attached)
+		}
+	}
+}
+
 func TestCELPackParametersAreStaticallyTyped(t *testing.T) {
 	t.Parallel()
 	kind := rules.CEL{}

@@ -230,3 +230,51 @@ func TestExpectedFindingsDoNotDependOnExpectationOrder(t *testing.T) {
 		t.Fatal("one finding matched two expectations")
 	}
 }
+
+// Fixture projects are written as YAML, which omits instantiation-only
+// fields. Pack CEL fixtures must still see their checked pack parameters.
+func TestFixturesEvaluatePackParametersInCEL(t *testing.T) {
+	root := t.TempDir()
+	writePolicyTestFile(t, filepath.Join(root, "pack.yaml"), `version: 1
+name: probe
+release: 0.1.0
+description: Probe pack parameters in fixtures.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibility: {config: '>=1 <2', hoolicy: '>=0.0.0 <2.0.0'}
+parameters:
+  minimum: {type: number, default: 2, description: Minimum.}
+rules:
+  - id: probe.minimum
+    title: Minimum
+    description: Reads pack parameters.
+    rationale: Fixtures must exercise pack parameters.
+    remediation: Raise the value.
+    severity: error
+    kind: structured.cel
+    files: [a.json]
+    spec:
+      format: json
+      expression: documents.all(d, d.data.value >= pack.minimum)
+      message: Value below pack minimum
+`)
+	writePolicyTestFile(t, filepath.Join(root, "tests", "cases.yaml"), `version: 1
+cases:
+  - name: value at minimum passes
+    rule: probe.minimum
+    outcome: pass
+    files: {a.json: '{"value": 2}'}
+  - name: value below minimum fails
+    rule: probe.minimum
+    outcome: fail
+    files: {a.json: '{"value": 1}'}
+    expect: [{path: '', messageContains: minimum, waived: false}]
+`)
+	registry := sdk.NewRegistry()
+	if err := rules.RegisterCore(registry); err != nil {
+		t.Fatal(err)
+	}
+	if result := Run(context.Background(), root, registry); len(result.Errors) > 0 || result.Passed != 2 {
+		t.Fatalf("pack parameters unavailable in fixtures: %#v", result)
+	}
+}

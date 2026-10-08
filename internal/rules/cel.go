@@ -12,6 +12,7 @@ import (
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
+	"github.com/openhoo/hoolicy/internal/celenv"
 	"github.com/openhoo/hoolicy/internal/document"
 	"github.com/openhoo/hoolicy/sdk"
 )
@@ -97,7 +98,7 @@ func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Ru
 		"git":   map[string]any{"branch": git.Branch, "commit": git.Commit, "dirty": git.Dirty, "mergeRequestTitle": git.MergeRequestTitle},
 		"files": fileValues, "documents": documents, "items": documents,
 		"params": input.Parameters, "now": input.Now,
-		"pack": packParameters(rule),
+		celenv.PackVariable: packParameters(rule),
 	}
 	result, details, err := program.ContextEval(ctx, variables)
 	if err != nil {
@@ -129,7 +130,9 @@ func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Ru
 
 // packParameters exposes the rule's own pack parameters. It is deliberately
 // separate from params so a project parameter can never shadow or redefine a
-// pack's reviewed input. Rules outside packs get an empty map.
+// pack's reviewed input. Pack instantiation attaches the map only when the
+// checked expression reads pack; otherwise, and for rules outside packs, the
+// variable is an empty map.
 func packParameters(rule sdk.Rule) map[string]any {
 	if rule.PackParameters == nil {
 		return map[string]any{}
@@ -202,13 +205,7 @@ func celViolation(value ref.Val, fallbackMessage string, index int) (celViolatio
 }
 
 func newCEL() (CEL, error) {
-	environment, err := cel.NewEnv(
-		cel.Variable("repo", cel.DynType), cel.Variable("git", cel.DynType),
-		cel.Variable("files", cel.ListType(cel.DynType)), cel.Variable("documents", cel.ListType(cel.DynType)),
-		cel.Variable("items", cel.ListType(cel.DynType)), cel.Variable("params", cel.DynType),
-		cel.Variable("now", cel.TimestampType),
-		cel.Variable("pack", cel.MapType(cel.StringType, cel.DynType)),
-	)
+	environment, err := celenv.New()
 	if err != nil {
 		return CEL{}, err
 	}

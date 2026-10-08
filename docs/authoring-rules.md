@@ -48,9 +48,12 @@ Parses JSON, YAML, TOML, XML, dotenv, or INI and evaluates CEL. Variables:
 - `pack`: the enclosing pack's checked parameters, its defaults plus the
   project's `with:` values, as a string-keyed map. It is separate from
   `params`, so a project parameter with the same name never shadows a pack
-  value. Rules defined directly in the project see an empty map. Parameter
-  values are part of the rule's policy digest, so changing a `with:` value
-  makes existing baseline entries for that rule stale.
+  value. Rules defined directly in the project see an empty map. Hoolicy
+  attaches parameters only when the type-checked expression reads `pack`
+  (string literals, `params.pack` fields, and comprehension variables named
+  `pack` do not count). For such a rule the values are part of its policy
+  digest, so changing a `with:` value makes that rule's baseline entries
+  stale; rules that do not read `pack` keep their existing digest.
 - `now`: timestamp.
 
 Expression returns `true` for pass, `false` for one finding, or a list of objects with optional `message`, `path`, `key`, `line`, and `column`. Violation fields must have the documented types (strings, or non-negative integers for `line` and `column`), and `path` must be repository-relative; other fields are ignored. Default cost limit is 100,000; maximum is 1,000,000.

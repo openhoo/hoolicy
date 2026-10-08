@@ -253,6 +253,12 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 	if err != nil {
 		return nil, err
 	}
+	// The YAML round trip drops instantiation-only fields such as Pack and
+	// PackParameters. Evaluate the exact instantiated rule instead.
+	if len(loaded.Rules) != 1 || loaded.Rules[0].ID != rule.ID {
+		return nil, fmt.Errorf("fixture project did not preserve rule %s", rule.ID)
+	}
+	loaded.Rules[0] = rule
 	gitContext, now, err := fixtureContext(testCase)
 	if err != nil {
 		return nil, err
