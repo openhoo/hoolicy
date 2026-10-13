@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0 (2026-10-13)
+
+### Features
+
+- **hoolicy:** expand policy packs and harden evaluation boundaries (a851cbd)
+
 ## 0.5.0 (2026-10-07)
 
 ### Features
