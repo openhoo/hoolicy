@@ -29,3 +29,21 @@ func TestLenientYAMLNodeParseDoesNotPoisonStrictCache(t *testing.T) {
 		t.Fatalf("strict YAML parse returned node-only documents: %#v %v", documents, err)
 	}
 }
+
+// Private parser cache namespaces must not be selectable by a document format.
+func TestParseCacheRejectsPrivateNamespaceFormats(t *testing.T) {
+	file := sdk.File{Path: t.TempDir() + "/foreign.yaml", Data: []byte("job: a\njob: b\n")}
+	if _, _, err := ParseCachedYAMLNodes(file); err != nil {
+		t.Fatal(err)
+	}
+	if parsed, hit, err := ParseCached(file, "yaml\x00lenient-nodes"); err == nil {
+		t.Fatalf("unknown format loaded private cached YAML: %#v hit=%v", parsed, hit)
+	}
+	file = sdk.File{Path: t.TempDir() + "/precise.json", Data: []byte(`{"a":1}`)}
+	if _, _, err := ParseCachedPreservingJSONNumbers(file, "json"); err != nil {
+		t.Fatal(err)
+	}
+	if parsed, hit, err := ParseCached(file, "json\x00preserve-json-numbers"); err == nil {
+		t.Fatalf("unknown format loaded precise cache: %#v hit=%v", parsed, hit)
+	}
+}

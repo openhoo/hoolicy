@@ -3,19 +3,39 @@
 `hoolicy evidence` evaluates the full repository and writes a deterministic evidence bundle. `hoolicy evidence verify` reloads current local inputs and rejects a bundle when repository revision or dirty state, configuration, active rules, pack lock, waivers, findings, controls, or pinned external evidence no longer match.
 
 ```sh
-hoolicy evidence --output hoolicy-evidence.json
-hoolicy evidence verify hoolicy-evidence.json
+mkdir -p ../hoolicy-artifacts
+hoolicy evidence --output ../hoolicy-artifacts/hoolicy-evidence.json
+hoolicy evidence verify ../hoolicy-artifacts/hoolicy-evidence.json
 ```
+
+Choose an output outside the enclosing Git repository, or an untracked path
+already excluded by Git ignore rules. Writing an unignored artifact would
+change the evaluated source or repository dirty state and make its own evidence
+unverifiable. Hoolicy preflights every output before creating files or parent
+directories and returns exit code `2` with an actionable path suggestion when
+the output is unsafe. A tracked output remains unsafe even when an ignore rule
+matches it. Policy inputs, policy pack content, Git metadata, symlink files,
+and overlapping output paths are rejected. An artifact path cannot also be a
+parent directory for another artifact. Existing dangling parent symlinks are
+rejected; resolvable parent aliases use their physical paths. Hoolicy does not
+edit `.gitignore`.
+
+The default filename remains `hoolicy-evidence.json`; explicitly ignore that
+untracked path before using the default. If Git is unavailable, choose an output
+outside the repository root so ignore status does not need verification. For
+source trees without Git metadata, outputs must also be outside the source root.
 
 Optional decision signing uses an in-toto Statement and a Cosign verification bundle:
 
 ```sh
-hoolicy evidence --output hoolicy-evidence.json \
-  --attestation decision.intoto.json --signature-bundle decision.sigstore.json \
+hoolicy evidence --output ../hoolicy-artifacts/hoolicy-evidence.json \
+  --attestation ../hoolicy-artifacts/decision.intoto.json \
+  --signature-bundle ../hoolicy-artifacts/decision.sigstore.json \
   --sign-key cosign.key
 
-hoolicy evidence verify hoolicy-evidence.json \
-  --attestation decision.intoto.json --signature-bundle decision.sigstore.json \
+hoolicy evidence verify ../hoolicy-artifacts/hoolicy-evidence.json \
+  --attestation ../hoolicy-artifacts/decision.intoto.json \
+  --signature-bundle ../hoolicy-artifacts/decision.sigstore.json \
   --key cosign.pub
 ```
 

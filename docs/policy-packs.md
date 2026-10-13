@@ -40,6 +40,12 @@ cases:
 
 Test decoding is strict. Duplicate case names, unknown rules, missing outcomes, invalid fixture paths, and absent pass/fail coverage fail the pack.
 
+Fixture paths must be canonical and unique ignoring case, and no fixture file
+may be an ancestor directory of another fixture. Project, lock, waiver,
+vendored-pack, and Git metadata paths belong to the test harness and cannot
+be supplied as fixtures. Invalid harness inputs fail even when a case expects
+a policy evaluation error.
+
 ```sh
 hoolicy test ./my-pack
 hoolicy pack verify ./my-pack

@@ -452,6 +452,37 @@
       ]
     },
     {
+      "name": "edge: CronJob init and ephemeral containers are inspected",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "CronJob/nightly initContainer \"bootstrap\" sets securityContext.privileged: true",
+          "key": "document:0:CronJob/nightly initContainer \"bootstrap\" sets securityContext.privileged: true",
+          "fingerprint": "3cdccba4f0e27713f3a4cec464d0026d8a20ef5d6b40cb855cd71732916d932a",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "CronJob/nightly ephemeralContainer \"debug\" sets securityContext.privileged: true",
+          "key": "document:0:CronJob/nightly ephemeralContainer \"debug\" sets securityContext.privileged: true",
+          "fingerprint": "d0f07828ba28374d5f89a3aa447e41864379a392ba120fcd72ca89cb2206e113",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
       "name": "edge: Helm templates are excluded by default",
       "ruleId": "kubernetes-hardening.privileged",
       "outcome": "pass",
@@ -489,6 +520,25 @@
       ]
     },
     {
+      "name": "edge: YAML merge does not hide privileged security context",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/merged container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/merged container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "674147f939e4819a69ae25586eb7027de57c7e4ffa2fdfe708caf8e9043afdcd",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
       "name": "edge: custom manifest_globs select other directories",
       "ruleId": "kubernetes-hardening.privileged",
       "outcome": "fail",
@@ -502,6 +552,37 @@
           "message": "Deployment/app container \"app\" sets securityContext.privileged: true",
           "key": "document:0:Deployment/app container \"app\" sets securityContext.privileged: true",
           "fingerprint": "1fc8cd8441a57819b483ff50514164cfff25397dcbca0b36169215378f890af3",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: duplicate List occurrences retain distinct finding keys",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/repeated container \"app\" sets securityContext.privileged: true#2",
+          "fingerprint": "3a6e0663452da5b39fbc3b577ea0826831f4c010853f200da76c4d2b2ad64cbd",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "dddbf98efc27c3a3f599463385ec7f9f8a1ad1fea92df5c74b0604928c849401",
           "waived": false,
           "hasFix": false
         }
@@ -1267,6 +1348,43 @@
       "findings": []
     },
     {
+      "name": "edge: explicit fields override merged privileged defaults",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "edge: identical workloads in different YAML documents retain distinct locations",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "dddbf98efc27c3a3f599463385ec7f9f8a1ad1fea92df5c74b0604928c849401",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 6,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:1:Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "90bbf22fc8830de8c708b28459cf81c941fc702d37c1a4d1cdcc2a42c7563154",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
       "name": "edge: malformed YAML is an operational error",
       "ruleId": "kubernetes-hardening.privileged",
       "outcome": "error",
@@ -1278,6 +1396,74 @@
       "ruleId": "kubernetes-hardening.privileged",
       "outcome": "pass",
       "findings": []
+    },
+    {
+      "name": "edge: non workload List items are ignored",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "edge: repeated YAML aliases are inspected independently",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/aliases container \"one\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/aliases container \"one\" sets securityContext.privileged: true",
+          "fingerprint": "0eac3148b9724ac60bb9c410254366831a07d17cb4106c4c72ed298adb984a2f",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/aliases container \"two\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/aliases container \"two\" sets securityContext.privileged: true",
+          "fingerprint": "eaf4f7a2003ef88cef65934780e8026ffb393fb342a970467c15a42dea060058",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: same workload names in different namespaces retain both findings",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/repeated container \"app\" sets securityContext.privileged: true#2",
+          "fingerprint": "3a6e0663452da5b39fbc3b577ea0826831f4c010853f200da76c4d2b2ad64cbd",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "dddbf98efc27c3a3f599463385ec7f9f8a1ad1fea92df5c74b0604928c849401",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
     },
     {
       "name": "edge: unnamed workload and container are labelled",

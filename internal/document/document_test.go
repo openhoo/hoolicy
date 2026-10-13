@@ -26,7 +26,7 @@ func TestConcurrentParseCacheKeepsOneEvictionEntryPerKey(t *testing.T) {
 	workers.Wait()
 	sharedParseCache.Lock()
 	defer sharedParseCache.Unlock()
-	seen := map[string]bool{}
+	seen := map[parseCacheKey]bool{}
 	for _, key := range sharedParseCache.order {
 		if seen[key] {
 			t.Fatal("concurrent misses duplicated a cache eviction key")
@@ -136,7 +136,7 @@ func TestJSONNormalizationPreservesUnderflow(t *testing.T) {
 }
 
 func TestPreciseJSONCacheSeparatesNormalizationAndPreservesTokens(t *testing.T) {
-	file := sdk.File{Path: t.Name() + ".json", Data: []byte(`{"number":9007199254740993e0,"fraction":1.0000000000000000001}`)}
+	file := sdk.File{Path: t.TempDir() + "/numbers.json", Data: []byte(`{"number":9007199254740993e0,"fraction":1.0000000000000000001}`)}
 	ordinary, _, err := ParseCached(file, "json")
 	if err != nil {
 		t.Fatal(err)
@@ -161,6 +161,21 @@ func TestPreciseJSONCacheSeparatesNormalizationAndPreservesTokens(t *testing.T) 
 	changed, hit, err := ParseCachedPreservingJSONNumbers(file, "json")
 	if err != nil || hit || changed[0].Data.(map[string]any)["number"] != json.Number("2") {
 		t.Fatalf("changed content cached incorrectly: %#v %v %v", changed, hit, err)
+	}
+}
+
+func TestAutoFormatCaseHasSameColdAndWarmSemantics(t *testing.T) {
+	for _, format := range []string{"auto", "AUTO", "Auto"} {
+		file := sdk.File{Path: t.TempDir() + "/numbers.json", Data: []byte(`{"number":1.0}`)}
+		for attempt := range 2 {
+			parsed, hit, err := ParseCached(file, format)
+			if err != nil || len(parsed) != 1 || hit != (attempt == 1) || parsed[0].Data.(map[string]any)["number"] != float64(1) {
+				t.Fatalf("format=%q attempt=%d documents=%v hit=%v err=%v", format, attempt, parsed, hit, err)
+			}
+		}
+		if _, err := Parse(file, format); err != nil {
+			t.Fatalf("direct format=%q: %v", format, err)
+		}
 	}
 }
 

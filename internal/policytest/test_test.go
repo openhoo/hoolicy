@@ -201,6 +201,72 @@ func TestFixturePathsArePortable(t *testing.T) {
 	}
 }
 
+func TestInvalidHarnessFixturesCannotPassAsExpectedEvaluationErrors(t *testing.T) {
+	registry := sdk.NewRegistry()
+	if err := rules.RegisterCore(registry); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, fixture, message string
+	}{
+		{"parent path", "files: {../outside.md: content}", "fixture path escapes root"},
+		{"absolute path", "files: {/outside.md: content}", "fixture path must be relative"},
+		{"windows volume", "files: {C:/outside.md: content}", "fixture path must be relative"},
+		{"noncanonical path", "files: {sub/../outside.md: content}", "fixture path must be canonical"},
+		{"reserved project", "files: {hoolicy.yaml: content}", "reserved for the test harness"},
+		{"reserved waiver", "files: {.hoolicy/waivers.yaml: content}", "reserved for the test harness"},
+		{"reserved vendor", "files: {.hoolicy/vendor/demo/pack.yaml: content}", "reserved for the test harness"},
+		{"reserved vendor root", "files: {.hoolicy/vendor: content}", "reserved for the test harness"},
+		{"reserved metadata root", "files: {.hoolicy: content}", "reserved for the test harness"},
+		{"reserved project directory", "files: {hoolicy.yaml/subdir: content}", "reserved for the test harness"},
+		{"reserved case insensitive project", "files: {HOOLICY.YAML: content}", "reserved for the test harness"},
+		{"reserved git root", "files: {.git: content}", "reserved for the test harness"},
+		{"reserved git metadata", "files: {.git/config: content}", "reserved for the test harness"},
+		{"document parent path", "documents: {../outside.yaml: [content]}", "fixture path escapes root"},
+		{"overlapping maps", "files: {same.yaml: content}\n    documents: {same.yaml: [content]}", "present in both files and documents"},
+		{"file directory collision", "files: {a: content, a/b.txt: content}", "has file ancestor"},
+		{"document directory collision", "documents: {a: [content], a/b.txt: [content]}", "has file ancestor"},
+		{"cross map directory collision", "files: {a: content}\n    documents: {a/b.txt: [content]}", "has file ancestor"},
+		{"case aliased directory collision", "files: {a: content, A/b.txt: content}", "has file ancestor"},
+		{"case aliased cross map directory collision", "files: {a: content}\n    documents: {A/b.txt: [content]}", "has file ancestor"},
+		{"case aliased files", "files: {A.txt: content, a.txt: content}", "differ only by case"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writePolicyTestFile(t, filepath.Join(root, "pack.yaml"), `version: 1
+name: demo
+release: 1.0.0
+description: Test harness validation.
+rules:
+  - id: demo.readme
+    title: README exists
+    description: Requires documentation.
+    rationale: Contributors need context.
+    remediation: Add the README documentation.
+    severity: warning
+    kind: files
+    files: [README.md]
+    spec: {mode: require, message: README missing}
+`)
+			writePolicyTestFile(t, filepath.Join(root, "tests", "cases.yaml"), `version: 1
+cases:
+  - {name: present, rule: demo.readme, outcome: pass, files: {README.md: ok}}
+  - {name: absent, rule: demo.readme, outcome: fail, files: {}}
+  - name: invalid harness input
+    rule: demo.readme
+    outcome: error
+    `+test.fixture+"\n")
+			result := Run(context.Background(), root, registry)
+			if result.Passed != 2 || len(result.Errors) != 1 || !strings.Contains(result.Errors[0], test.message) {
+				t.Fatalf("invalid harness fixture passed as an expected evaluation error: %#v", result)
+			}
+			if _, err := BuildSnapshot(context.Background(), root, registry); err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("invalid harness fixture entered a behavior snapshot: %v", err)
+			}
+		})
+	}
+}
+
 func writePolicyTestFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

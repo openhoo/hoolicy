@@ -406,9 +406,19 @@ func verifyCleanTarget(root, path string) error {
 	return nil
 }
 func safePath(root, path string) (string, string, error) {
+	clean, err := safepath.Relative(path)
+	if err != nil {
+		return "", "", fmt.Errorf("unsafe fix path: %w", err)
+	}
+	if safepath.GitMetadataPath(clean) {
+		return "", "", fmt.Errorf("refusing to fix Git metadata path %s", clean)
+	}
 	clean, absolute, err := safepath.Writable(root, path)
 	if err != nil {
 		return "", "", fmt.Errorf("unsafe fix path: %w", err)
+	}
+	if safepath.GitMetadataPath(filepath.ToSlash(absolute)) {
+		return "", "", fmt.Errorf("refusing to fix Git metadata path %s", absolute)
 	}
 	return clean, absolute, nil
 }

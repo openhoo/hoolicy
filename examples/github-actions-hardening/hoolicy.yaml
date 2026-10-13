@@ -90,9 +90,10 @@ rules:
     title: Privileged triggers do not check out untrusted pull-request code
     description: >-
       In workflows triggered by pull_request_target or workflow_run, rejects actions/checkout steps whose ref or
-      repository input selects the pull-request head, the workflow_run head, or a refs/pull/ ref. Jobs whose if
-      condition literally compares workflow_run.event to 'push' or the head repository full_name to
-      github.repository are treated as same-repository guarded.
+      repository input selects the pull-request head, the workflow_run head, or a refs/pull/ ref. Jobs with a direct mandatory if
+      comparison of workflow_run.event to 'push' or the head repository full_name to github.repository are
+      treated as guarded; optional surrounding parentheses, expression braces, and trailing AND conditions
+      are accepted. The documented workflow_run push/success OR workflow_dispatch idiom also passes.
     rationale: >-
       These triggers run with base-repository secrets and a write-capable token; building or executing fork code in
       that context lets a pull request steal credentials or tamper with releases.
@@ -112,8 +113,8 @@ rules:
               || type(d.data[t]) == list && ('pull_request_target' in d.data[t] || 'workflow_run' in d.data[t])
               || type(d.data[t]) == map && ('pull_request_target' in d.data[t] || 'workflow_run' in d.data[t]))))
           .map(d, d.data.jobs.transformList(name, job,
-            type(job) == map && 'steps' in job && type(job.steps) == list && !('if' in job && type(job['if']) == string && job['if'].matches(r"github\s*\.\s*event\s*\.\s*(?:workflow_run\s*\.\s*(?:event\s*==\s*'push'|head_repository\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)|pull_request\s*\.\s*head\s*\.\s*repo\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)")),
-            job.steps.transformList(i, step, (type(step) == map && 'uses' in step && type(step.uses) == string && step.uses.startsWith('actions/checkout@') && 'with' in step && type(step.with) == map && ['ref', 'repository'].exists(input, input in step.with && type(step.with[input]) == string && step.with[input].matches(r"github\s*\.\s*(?:head_ref\b|event\s*\.\s*(?:pull_request\s*\.\s*(?:head\b|merge_commit_sha\b)|workflow_run\s*\.\s*head_(?:sha|branch|repository|commit)\b))|refs/pull/"))), {
+            type(job) == map && 'steps' in job && type(job.steps) == list && !('if' in job && type(job['if']) == string && (job['if'].matches(r"^\s*(?:\$\{\{\s*)?(?:\(\s*)?github\s*\.\s*event\s*\.\s*(?:workflow_run\s*\.\s*(?:event\s*==\s*'push'|head_repository\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)|pull_request\s*\.\s*head\s*\.\s*repo\s*\.\s*full_name\s*==\s*github\s*\.\s*repository)(?:\s*\))?(?:\s*&&[^|]*)?\s*(?:\}\})?\s*$") || job['if'].matches(r"^\s*(?:\$\{\{\s*)?\(\s*github\s*\.\s*event_name\s*==\s*'workflow_run'\s*&&\s*github\s*\.\s*event\s*\.\s*workflow_run\s*\.\s*conclusion\s*==\s*'success'\s*&&\s*github\s*\.\s*event\s*\.\s*workflow_run\s*\.\s*event\s*==\s*'push'\s*\)\s*\|\|\s*github\s*\.\s*event_name\s*==\s*'workflow_dispatch'\s*(?:\}\})?\s*$"))),
+            job.steps.transformList(i, step, (type(step) == map && 'uses' in step && type(step.uses) == string && step.uses.startsWith('actions/checkout@') && 'with' in step && type(step.with) == map && ['ref', 'repository'].exists(input, input in step.with && type(step.with[input]) == string && step.with[input].matches(r"\$\{\{(?:(?:[^'{}]|'(?:[^']|'')*')*[^\w.'{}])?github(?:\s*(?:\.\s*head_ref\b|\[\s*'head_ref'\s*\])|\s*(?:\.\s*event\b|\[\s*'event'\s*\])(?:\s*(?:\.\s*pull_request\b|\[\s*'pull_request'\s*\])\s*(?:\.\s*(?:head|merge_commit_sha)\b|\[\s*'(?:head|merge_commit_sha)'\s*\])|\s*(?:\.\s*workflow_run\b|\[\s*'workflow_run'\s*\])\s*(?:\.\s*head_(?:sha|branch|repository|commit)\b|\[\s*'head_(?:sha|branch|repository|commit)'\s*\])))|refs/pull/"))), {
               'path': d.path, 'line': d.line, 'column': d.column,
               'message': 'Job ' + name + ' ' + 'step ' + string(i + 1) + ('name' in step && type(step.name) == string ? ' "' + step.name + '"' : 'id' in step && type(step.id) == string ? ' (' + step.id + ')' : '') + ' checks out untrusted pull-request code in a pull_request_target or workflow_run workflow',
               'key': 'job:' + name + ':' + ('id' in step && type(step.id) == string ? 'step:id:' + step.id : 'step:' + string(i + 1)) + ':privileged-checkout'})))

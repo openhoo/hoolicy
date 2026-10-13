@@ -4,6 +4,75 @@
   "release": "0.1.0",
   "cases": [
     {
+      "name": "Compose CPU values cannot use Kubernetes millicore units",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs CPU and memory limits",
+          "key": "service:app:limits",
+          "fingerprint": "4a032ccdc152ed0c038d28f8384f66ca39c02e297288afbf79052fa510ad7450",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "Compose fractional memory that truncates to zero bytes fails",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs CPU and memory limits",
+          "key": "service:app:limits",
+          "fingerprint": "4a032ccdc152ed0c038d28f8384f66ca39c02e297288afbf79052fa510ad7450",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "Compose malformed memory suffix fails",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.compose",
+          "severity": "error",
+          "path": "compose.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: service app needs CPU and memory limits",
+          "key": "service:app:limits",
+          "fingerprint": "4a032ccdc152ed0c038d28f8384f66ca39c02e297288afbf79052fa510ad7450",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "Compose nested numeric CPU and byte limits pass",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "Compose numeric CPU and byte limits pass",
+      "ruleId": "deployment-invariants.compose",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
       "name": "bounded Compose build with pinned image passes",
       "ruleId": "deployment-invariants.compose",
       "outcome": "pass",
@@ -257,6 +326,12 @@
       ]
     },
     {
+      "name": "Kubernetes positive sign and scientific resource quantities pass",
+      "ruleId": "deployment-invariants.kubernetes",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
       "name": "bounded non-root Kubernetes workload passes",
       "ruleId": "deployment-invariants.kubernetes",
       "outcome": "pass",
@@ -293,6 +368,25 @@
       "outcome": "error",
       "findings": [],
       "error": "rule deployment-invariants.kubernetes: deploy/app.yaml: yaml: line 1: did not find expected ',' or ']'"
+    },
+    {
+      "name": "malformed Kubernetes resource suffixes fail",
+      "ruleId": "deployment-invariants.kubernetes",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "deployment-invariants.kubernetes",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment violates reviewed image, resource, or security invariants: container app needs CPU and memory limits",
+          "key": "containers:app:limits",
+          "fingerprint": "7e40371abe6b23c74a4b28f08a0372ec85701a2c3d178ebeb5c923a7117809e1",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
     },
     {
       "name": "mutable unconstrained Kubernetes workload fails",

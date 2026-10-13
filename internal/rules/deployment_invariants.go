@@ -3,6 +3,8 @@ package rules
 import (
 	"context"
 	"fmt"
+	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -125,7 +127,7 @@ func inspectKubernetesDeployment(rule sdk.Rule, path string, root map[string]any
 			}
 			if spec.RequireResourceLimits {
 				limits := nestedMap(container, "resources", "limits")
-				if !positiveResourceLimit(limits["cpu"]) || !positiveResourceLimit(limits["memory"]) {
+				if !positiveResourceLimit(limits["cpu"], kubernetesResourceQuantity) || !positiveResourceLimit(limits["memory"], kubernetesResourceQuantity) {
 					findings = append(findings, finding(rule, message+": container "+name+" needs CPU and memory limits", path, key+":limits", 1, 1))
 				}
 			}
@@ -175,9 +177,15 @@ func inspectComposeDeployment(rule sdk.Rule, path string, root map[string]any, s
 		}
 		if spec.RequireResourceLimits {
 			limits := nestedMap(service, "deploy", "resources", "limits")
-			cpu := stringValue(limits["cpus"], stringValue(service["cpus"], ""))
-			memory := stringValue(limits["memory"], stringValue(service["mem_limit"], ""))
-			if !positiveResourceLimit(cpu) || !positiveResourceLimit(memory) {
+			cpu, hasCPU := limits["cpus"]
+			if !hasCPU {
+				cpu = service["cpus"]
+			}
+			memory, hasMemory := limits["memory"]
+			if !hasMemory {
+				memory = service["mem_limit"]
+			}
+			if !positiveResourceLimit(cpu, composeCPUQuantity) || !positiveComposeMemoryLimit(memory) {
 				findings = append(findings, finding(rule, message+": service "+name+" needs CPU and memory limits", path, "service:"+name+":limits", 1, 1))
 			}
 		}
@@ -222,7 +230,15 @@ func isTemplateExpression(value string) bool {
 	return strings.Contains(value, "${") && strings.Contains(value, "}") || strings.Contains(value, "{{") && strings.Contains(value, "}}")
 }
 
-func positiveResourceLimit(value any) bool {
+var (
+	// Kubernetes uses case-sensitive SI/binary suffixes or a decimal exponent.
+	kubernetesResourceQuantity = regexp.MustCompile(`^\+?([0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[numkMGTPE]|[KMGTPE]i|[eE]([+-]?[0-9]+))?$`)
+	composeCPUQuantity         = regexp.MustCompile(`^\+?([0-9]+(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?|\.[0-9]+(?:[eE][+-]?[0-9]+)?)$`)
+	// Docker byte quantities permit case-insensitive k/m/g/t/p units and b/ib.
+	composeMemoryQuantity = regexp.MustCompile(`(?i)^\+?([0-9]+(?:\.[0-9]*)?(?:e[+-]?[0-9]+)?|\.[0-9]+(?:e[+-]?[0-9]+)?)(?: ?(b|[kmgtp](?:b|ib)?))?$`)
+)
+
+func positiveResourceLimit(value any, syntax *regexp.Regexp) bool {
 	switch number := value.(type) {
 	case int:
 		return number > 0
@@ -231,21 +247,50 @@ func positiveResourceLimit(value any) bool {
 	case uint64:
 		return number > 0
 	case float64:
-		return number > 0
+		return number > 0 && !math.IsInf(number, 0)
 	}
 	text := strings.TrimSpace(stringValue(value, ""))
 	if text == "" {
 		return false
 	}
-	number := text
-	for index, character := range text {
-		if (character < '0' || character > '9') && character != '.' {
-			number = text[:index]
-			break
+	parts := syntax.FindStringSubmatch(text)
+	if parts == nil {
+		return false
+	}
+	if syntax == kubernetesResourceQuantity && parts[2] != "" {
+		if _, err := strconv.ParseInt(parts[2], 10, 64); err != nil {
+			return false
 		}
 	}
-	parsed, err := strconv.ParseFloat(number, 64)
-	return err == nil && parsed > 0
+	parsed, err := strconv.ParseFloat(parts[1], 64)
+	return err == nil && parsed > 0 && !math.IsInf(parsed, 0)
+}
+
+func positiveComposeMemoryLimit(value any) bool {
+	if !positiveResourceLimit(value, composeMemoryQuantity) {
+		return false
+	}
+	var bytes float64
+	switch number := value.(type) {
+	case int:
+		return number > 0
+	case int64:
+		return number > 0
+	case uint64:
+		return number > 0 && number < 1<<63
+	case float64:
+		bytes = number
+	default:
+		parts := composeMemoryQuantity.FindStringSubmatch(strings.TrimSpace(stringValue(value, "")))
+		bytes, _ = strconv.ParseFloat(parts[1], 64)
+		if suffix := strings.ToLower(parts[2]); suffix != "" && suffix != "b" {
+			power := strings.IndexByte("kmgtp", suffix[0]) + 1
+			bytes *= math.Pow(1024, float64(power))
+		}
+	}
+	// Compose converts byte quantities to int64; fractions below one byte
+	// become zero, and zero disables the memory limit.
+	return bytes >= 1 && bytes < float64(1<<63)
 }
 
 func explicitNonRootUser(value string) bool {

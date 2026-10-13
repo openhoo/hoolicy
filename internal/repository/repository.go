@@ -920,7 +920,7 @@ func gitOutput(root string, args ...string) (string, error) {
 }
 
 func GitPathDirty(root, path string) (bool, error) {
-	command := exec.Command("git", "-C", root, "status", "--porcelain=v1", "--", path)
+	command := exec.Command("git", "--literal-pathspecs", "-C", root, "status", "--porcelain=v1", "--", path)
 	output, commandErr := command.Output()
 	if commandErr == nil {
 		return len(bytes.TrimSpace(output)) > 0, nil

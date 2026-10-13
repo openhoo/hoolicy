@@ -1,6 +1,7 @@
 # GitHub Actions hardening example
 
-With Hoolicy 0.5 or newer, run from this directory:
+With a Hoolicy build that includes the bounded CEL lists, strings, and
+two-variable comprehension extensions, run from this directory:
 
 ```sh
 hoolicy validate
@@ -24,3 +25,14 @@ To see findings and exit 1:
 Malformed YAML returns exit 2. No package manager, network acquisition, or
 external service is needed. In a real repository, vendor the pack with
 `hoolicy pack add` and set its parameters instead of copying rules.
+
+Privileged checkout recognizes dot access and constant single-quoted bracket
+access, including `${{ github['event']['pull_request']['head']['sha'] }}`.
+Text inside expression string literals is treated as literal text. A checkout
+guard must start with the positive same-repository comparison or
+`workflow_run.event == 'push'`; surrounding parentheses and expression braces
+are accepted. Trailing `&&` conditions pass when they contain no `||`.
+The explicit `(workflow_run && success && push) || workflow_dispatch` condition
+in the pack fixtures also passes. Other conditional forms need a reviewed
+waiver. Guard text in a quoted string, negated comparisons, and arbitrary
+`||` alternatives do not exempt a checkout.

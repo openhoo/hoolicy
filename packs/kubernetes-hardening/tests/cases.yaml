@@ -1310,3 +1310,149 @@ cases:
     files:
       README.md: |
         no manifests
+  - name: 'edge: repeated YAML aliases are inspected independently'
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/aliases.yaml: |
+        kind: Pod
+        metadata: {name: aliases, namespace: shop}
+        x-context: &privileged
+          privileged: true
+        spec:
+          containers:
+            - {name: one, securityContext: *privileged}
+            - {name: two, securityContext: *privileged}
+    findingCount: 2
+    expect:
+    - messageContains: container "one"
+    - messageContains: container "two"
+  - name: 'edge: YAML merge does not hide privileged security context'
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/aliases.yaml: |
+        kind: Pod
+        metadata: {name: merged, namespace: shop}
+        x-context: &privileged
+          privileged: true
+        spec:
+          containers:
+            - name: app
+              securityContext:
+                <<: *privileged
+                readOnlyRootFilesystem: true
+    findingCount: 1
+    expect:
+    - messageContains: 'container "app" sets securityContext.privileged: true'
+  - name: 'edge: explicit fields override merged privileged defaults'
+    rule: kubernetes-hardening.privileged
+    outcome: pass
+    files:
+      deploy/aliases.yaml: |
+        kind: Pod
+        metadata: {name: merged, namespace: shop}
+        x-context: &privileged
+          privileged: true
+        spec:
+          containers:
+            - name: app
+              securityContext:
+                <<: *privileged
+                privileged: false
+    findingCount: 0
+  - name: 'edge: identical workloads in different YAML documents retain distinct locations'
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/aliases.yaml: |
+        kind: Pod
+        metadata: {name: repeated, namespace: shop}
+        spec:
+          containers: [{name: app, securityContext: {privileged: true}}]
+        ---
+        kind: Pod
+        metadata: {name: repeated, namespace: shop}
+        spec:
+          containers: [{name: app, securityContext: {privileged: true}}]
+    findingCount: 2
+    expect:
+    - line: 1
+      key: 'document:0:Pod/repeated container "app" sets securityContext.privileged:
+        true'
+    - line: 6
+      key: 'document:1:Pod/repeated container "app" sets securityContext.privileged:
+        true'
+  - name: 'edge: duplicate List occurrences retain distinct finding keys'
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/aliases.yaml: |
+        kind: List
+        items:
+          - &pod
+            kind: Pod
+            metadata: {name: repeated, namespace: shop}
+            spec:
+              containers: [{name: app, securityContext: {privileged: true}}]
+          - *pod
+    findingCount: 2
+    expect:
+    - key: 'document:0:Pod/repeated container "app" sets securityContext.privileged:
+        true'
+    - key: 'document:0:Pod/repeated container "app" sets securityContext.privileged:
+        true#2'
+  - name: 'edge: same workload names in different namespaces retain both findings'
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/aliases.yaml: |
+        kind: List
+        items:
+          - kind: Pod
+            metadata: {name: repeated, namespace: one}
+            spec:
+              containers: [{name: app, securityContext: {privileged: true}}]
+          - kind: Pod
+            metadata: {name: repeated, namespace: two}
+            spec:
+              containers: [{name: app, securityContext: {privileged: true}}]
+    findingCount: 2
+    expect:
+    - key: 'document:0:Pod/repeated container "app" sets securityContext.privileged:
+        true'
+    - key: 'document:0:Pod/repeated container "app" sets securityContext.privileged:
+        true#2'
+  - name: 'edge: CronJob init and ephemeral containers are inspected'
+    rule: kubernetes-hardening.privileged
+    outcome: fail
+    files:
+      deploy/aliases.yaml: |
+        kind: CronJob
+        metadata: {name: nightly, namespace: shop}
+        spec:
+          jobTemplate:
+            spec:
+              template:
+                spec:
+                  initContainers: [{name: bootstrap, securityContext: {privileged: true}}]
+                  containers: [{name: task, securityContext: {privileged: false}}]
+                  ephemeralContainers: [{name: debug, securityContext: {privileged: true}}]
+    findingCount: 2
+    expect:
+    - messageContains: initContainer "bootstrap"
+    - messageContains: ephemeralContainer "debug"
+  - name: 'edge: non workload List items are ignored'
+    rule: kubernetes-hardening.privileged
+    outcome: pass
+    files:
+      deploy/aliases.yaml: |
+        kind: List
+        items:
+          - kind: ConfigMap
+            metadata: {name: settings}
+            data: {privileged: 'true'}
+          - kind: Secret
+            metadata: {name: fixture}
+            data: {hostNetwork: 'true'}
+    findingCount: 0

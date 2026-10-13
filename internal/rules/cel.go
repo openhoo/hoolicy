@@ -62,6 +62,9 @@ func (kind CEL) Validate(rule sdk.Rule) error {
 }
 
 func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Rule) ([]sdk.Finding, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var spec celSpec
 	if err := decodeSpec(rule, &spec); err != nil {
 		return nil, err
@@ -77,6 +80,9 @@ func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Ru
 	fileValues := make([]any, 0, len(files))
 	documents := make([]any, 0)
 	for _, file := range files {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		fileValues = append(fileValues, map[string]any{"path": file.Path, "size": int64(len(file.Data)), "sha256": file.SHA256()})
 		parsed, hit, parseErr := document.ParseCached(file, spec.Format)
 		if parseErr != nil {
@@ -104,6 +110,9 @@ func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Ru
 	if err != nil {
 		return nil, fmt.Errorf("rule %s: CEL evaluation: %w", rule.ID, err)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if input.Metrics != nil && details != nil && details.ActualCost() != nil {
 		input.Metrics.CELCost = *details.ActualCost()
 	}
@@ -119,6 +128,9 @@ func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Ru
 	}
 	var findings []sdk.Finding
 	for index, iterator := 0, list.Iterator(); iterator.HasNext() == types.True; index++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		violation, err := celViolation(iterator.Next(), spec.Message, index)
 		if err != nil {
 			return nil, fmt.Errorf("rule %s: violation %d %w", rule.ID, index, err)

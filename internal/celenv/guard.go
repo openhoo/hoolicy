@@ -7,6 +7,7 @@ import (
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/functions"
+	"cel.dev/cel-go/common/overloads"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
@@ -20,9 +21,10 @@ import (
 // rule interrupts are observed only between comprehension steps.
 var guardedFunctions = []string{"flatten", "distinct", "sort", "@sortByAssociatedKeys", "join", "replace", "format"}
 
-// ProgramOptions returns the evaluation options that keep extension calls
-// within limit: a pre-call guard that cancels a call whose lower-bound cost
-// already exceeds the limit, and result-size charging for string.format.
+// ProgramOptions keeps allocating extension calls and structural comparisons
+// within limit before they finish. Custom trackers charge nested traversals
+// and rendered strings so repeated individually bounded calls also consume
+// the evaluation's shared cost budget.
 func ProgramOptions(environment *cel.Env, limit uint64) ([]cel.ProgramOption, error) {
 	bindings := map[string]*functions.Overload{}
 	declarations := environment.Functions()
@@ -44,6 +46,9 @@ func ProgramOptions(environment *cel.Env, limit uint64) ([]cel.ProgramOption, er
 		if !ok {
 			return node, nil
 		}
+		if guarded := structuralCall(call, limit); guarded != nil {
+			return guarded, nil
+		}
 		bound := guardedBound(call.Function())
 		if bound == nil {
 			return node, nil
@@ -64,7 +69,15 @@ func ProgramOptions(environment *cel.Env, limit uint64) ([]cel.ProgramOption, er
 	}
 	return []cel.ProgramOption{
 		cel.CustomDecoratorV2(decorator),
-		cel.CostTrackerOptions(interpreter.OverloadCostTracker("string_format", trackFormat)),
+		cel.CostTrackerOptions(
+			interpreter.OverloadCostTracker("string_format", trackFormat),
+			interpreter.OverloadCostTracker(overloads.Equals, trackComparison(limit)),
+			interpreter.OverloadCostTracker(overloads.NotEquals, trackComparison(limit)),
+			interpreter.OverloadCostTracker(guardedMembershipOverload, trackMembership(limit)),
+			interpreter.OverloadCostTracker("list_distinct", trackDistinct(limit)),
+			interpreter.OverloadCostTracker("list_flatten", trackFlatten(limit)),
+			interpreter.OverloadCostTracker("list_flatten_int", trackFlatten(limit)),
+		),
 	}, nil
 }
 
@@ -93,7 +106,9 @@ func guardedBound(function string) costBound {
 	switch function {
 	case "flatten":
 		return flattenBound
-	case "distinct", "sort":
+	case "distinct":
+		return distinctBound
+	case "sort":
 		return selfCompareBound(0)
 	case "@sortByAssociatedKeys":
 		return selfCompareBound(1)
@@ -148,9 +163,9 @@ func flattenBound(args []ref.Val, limit uint64) uint64 {
 	var total uint64
 	var count func(value ref.Val, depth int64)
 	count = func(value ref.Val, depth int64) {
+		total++
 		list, ok := value.(traits.Lister)
 		if !ok || depth < 0 {
-			total++
 			return
 		}
 		for iterator := list.Iterator(); iterator.HasNext() == types.True && total <= limit; {
@@ -228,12 +243,14 @@ func formatBound(args []ref.Val, limit uint64) uint64 {
 		case types.String:
 			total += runes(current)
 		case traits.Mapper:
+			total++
 			for iterator := current.Iterator(); iterator.HasNext() == types.True && total <= limit; {
 				key := iterator.Next()
 				walk(key)
 				walk(current.Get(key))
 			}
 		case traits.Lister:
+			total++
 			for iterator := current.Iterator(); iterator.HasNext() == types.True && total <= limit; {
 				walk(iterator.Next())
 			}

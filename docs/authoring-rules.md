@@ -28,6 +28,17 @@ controls:
 
 ## Core kinds
 
+### `deployment.invariants` resource limits
+
+When `requireResourceLimits` is enabled, CPU and memory limits must be complete
+positive quantities. Kubernetes accepts case-sensitive SI and binary suffixes
+and decimal exponents. Compose CPU values are numeric; Compose memory values
+accept Docker byte units, including case-insensitive `m`, `MB`, and `MiB`.
+Numeric YAML limits are supported. Compose memory quantities that truncate
+to zero bytes fail because they do not establish a memory limit.
+An otherwise positive numeric prefix does not make an unknown suffix valid.
+These focused checks do not replace platform schema validation.
+
 ### `files`
 
 Requires, forbids, or counts glob matches. `mode` is `require`, `forbid`, or `count`; count accepts `minimum` and `maximum`. A require rule may offer one safe `create` edit.

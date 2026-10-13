@@ -1167,3 +1167,402 @@ cases:
         key: 'job:production:secrets-inherit'
         messageContains: 'Job production passes secrets inherit'
     findingCount: 2
+  - name: privileged checkout bracket event access fails
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github['event'].pull_request.head.sha }}
+                persist-credentials: false
+    findingCount: 1
+    expect:
+    - path: .github/workflows/ci.yml
+      key: job:build:step:1:privileged-checkout
+      messageContains: Job build step 1 checks out untrusted pull-request code
+  - name: privileged checkout all bracket properties fail
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github['event']['pull_request']['head']['sha'] }}
+                persist-credentials: false
+    findingCount: 1
+    expect:
+    - path: .github/workflows/ci.yml
+      key: job:build:step:1:privileged-checkout
+      messageContains: Job build step 1 checks out untrusted pull-request code
+  - name: privileged checkout bracket head access fails
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github.event.pull_request['head'].sha }}
+                persist-credentials: false
+    findingCount: 1
+    expect:
+    - path: .github/workflows/ci.yml
+      key: job:build:step:1:privileged-checkout
+      messageContains: Job build step 1 checks out untrusted pull-request code
+  - name: privileged checkout bracket head ref access fails
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github['head_ref'] }}
+                persist-credentials: false
+    findingCount: 1
+    expect:
+    - path: .github/workflows/ci.yml
+      key: job:build:step:1:privileged-checkout
+      messageContains: Job build step 1 checks out untrusted pull-request code
+  - name: privileged checkout bracket workflow run access fails
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': workflow_run
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github.event['workflow_run']['head_sha'] }}
+                persist-credentials: false
+    findingCount: 1
+    expect:
+    - path: .github/workflows/ci.yml
+      key: job:build:step:1:privileged-checkout
+      messageContains: Job build step 1 checks out untrusted pull-request code
+  - name: privileged checkout bracket merge commit access fails
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github['event']['pull_request']['merge_commit_sha'] }}
+                persist-credentials: false
+    findingCount: 1
+    expect:
+    - path: .github/workflows/ci.yml
+      key: job:build:step:1:privileged-checkout
+      messageContains: Job build step 1 checks out untrusted pull-request code
+  - name: privileged checkout bracket base access passes
+    rule: github-actions-hardening.privileged-checkout
+    outcome: pass
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github['event']['pull_request']['base']['sha'] }}
+                persist-credentials: false
+    findingCount: 0
+  - name: privileged checkout untrusted OR branch fails
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github.event.pull_request.head.sha }}
+                persist-credentials: false
+            if: github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.title
+              != ''
+    findingCount: 1
+    expect:
+    - path: .github/workflows/ci.yml
+      key: job:build:step:1:privileged-checkout
+      messageContains: Job build step 1 checks out untrusted pull-request code
+  - name: privileged checkout guard text in function string fails
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github.event.pull_request.head.sha }}
+                persist-credentials: false
+            if: contains('github.event.pull_request.head.repo.full_name == github.repository',
+              'github')
+    findingCount: 1
+    expect:
+    - path: .github/workflows/ci.yml
+      key: job:build:step:1:privileged-checkout
+      messageContains: Job build step 1 checks out untrusted pull-request code
+  - name: privileged checkout guard text in compared string fails
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github.event.pull_request.head.sha }}
+                persist-credentials: false
+            if: '''github.event.pull_request.head.repo.full_name == github.repository'' !=
+              '''''
+    findingCount: 1
+    expect:
+    - path: .github/workflows/ci.yml
+      key: job:build:step:1:privileged-checkout
+      messageContains: Job build step 1 checks out untrusted pull-request code
+  - name: privileged checkout negated same repository guard fails
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github.event.pull_request.head.sha }}
+                persist-credentials: false
+            if: '!(github.event.pull_request.head.repo.full_name == github.repository)'
+    findingCount: 1
+    expect:
+    - path: .github/workflows/ci.yml
+      key: job:build:step:1:privileged-checkout
+      messageContains: Job build step 1 checks out untrusted pull-request code
+  - name: privileged checkout parenthesized expression wrapper guard passes
+    rule: github-actions-hardening.privileged-checkout
+    outcome: pass
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github.event.pull_request.head.sha }}
+                persist-credentials: false
+            if: ${{ (github.event.pull_request.head.repo.full_name == github.repository) }}
+    findingCount: 0
+  - name: privileged checkout same repository conjunction passes
+    rule: github-actions-hardening.privileged-checkout
+    outcome: pass
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ github.event.pull_request.head.sha }}
+                persist-credentials: false
+            if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft
+              == false
+    findingCount: 0
+  - name: privileged checkout github head_ref name in plain text passes
+    rule: github-actions-hardening.privileged-checkout
+    outcome: pass
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: refs/heads/github.head_ref
+                persist-credentials: false
+    findingCount: 0
+  - name: checkout credentials repeated step aliases fail separately
+    rule: github-actions-hardening.checkout-persist-credentials
+    outcome: fail
+    files:
+      .github/workflows/aliases.yaml: |
+        "on": pull_request
+        permissions: {}
+        jobs:
+          test:
+            runs-on: ubuntu-latest
+            steps:
+              - &checkout
+                uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              - *checkout
+    findingCount: 2
+    expect:
+    - key: job:test:step:1:persist-credentials
+    - key: job:test:step:2:persist-credentials
+  - name: checkout credentials merged false input passes
+    rule: github-actions-hardening.checkout-persist-credentials
+    outcome: pass
+    files:
+      .github/workflows/aliases.yaml: |
+        "on": push
+        permissions: {}
+        x-checkout: &checkout
+          persist-credentials: false
+        jobs:
+          test:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+                with:
+                  <<: *checkout
+                  fetch-depth: 0
+    findingCount: 0
+  - name: checkout credentials explicit true overrides merged false
+    rule: github-actions-hardening.checkout-persist-credentials
+    outcome: fail
+    files:
+      .github/workflows/aliases.yaml: |
+        "on": push
+        permissions: {}
+        x-checkout: &checkout
+          persist-credentials: false
+        jobs:
+          test:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+                with:
+                  <<: *checkout
+                  persist-credentials: true
+    findingCount: 1
+    expect:
+    - key: job:test:step:1:persist-credentials
+  - name: privileged checkout quoted expression context text passes
+    rule: github-actions-hardening.privileged-checkout
+    outcome: pass
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ 'github.event.pull_request.head.sha' }}
+                persist-credentials: false
+    findingCount: 0
+  - name: privileged checkout context text in function argument passes
+    rule: github-actions-hardening.privileged-checkout
+    outcome: pass
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ format('github.event.pull_request.head.sha-{0}', github.repository)
+                  }}
+                persist-credentials: false
+    findingCount: 0
+  - name: privileged checkout escaped quote in function string passes
+    rule: github-actions-hardening.privileged-checkout
+    outcome: pass
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ format('prefix''github.event.pull_request.head.sha-{0}', github.repository)
+                  }}
+                persist-credentials: false
+    findingCount: 0
+  - name: privileged checkout real context after quoted function argument fails
+    rule: github-actions-hardening.privileged-checkout
+    outcome: fail
+    files:
+      .github/workflows/ci.yml: |
+        'on': pull_request_target
+        permissions: {}
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+              with:
+                ref: ${{ format('prefix-{0}', github['event']['pull_request']['head']['sha'])
+                  }}
+                persist-credentials: false
+    findingCount: 1
+    expect:
+    - key: job:build:step:1:privileged-checkout

@@ -2,6 +2,111 @@ version: 1
 parameters:
   approved_registries: [registry.example.com]
 cases:
+  - name: Compose fractional memory that truncates to zero bytes fails
+    rule: deployment-invariants.compose
+    outcome: fail
+    parameters:
+      require_non_root: false
+    files:
+      compose.yaml: |
+        services:
+          app:
+            image: registry.example.com/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+            cpus: 0.5
+            mem_limit: '1e-3'
+    expect:
+      - ruleId: deployment-invariants.compose
+        path: compose.yaml
+        messageContains: CPU and memory limits
+  - name: Compose numeric CPU and byte limits pass
+    rule: deployment-invariants.compose
+    outcome: pass
+    parameters:
+      require_non_root: false
+    files:
+      compose.yaml: |
+        services:
+          app:
+            image: registry.example.com/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+            cpus: 0.5
+            mem_limit: 134217728
+  - name: Compose nested numeric CPU and byte limits pass
+    rule: deployment-invariants.compose
+    outcome: pass
+    parameters:
+      require_non_root: false
+    files:
+      compose.yaml: |
+        services:
+          app:
+            image: registry.example.com/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+            deploy:
+              resources:
+                limits: {cpus: 0.5, memory: 134217728}
+  - name: Kubernetes positive sign and scientific resource quantities pass
+    rule: deployment-invariants.kubernetes
+    outcome: pass
+    parameters:
+      require_non_root: false
+    files:
+      deploy/app.yaml: |
+        kind: Pod
+        spec:
+          containers:
+            - name: app
+              image: registry.example.com/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              resources:
+                limits: {cpu: '+1', memory: '1E6'}
+  - name: malformed Kubernetes resource suffixes fail
+    rule: deployment-invariants.kubernetes
+    outcome: fail
+    parameters:
+      require_non_root: false
+    files:
+      deploy/app.yaml: |
+        kind: Pod
+        spec:
+          containers:
+            - name: app
+              image: registry.example.com/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              resources:
+                limits: {cpu: '1bogus', memory: '128MiJUNK'}
+    expect:
+      - ruleId: deployment-invariants.kubernetes
+        path: deploy/app.yaml
+        messageContains: CPU and memory limits
+  - name: Compose CPU values cannot use Kubernetes millicore units
+    rule: deployment-invariants.compose
+    outcome: fail
+    parameters:
+      require_non_root: false
+    files:
+      compose.yaml: |
+        services:
+          app:
+            image: registry.example.com/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+            cpus: '250m'
+            mem_limit: '128m'
+    expect:
+      - ruleId: deployment-invariants.compose
+        path: compose.yaml
+        messageContains: CPU and memory limits
+  - name: Compose malformed memory suffix fails
+    rule: deployment-invariants.compose
+    outcome: fail
+    parameters:
+      require_non_root: false
+    files:
+      compose.yaml: |
+        services:
+          app:
+            image: registry.example.com/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+            cpus: '1'
+            mem_limit: '128MBjunk'
+    expect:
+      - ruleId: deployment-invariants.compose
+        path: compose.yaml
+        messageContains: CPU and memory limits
   - name: bounded non-root Kubernetes workload passes
     rule: deployment-invariants.kubernetes
     outcome: pass

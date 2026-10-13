@@ -29,11 +29,26 @@ type Document struct {
 
 const parseCacheLimit = 512
 
+type parseMode uint8
+
+const (
+	normalizedValues parseMode = iota
+	preservedJSONNumbers
+	yamlSyntaxNodes
+)
+
+// Keep parser semantics in typed fields: a user-supplied format must never
+// select a private cache namespace by including its string delimiter.
+type parseCacheKey struct {
+	path, format, digest string
+	mode                 parseMode
+}
+
 var sharedParseCache = struct {
 	sync.Mutex
-	entries map[string][]Document
-	order   []string
-}{entries: make(map[string][]Document)}
+	entries map[parseCacheKey][]Document
+	order   []parseCacheKey
+}{entries: make(map[parseCacheKey][]Document)}
 
 // ParseCached caches immutable parsed documents by path, format, and content
 // digest. Changed content naturally invalidates the entry; callers receive a
@@ -57,10 +72,7 @@ func ParseCachedPreservingJSONNumbers(file sdk.File, format string) ([]Document,
 // Documents carry Node only; Data is nil. Syntax errors still fail closed.
 // Hoolicy's own policy inputs never use this lenient path.
 func ParseCachedYAMLNodes(file sdk.File) ([]Document, bool, error) {
-	// The mode must differ from every strict ParseCached format: sharing the
-	// "yaml" key would hand node-only, duplicate-tolerant documents to strict
-	// consumers of the same file.
-	return parseCachedMode(file, "yaml\x00lenient-nodes", parseYAMLNodes)
+	return parseCachedMode(file, "yaml", yamlSyntaxNodes, parseYAMLNodes)
 }
 
 func parseCached(file sdk.File, format string, preserveJSONNumbers bool) ([]Document, bool, error) {
@@ -69,18 +81,18 @@ func parseCached(file sdk.File, format string, preserveJSONNumbers bool) ([]Docu
 		resolved = detect(file.Path)
 	}
 	if preserveJSONNumbers {
-		return parseCachedMode(file, strings.ToLower(format)+"\x00preserve-json-numbers", func(file sdk.File) ([]Document, error) {
+		return parseCachedMode(file, resolved, preservedJSONNumbers, func(file sdk.File) ([]Document, error) {
 			if resolved == "json" {
 				return parseJSONData(file, true)
 			}
-			return Parse(file, format)
+			return Parse(file, resolved)
 		})
 	}
-	return parseCachedMode(file, strings.ToLower(format), func(file sdk.File) ([]Document, error) { return Parse(file, format) })
+	return parseCachedMode(file, resolved, normalizedValues, func(file sdk.File) ([]Document, error) { return Parse(file, resolved) })
 }
 
-func parseCachedMode(file sdk.File, mode string, parse func(sdk.File) ([]Document, error)) ([]Document, bool, error) {
-	key := file.Path + "\x00" + mode + "\x00" + file.SHA256()
+func parseCachedMode(file sdk.File, format string, mode parseMode, parse func(sdk.File) ([]Document, error)) ([]Document, bool, error) {
+	key := parseCacheKey{path: file.Path, format: format, digest: file.SHA256(), mode: mode}
 	sharedParseCache.Lock()
 	if cached, exists := sharedParseCache.entries[key]; exists {
 		result := append([]Document(nil), cached...)
@@ -110,6 +122,7 @@ func parseCachedMode(file sdk.File, mode string, parse func(sdk.File) ([]Documen
 }
 
 func Parse(file sdk.File, format string) ([]Document, error) {
+	format = strings.ToLower(format)
 	if format == "" || format == "auto" {
 		format = detect(file.Path)
 	}

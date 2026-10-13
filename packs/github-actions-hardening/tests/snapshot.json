@@ -383,6 +383,62 @@
       ]
     },
     {
+      "name": "checkout credentials explicit true overrides merged false",
+      "ruleId": "github-actions-hardening.checkout-persist-credentials",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.checkout-persist-credentials",
+          "severity": "warning",
+          "path": ".github/workflows/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Job test step 1 runs actions/checkout without persist-credentials: false",
+          "key": "job:test:step:1:persist-credentials",
+          "fingerprint": "bc879d65bcf1778d10fc2c623a6703796b26ad15347596e7e7878f5debabbede",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "checkout credentials merged false input passes",
+      "ruleId": "github-actions-hardening.checkout-persist-credentials",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "checkout credentials repeated step aliases fail separately",
+      "ruleId": "github-actions-hardening.checkout-persist-credentials",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.checkout-persist-credentials",
+          "severity": "warning",
+          "path": ".github/workflows/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Job test step 2 runs actions/checkout without persist-credentials: false",
+          "key": "job:test:step:2:persist-credentials",
+          "fingerprint": "b3e2cd11dc5832d21a7d06f72badd1a1e39def53f50a51bd725a2bfba2c29213",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "github-actions-hardening.checkout-persist-credentials",
+          "severity": "warning",
+          "path": ".github/workflows/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Job test step 1 runs actions/checkout without persist-credentials: false",
+          "key": "job:test:step:1:persist-credentials",
+          "fingerprint": "bc879d65bcf1778d10fc2c623a6703796b26ad15347596e7e7878f5debabbede",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
       "name": "checkout persist credentials expression fails",
       "ruleId": "github-actions-hardening.checkout-persist-credentials",
       "outcome": "fail",
@@ -652,10 +708,236 @@
       ]
     },
     {
+      "name": "privileged checkout all bracket properties fail",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged checkout bracket base access passes",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privileged checkout bracket event access fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged checkout bracket head access fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged checkout bracket head ref access fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged checkout bracket merge commit access fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged checkout bracket workflow run access fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged checkout context text in function argument passes",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privileged checkout escaped quote in function string passes",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privileged checkout github head_ref name in plain text passes",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privileged checkout guard text in compared string fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged checkout guard text in function string fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged checkout negated same repository guard fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
       "name": "privileged checkout of base ref passes",
       "ruleId": "github-actions-hardening.privileged-checkout",
       "outcome": "pass",
       "findings": []
+    },
+    {
+      "name": "privileged checkout parenthesized expression wrapper guard passes",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privileged checkout quoted expression context text passes",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privileged checkout real context after quoted function argument fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
     },
     {
       "name": "privileged checkout reports each workflow and only unguarded jobs",
@@ -695,6 +977,31 @@
           "message": "Job report step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
           "key": "job:report:step:1:privileged-checkout",
           "fingerprint": "9d637e677158e9d29ba51e18fd73d6cc63c2110707175c3bacaa361f803191cc",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged checkout same repository conjunction passes",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privileged checkout untrusted OR branch fails",
+      "ruleId": "github-actions-hardening.privileged-checkout",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "github-actions-hardening.privileged-checkout",
+          "severity": "error",
+          "path": ".github/workflows/ci.yml",
+          "line": 1,
+          "column": 1,
+          "message": "Job build step 1 checks out untrusted pull-request code in a pull_request_target or workflow_run workflow",
+          "key": "job:build:step:1:privileged-checkout",
+          "fingerprint": "a6a34a6a891e2fc75e5aaa15c27815ea94c53c0daf4be295c14c86ef035bc26a",
           "waived": false,
           "hasFix": false
         }
