@@ -1424,6 +1424,9 @@ func ValidateWaiverForProject(waiver Waiver, now time.Time, requireApprover bool
 	if waiver.Created.IsZero() || waiver.Expires.IsZero() {
 		problems = append(problems, "created and expires are required")
 	} else {
+		if waiver.Created.After(now.UTC().Truncate(24 * time.Hour)) {
+			problems = append(problems, "created must not be in the future")
+		}
 		if waiver.Expires.Before(waiver.Created.Time) {
 			problems = append(problems, "expires must not precede created")
 		}

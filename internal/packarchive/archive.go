@@ -19,8 +19,11 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/openhoo/hoolicy/internal/safepath"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -30,6 +33,8 @@ const (
 	MaxFileSize    = 2 << 20
 	MaxArchiveSize = 10 << 20
 	MaxTotalSize   = 20 << 20
+	MaxPathSize    = 4096
+	MaxPathDepth   = 64
 )
 
 const maxTarSize = MaxTotalSize + MaxArchiveSize
@@ -64,8 +69,13 @@ func readPackEntries(root string) ([]archiveEntry, error) {
 		if err != nil {
 			return err
 		}
-		if relative == ".git" && entry.IsDir() {
-			return filepath.SkipDir
+		if relative == ".git" {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			if entry.Type().IsRegular() {
+				return nil
+			}
 		}
 		if relative == "." || entry.IsDir() {
 			return nil
@@ -148,6 +158,13 @@ func canonicalArchive(entries []archiveEntry) ([]byte, string, error) {
 	}
 	entries = append([]archiveEntry(nil), entries...)
 	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.name)
+	}
+	if err := ValidatePaths(names); err != nil {
+		return nil, "", err
+	}
 	var output bytes.Buffer
 	gzipWriter, err := gzip.NewWriterLevel(&output, gzip.BestCompression)
 	if err != nil {
@@ -329,14 +346,84 @@ func writeExtractedEntry(target string, entry archiveEntry) error {
 }
 
 func safeArchivePath(name string) (string, error) {
-	if name == "" || strings.ContainsRune(name, '\x00') || strings.Contains(name, "\\") || path.IsAbs(name) || archiveWindowsVolume(name) {
+	if len(name) > MaxPathSize || strings.Count(name, "/") >= MaxPathDepth {
+		return "", errors.New("archive path exceeds byte or component limits")
+	}
+	if name == "" || !utf8.ValidString(name) || strings.Contains(name, "\\") || path.IsAbs(name) || archiveWindowsVolume(name) || safepath.GitMetadataPath(name) {
 		return "", fmt.Errorf("unsafe archive path %q", name)
 	}
 	clean := path.Clean(name)
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || clean != name {
 		return "", fmt.Errorf("unsafe archive path %q", name)
 	}
+	for _, component := range strings.Split(name, "/") {
+		if strings.TrimRight(component, " .") != component || strings.ContainsAny(component, `<>:"|?*`) || strings.ContainsFunc(component, func(character rune) bool { return unicode.IsControl(character) || unicode.In(character, unicode.Cf) }) || archiveWindowsDevice(component) {
+			return "", fmt.Errorf("unsafe archive path %q", name)
+		}
+	}
 	return clean, nil
+}
+
+// ValidatePaths rejects paths that alias or conflict on supported filesystems.
+// It is shared by archive production and offline vendored-tree verification.
+func ValidatePaths(names []string) error {
+	type pathState struct {
+		spelling string
+		origin   string
+		file     bool
+		children map[string]*pathState
+	}
+	root := &pathState{}
+	for _, name := range names {
+		if _, err := safeArchivePath(name); err != nil {
+			return err
+		}
+		parts := strings.Split(name, "/")
+		parent := root
+		for index, component := range parts {
+			key := archiveCaseKey(component)
+			file := index == len(parts)-1
+			if previous, exists := parent.children[key]; exists {
+				if previous.spelling != component || previous.file || file {
+					return fmt.Errorf("duplicate, aliased, or conflicting archive paths %q and %q", previous.origin, name)
+				}
+				parent = previous
+				continue
+			}
+			if parent.children == nil {
+				parent.children = make(map[string]*pathState)
+			}
+			child := &pathState{spelling: component, origin: name, file: file}
+			parent.children[key] = child
+			parent = child
+		}
+	}
+	return nil
+}
+
+func archiveCaseKey(name string) string {
+	return strings.Map(func(character rune) rune {
+		minimum := character
+		for folded := unicode.SimpleFold(character); folded != character; folded = unicode.SimpleFold(folded) {
+			if folded < minimum {
+				minimum = folded
+			}
+		}
+		return minimum
+	}, norm.NFC.String(name))
+}
+
+func archiveWindowsDevice(component string) bool {
+	base := strings.ToUpper(strings.TrimRight(strings.SplitN(component, ".", 2)[0], " "))
+	switch base {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	if strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT") {
+		suffix := []rune(base[3:])
+		return len(suffix) == 1 && strings.ContainsRune("123456789\u00b9\u00b2\u00b3", suffix[0])
+	}
+	return false
 }
 
 func archiveWindowsVolume(name string) bool {

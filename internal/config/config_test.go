@@ -362,6 +362,7 @@ func TestValidateWaiver(t *testing.T) {
 		"invalid path glob":      func(value *Waiver) { value.Fingerprints = nil; value.Paths = []string{"[broken"} },
 		"ticket":                 func(value *Waiver) { value.Ticket = "SEC-1" },
 		"lifetime":               func(value *Waiver) { value.Expires = Date{Time: now.AddDate(0, 0, 91)} },
+		"future creation":        func(value *Waiver) { value.Created = Date{Time: now.AddDate(0, 0, 1)} },
 		"expired": func(value *Waiver) {
 			value.Created = Date{Time: now.AddDate(0, 0, -40)}
 			value.Expires = Date{Time: now.AddDate(0, 0, -1)}

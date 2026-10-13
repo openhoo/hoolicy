@@ -34,6 +34,14 @@ type RuleKind interface {
 
 `Validate` must reject incomplete or ambiguous specs. `Evaluate` must be deterministic for the supplied repository snapshot and context. Do not perform network calls or mutate the repository. Populate message, location, properties, optional fix, and a stable semantic `Key`. Hoolicy binds rule ID, title, severity, remediation, controls, pack, and fingerprint to the validated configured rule after evaluation.
 
+Finding line and column numbers must be nonnegative, and finding metadata must
+be encodable as JSON. The engine checks these boundaries with
+`Finding.Validate()` and returns an operational error for unsupported values
+such as channels, non-finite numbers, or cyclic properties. `RuleDigest` returns
+an empty string for rule metadata that cannot be encoded; it never assigns a
+valid SHA-256 digest to an encoding failure. Valid finding and rule digests
+retain their existing format and identity.
+
 The complete [custom-rule example](../examples/custom-rule/main.go) is compiled by `go test ./...` on every supported CI platform.
 
 Before `v1.0.0`, pin the Hoolicy module version. From `v1`, SDK symbols follow the compatibility and deprecation policy in [compatibility.md](compatibility.md).

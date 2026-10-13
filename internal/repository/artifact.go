@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode"
 
 	"github.com/openhoo/hoolicy/internal/safepath"
+	"golang.org/x/text/unicode/norm"
 )
 
 // ArtifactOutputPath resolves an output without creating its parents and
@@ -20,8 +22,8 @@ func ArtifactOutputPath(root, output string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if safepath.GitMetadataPath(filepath.ToSlash(absolute)) || safepath.GitMetadataPath(filepath.ToSlash(output)) {
-		return "", fmt.Errorf("artifact output %s targets Git metadata", output)
+	if err := protectGitMetadata(root, output, absolute); err != nil {
+		return "", err
 	}
 	boundary, found := findGitRoot(root)
 	if !found {
@@ -38,19 +40,6 @@ func ArtifactOutputPath(root, output string) (string, error) {
 	inside, err := PathWithin(boundary, absolute)
 	if err != nil {
 		return "", err
-	}
-	if found {
-		metadata, err := gitMetadataDirectories(boundary)
-		if err != nil {
-			return "", err
-		}
-		for _, directory := range metadata {
-			if insideMetadata, err := PathWithin(directory, absolute); err != nil {
-				return "", err
-			} else if insideMetadata {
-				return "", fmt.Errorf("artifact output %s targets Git metadata", output)
-			}
-		}
 	}
 	if !inside {
 		return absolute, nil
@@ -71,6 +60,43 @@ func ArtifactOutputPath(root, output string) (string, error) {
 	return "", fmt.Errorf("artifact output %s would change repository inputs or dirty state; choose an untracked Git-ignored output or an output outside %s", output, boundary)
 }
 
+// ReportOutputPath allows reports inside source while protecting Git metadata.
+// Atomic report replacement may replace a final symlink without following it.
+func ReportOutputPath(root, output string) (string, error) {
+	absolute, err := canonicalOutputPath(output, true)
+	if err != nil {
+		return "", err
+	}
+	if err := protectGitMetadata(root, output, absolute); err != nil {
+		return "", err
+	}
+	return absolute, nil
+}
+
+func protectGitMetadata(root, output, absolute string) error {
+	if safepath.GitMetadataPath(filepath.ToSlash(absolute)) || safepath.GitMetadataPath(filepath.ToSlash(output)) {
+		return fmt.Errorf("artifact output %s targets Git metadata", output)
+	}
+	boundary, found := findGitRoot(root)
+	if !found {
+		return nil
+	}
+	metadata, err := gitMetadataDirectories(boundary)
+	if err != nil {
+		return err
+	}
+	for _, directory := range metadata {
+		inside, err := PathWithin(directory, absolute)
+		if err != nil {
+			return err
+		}
+		if inside {
+			return fmt.Errorf("artifact output %s targets Git metadata", output)
+		}
+	}
+	return nil
+}
+
 // PathWithin compares physical artifact and policy locations portably. A
 // different Windows volume is outside; case aliases are treated conservatively
 // on platforms where the default filesystem is case insensitive.
@@ -79,13 +105,23 @@ func PathWithin(directory, path string) (bool, error) {
 		return false, nil
 	}
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		directory, path = strings.ToLower(directory), strings.ToLower(path)
+		directory, path = insensitivePath(directory), insensitivePath(path)
 	}
 	relative, err := filepath.Rel(directory, path)
 	if err != nil {
 		return false, err
 	}
 	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)), nil
+}
+
+func insensitivePath(value string) string {
+	return strings.Map(func(character rune) rune {
+		minimum := character
+		for folded := unicode.SimpleFold(character); folded != character; folded = unicode.SimpleFold(folded) {
+			minimum = min(minimum, folded)
+		}
+		return minimum
+	}, norm.NFC.String(value))
 }
 
 func gitMetadataDirectories(root string) ([]string, error) {
@@ -141,12 +177,16 @@ func gitMetadataDirectories(root string) ([]string, error) {
 // output and missing parent directories untouched. An existing final symlink
 // is rejected so an artifact path cannot refer to two different files.
 func CanonicalOutputPath(output string) (string, error) {
+	return canonicalOutputPath(output, false)
+}
+
+func canonicalOutputPath(output string, allowFinalSymlink bool) (string, error) {
 	absolute, err := filepath.Abs(output)
 	if err != nil {
 		return "", err
 	}
 	if info, err := os.Lstat(absolute); err == nil {
-		if !info.Mode().IsRegular() {
+		if !info.Mode().IsRegular() && !(allowFinalSymlink && info.Mode()&os.ModeSymlink != 0) {
 			return "", fmt.Errorf("artifact output is not a regular file: %s", output)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {

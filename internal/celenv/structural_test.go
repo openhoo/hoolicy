@@ -182,3 +182,20 @@ func TestExtensionTraversalGuardCountsEmptyContainers(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatPreCallGuardCountsEmptyStrings(t *testing.T) {
+	leaf := types.String("")
+	row := make([]ref.Val, 300)
+	for index := range row {
+		row[index] = leaf
+	}
+	shared := types.NewRefValList(types.DefaultTypeAdapter, row)
+	outer := make([]ref.Val, 300)
+	for index := range outer {
+		outer[index] = shared
+	}
+	value := types.NewRefValList(types.DefaultTypeAdapter, outer)
+	if cost := formatBound([]ref.Val{types.String("%s"), value}, 20_000); cost <= 20_000 {
+		t.Fatalf("pre-call format guard ignored empty string visits: cost=%d", cost)
+	}
+}

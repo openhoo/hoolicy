@@ -20,11 +20,12 @@ func TestCELExtensionCallsAreBoundedBeforeAllocation(t *testing.T) {
 	}
 	separator := strings.Repeat("a", 20000)
 	for name, expression := range map[string]string{
-		"join":     "lists.range(5000).map(x, 'a').join('" + separator + "').size() > 0",
-		"replace":  "lists.range(5000).map(x, 'a').join('').replace('a', '" + separator + "').size() > 0",
-		"flatten":  "[lists.range(100000)].all(big, lists.range(1000).map(x, big).flatten().size() > 0)",
-		"distinct": "lists.range(100000).distinct().size() > 0",
-		"sortBy":   "lists.range(2000).sortBy(x, -x).size() > 0",
+		"join":                 "lists.range(5000).map(x, 'a').join('" + separator + "').size() > 0",
+		"replace":              "lists.range(5000).map(x, 'a').join('').replace('a', '" + separator + "').size() > 0",
+		"flatten":              "[lists.range(100000)].all(big, lists.range(1000).map(x, big).flatten().size() > 0)",
+		"format empty strings": "[lists.range(1000).map(x, '')].all(big, '%s'.format([lists.range(1200).map(x, big)]).size() > 0)",
+		"distinct":             "lists.range(100000).distinct().size() > 0",
+		"sortBy":               "lists.range(2000).sortBy(x, -x).size() > 0",
 	} {
 		t.Run(name, func(t *testing.T) {
 			rule := baseRule("demo.cel", "structured.cel", []string{"none.json"}, map[string]any{"expression": expression, "message": "x", "costLimit": 1_000_000})

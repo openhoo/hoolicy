@@ -7,6 +7,24 @@ import (
 	"testing"
 )
 
+func TestDecodeRejectsInvalidUTF8(t *testing.T) {
+	t.Parallel()
+	for _, input := range [][]byte{
+		{'"', 0xff, '"'},
+		{'{', '"', 0xc0, 0xaf, '"', ':', '1', '}'},
+		append([]byte(`{"allowed":"`), append([]byte{0xed, 0xa0, 0x80}, []byte(`"}`)...)...),
+	} {
+		if value, err := Decode(input); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+			t.Fatalf("invalid UTF-8 was replaced rather than rejected: value=%#v err=%v", value, err)
+		}
+	}
+	for _, input := range []string{`{"allowed":"ö🦉"}`, `{"allowed":"\ufffd"}`} {
+		if _, err := Decode([]byte(input)); err != nil {
+			t.Fatalf("valid Unicode JSON rejected: %v", err)
+		}
+	}
+}
+
 func TestDecodePreservesNumbersAndRejectsAmbiguity(t *testing.T) {
 	t.Parallel()
 	for _, input := range []string{`null`, `[]`, `{}`, `{"large":18446744073709551615,"decimal":1.25}`, `[true,false,"text",null]`} {

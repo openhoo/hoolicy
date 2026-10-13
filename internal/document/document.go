@@ -256,6 +256,9 @@ func parseXML(file sdk.File) ([]Document, error) {
 	if err := decoder.Decode(&root); err != nil {
 		return nil, fmt.Errorf("%s: %w", file.Path, err)
 	}
+	if err := uniqueXMLAttributes(root); err != nil {
+		return nil, fmt.Errorf("%s: %w", file.Path, err)
+	}
 	for {
 		token, err := decoder.Token()
 		if err == io.EOF {
@@ -276,6 +279,35 @@ func parseXML(file sdk.File) ([]Document, error) {
 		return nil, fmt.Errorf("%s: trailing XML content", file.Path)
 	}
 	return []Document{{Path: file.Path, Line: 1, Column: 1, Data: xmlValue(root)}}, nil
+}
+
+// XML values expose attribute names without namespace qualifiers. Reject
+// repeated local names before normalization so neither malformed duplicate
+// attributes nor distinct namespace attributes silently discard a source value.
+func uniqueXMLAttributes(node xmlNode) error {
+	if err := ValidateXMLAttributes(xml.StartElement{Name: node.XMLName, Attr: node.Attrs}); err != nil {
+		return err
+	}
+	for _, child := range node.Nodes {
+		if err := uniqueXMLAttributes(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ValidateXMLAttributes protects parsers that expose attributes by local name
+// from duplicate names and namespace collisions. It validates one token, so
+// streaming consumers can share the check without reparsing a document.
+func ValidateXMLAttributes(element xml.StartElement) error {
+	seen := make(map[string]bool, len(element.Attr))
+	for _, attribute := range element.Attr {
+		if seen[attribute.Name.Local] {
+			return fmt.Errorf("ambiguous XML attribute name %q on element %q", attribute.Name.Local, element.Name.Local)
+		}
+		seen[attribute.Name.Local] = true
+	}
+	return nil
 }
 
 func xmlValue(node xmlNode) map[string]any {

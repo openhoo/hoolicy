@@ -703,7 +703,7 @@ rules:
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 	var response map[string]string
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || !strings.Contains(response["error"], "encode response") {
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || !strings.Contains(response["error"], "invalid finding") {
 		t.Fatalf("response=%q err=%v", recorder.Body.String(), err)
 	}
 }

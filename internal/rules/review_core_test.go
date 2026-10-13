@@ -105,3 +105,39 @@ func TestCELExtensionEvaluationObservesRuleTimeout(t *testing.T) {
 		t.Fatalf("extension evaluation ignored its deadline for %s", elapsed)
 	}
 }
+
+func TestNuGetRejectsAmbiguousXMLAndMissingRoot(t *testing.T) {
+	t.Parallel()
+	rule := baseRule("smoke.sources", "sources.allowed", nil, nil)
+	spec := sourcesSpec{NuGet: []string{"https://api.nuget.org/v3/index.json"}}
+	for _, data := range []string{
+		`<configuration><packageSources><add key="test" value="https://evil.example.com/index.json" value="https://api.nuget.org/v3/index.json"/></packageSources></configuration>`,
+		`<configuration xmlns:a="urn:a" xmlns:b="urn:b"><packageSources><add key="test" a:value="https://evil.example.com/index.json" b:value="https://api.nuget.org/v3/index.json"/></packageSources></configuration>`,
+		`<configuration/><configuration/>`,
+		`<configuration/>trailing`,
+		``,
+	} {
+		if findings, err := checkNuGetSources(rule, sdk.File{Path: "nuget.config", Data: []byte(data)}, spec, "Bad source"); err == nil {
+			t.Fatalf("ambiguous or incomplete NuGet XML accepted: data=%s findings=%v", data, findings)
+		}
+	}
+	for _, data := range []string{
+		`<configuration><packageSources><add key="test" value="https://api.nuget.org/v3/index.json"/></packageSources></configuration>`,
+		`<?xml version="1.0"?><configuration xmlns:a="urn:a"><packageSources><add a:key="test" value="https://api.nuget.org/v3/index.json"/></packageSources></configuration><!--end-->`,
+	} {
+		if findings, err := checkNuGetSources(rule, sdk.File{Path: "nuget.config", Data: []byte(data)}, spec, "Bad source"); err != nil || len(findings) != 0 {
+			t.Fatalf("valid NuGet XML rejected: data=%s findings=%v err=%v", data, findings, err)
+		}
+	}
+}
+
+func TestNuGetNestedElementsDoNotHideOuterSources(t *testing.T) {
+	t.Parallel()
+	file := sdk.File{Path: "nuget.config", Data: []byte(`<configuration><packageSources><packageSources/><add key="bad" value="https://evil.example.com/index.json"/></packageSources></configuration>`)}
+	rule := baseRule("smoke.sources", "sources.allowed", nil, nil)
+	spec := sourcesSpec{NuGet: []string{"https://api.nuget.org/v3/index.json"}}
+	findings, err := checkNuGetSources(rule, file, spec, "Bad source")
+	if err != nil || len(findings) != 1 || !strings.Contains(findings[0].Message, "evil.example.com") {
+		t.Fatalf("nested close stopped checking outer sources: findings=%v err=%v", findings, err)
+	}
+}

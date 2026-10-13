@@ -124,28 +124,50 @@ func checkNuGetSources(rule sdk.Rule, file sdk.File, spec sourcesSpec, message s
 	}
 	decoder := xml.NewDecoder(bytes.NewReader(file.Data))
 	var findings []sdk.Finding
-	inPackageSources := false
+	depth, packageSourcesDepth := 0, 0
+	rootSeen := false
 	for {
 		token, err := decoder.Token()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if !rootSeen {
+					return nil, fmt.Errorf("%s: XML document requires a root element", file.Path)
+				}
 				break
 			}
 			return nil, fmt.Errorf("%s: %w", file.Path, err)
 		}
-		if end, ok := token.(xml.EndElement); ok && strings.EqualFold(end.Name.Local, "packageSources") {
-			inPackageSources = false
+		if _, ok := token.(xml.EndElement); ok {
+			if depth == packageSourcesDepth {
+				packageSourcesDepth = 0
+			}
+			depth--
 			continue
+		}
+		if text, ok := token.(xml.CharData); ok && depth == 0 && strings.TrimSpace(string(text)) != "" {
+			return nil, fmt.Errorf("%s: XML content outside the root element", file.Path)
 		}
 		start, ok := token.(xml.StartElement)
 		if !ok {
 			continue
 		}
+		if depth == 0 {
+			if rootSeen {
+				return nil, fmt.Errorf("%s: trailing XML root element", file.Path)
+			}
+			rootSeen = true
+		}
+		depth++
+		if err := document.ValidateXMLAttributes(start); err != nil {
+			return nil, fmt.Errorf("%s: %w", file.Path, err)
+		}
 		if strings.EqualFold(start.Name.Local, "packageSources") {
-			inPackageSources = true
+			if packageSourcesDepth == 0 {
+				packageSourcesDepth = depth
+			}
 			continue
 		}
-		if !inPackageSources || !strings.EqualFold(start.Name.Local, "add") {
+		if packageSourcesDepth == 0 || !strings.EqualFold(start.Name.Local, "add") {
 			continue
 		}
 		value := ""

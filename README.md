@@ -143,6 +143,8 @@ hoolicy check --format sarif --output hoolicy.sarif
 hoolicy check --format gitlab-codequality --output gl-code-quality-report.json
 ```
 
+Report destinations cannot overwrite policy configuration, locks, waivers, baselines, trust or evidence inputs, pack content, Git metadata, or Git ignore policy. Ordinary report files may be written inside the repository; decision evidence uses the stricter output rules in [the evidence guide](docs/evidence.md).
+
 `sarif` emits SARIF 2.1.0 with one run, stable rule IDs and fingerprints, deterministic result ordering, and repository-relative percent-encoded artifact URIs. Missing or unsafe locations are omitted rather than emitted as absolute or traversing paths. Empty checks still emit valid empty `rules` and `results` arrays.
 
 `gitlab-codequality` emits exactly one deterministic JSON array. Each emitted finding has `description`, `check_name`, `fingerprint`, `severity` (`info`, `minor`, or `major`), and a repository-relative `location` with a positive line. Findings with missing or unsafe locations are omitted because GitLab requires a real `location.path`; the policy check still returns its normal blocking status. An empty check (including one with only unlocatable findings) emits `[]`. Finding messages and remediation remain JSON data and are not interpreted as markup by the writer.
