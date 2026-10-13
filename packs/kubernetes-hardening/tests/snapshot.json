@@ -1,0 +1,1830 @@
+{
+  "version": 1,
+  "pack": "kubernetes-hardening",
+  "release": "0.1.0",
+  "cases": [
+    {
+      "name": "added-capabilities: custom allowlist replaces the default",
+      "ruleId": "kubernetes-hardening.added-capabilities",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.added-capabilities",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" adds capability NET_BIND_SERVICE",
+          "key": "document:0:Deployment/app container \"app\" adds capability NET_BIND_SERVICE",
+          "fingerprint": "edd7dbe1663aac512b7d39b365b4f4cb6488468ea01f3ed5c198c6598fef0f16",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "added-capabilities: dangerous additions are named per container",
+      "ruleId": "kubernetes-hardening.added-capabilities",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.added-capabilities",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"net\" adds capability NET_RAW",
+          "key": "document:0:Deployment/app container \"net\" adds capability NET_RAW",
+          "fingerprint": "507db6a486ab18df445ac22789f1d176e6d88c9ae4812c18b5a9861988db1805",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.added-capabilities",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"net\" adds capability CAP_NET_ADMIN",
+          "key": "document:0:Deployment/app container \"net\" adds capability CAP_NET_ADMIN",
+          "fingerprint": "707936ff56b52c7cf68cdfb12bdbad1c4fee89a45d3f9e01c4c8821b1a79a30b",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.added-capabilities",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" adds capability SYS_ADMIN",
+          "key": "document:0:Deployment/app container \"app\" adds capability SYS_ADMIN",
+          "fingerprint": "f47e388d66fbadb20bfd30d533a466a4f47386257bb02a13663e3595f914f8e6",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "added-capabilities: default allowlist accepts NET_BIND_SERVICE with or without CAP_ prefix",
+      "ruleId": "kubernetes-hardening.added-capabilities",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "added-capabilities: empty allowlist rejects every addition",
+      "ruleId": "kubernetes-hardening.added-capabilities",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.added-capabilities",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" adds capability NET_BIND_SERVICE",
+          "key": "document:0:Deployment/app container \"app\" adds capability NET_BIND_SERVICE",
+          "fingerprint": "edd7dbe1663aac512b7d39b365b4f4cb6488468ea01f3ed5c198c6598fef0f16",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "added-capabilities: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.added-capabilities",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "capabilities-drop-all: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.capabilities-drop-all",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "capabilities-drop-all: lowercase all is not ALL",
+      "ruleId": "kubernetes-hardening.capabilities-drop-all",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.capabilities-drop-all",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" does not drop ALL capabilities",
+          "key": "document:0:Deployment/app container \"app\" does not drop ALL capabilities",
+          "fingerprint": "312da9180053e4737e6e3457069dfc009588c44632261b5e6e773153a3dbb8b1",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "capabilities-drop-all: missing and partial drops fail",
+      "ruleId": "kubernetes-hardening.capabilities-drop-all",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.capabilities-drop-all",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" does not drop ALL capabilities",
+          "key": "document:0:Deployment/app container \"app\" does not drop ALL capabilities",
+          "fingerprint": "312da9180053e4737e6e3457069dfc009588c44632261b5e6e773153a3dbb8b1",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.capabilities-drop-all",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"sidecar\" does not drop ALL capabilities",
+          "key": "document:0:Deployment/app container \"sidecar\" does not drop ALL capabilities",
+          "fingerprint": "9ce5c695283a17e3d521979729de8e60e9b87e21f356a586980c5831077a6b54",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "explicit-namespace: custom forbidden namespaces",
+      "ruleId": "kubernetes-hardening.explicit-namespace",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.explicit-namespace",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app uses forbidden namespace kube-system",
+          "key": "document:0:Deployment/app uses forbidden namespace kube-system",
+          "fingerprint": "83cb5b83b872a279e75d61048b56da0ce36f82371632e449fd6bcf276b0109b6",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "explicit-namespace: default namespace warns",
+      "ruleId": "kubernetes-hardening.explicit-namespace",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.explicit-namespace",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app uses forbidden namespace default",
+          "key": "document:0:Deployment/app uses forbidden namespace default",
+          "fingerprint": "d3e4d6a261b363aa8c1dc03df0948e63e7157d65d3a4de366795a5d75e64960d",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "explicit-namespace: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.explicit-namespace",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "explicit-namespace: missing namespace passes unless required",
+      "ruleId": "kubernetes-hardening.explicit-namespace",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "explicit-namespace: required namespace reports omission",
+      "ruleId": "kubernetes-hardening.explicit-namespace",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.explicit-namespace",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app does not set metadata.namespace",
+          "key": "document:0:Deployment/app does not set metadata.namespace",
+          "fingerprint": "baa9649ae9fcb5312463ea3a0bfc0a112e450ded0013ed4e41a3b5119f8bd6c0",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: JSON manifests are inspected",
+      "ruleId": "kubernetes-hardening.host-namespaces",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.host-namespaces",
+          "severity": "error",
+          "path": "k8s/pod.json",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/j sets hostIPC: true",
+          "key": "document:0:Pod/j sets hostIPC: true",
+          "fingerprint": "eead4d00c6b2aeb574c9cb1e9d2397314dc690761df992deea40c5c608e68c48",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "host-namespaces: allowlisted node agent passes",
+      "ruleId": "kubernetes-hardening.host-namespaces",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "host-namespaces: each true namespace is reported",
+      "ruleId": "kubernetes-hardening.host-namespaces",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.host-namespaces",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app sets hostNetwork: true",
+          "key": "document:0:Deployment/app sets hostNetwork: true",
+          "fingerprint": "8a017ea8662cba78eb530aa2d2321ae8de301d8c00affaa008766ac7141288d5",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.host-namespaces",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app sets hostPID: true",
+          "key": "document:0:Deployment/app sets hostPID: true",
+          "fingerprint": "cd1f438abefdc74940e296249d509e4daca11cf27fb66d7d87ec2d136614cfdd",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "host-namespaces: explicit false passes",
+      "ruleId": "kubernetes-hardening.host-namespaces",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "host-namespaces: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.host-namespaces",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "host-path-volumes: all paths allowlisted passes",
+      "ruleId": "kubernetes-hardening.host-path-volumes",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "host-path-volumes: allowlist does not match path prefixes",
+      "ruleId": "kubernetes-hardening.host-path-volumes",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.host-path-volumes",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app volume \"root\" mounts hostPath /var/log/../../",
+          "key": "document:0:Deployment/app volume \"root\" mounts hostPath /var/log/../../",
+          "fingerprint": "14d86d6b1372ad89309c57896b2b706ceba8a100456b8a361114ae3db9e16828",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "host-path-volumes: allowlisted path passes, others still fail",
+      "ruleId": "kubernetes-hardening.host-path-volumes",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.host-path-volumes",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app volume \"sock\" mounts hostPath /var/run/docker.sock",
+          "key": "document:0:Deployment/app volume \"sock\" mounts hostPath /var/run/docker.sock",
+          "fingerprint": "63101f0d8ff30a08f108a60a5de031e8469b86cd937a84a7a05e01c35826941d",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "host-path-volumes: every hostPath volume is named",
+      "ruleId": "kubernetes-hardening.host-path-volumes",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.host-path-volumes",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app volume \"logs\" mounts hostPath /var/log",
+          "key": "document:0:Deployment/app volume \"logs\" mounts hostPath /var/log",
+          "fingerprint": "17563ec04a5e1cb670a7437b12cb156c713c759866f01a0cc69b36b9b3831d9a",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.host-path-volumes",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app volume \"sock\" mounts hostPath /var/run/docker.sock",
+          "key": "document:0:Deployment/app volume \"sock\" mounts hostPath /var/run/docker.sock",
+          "fingerprint": "63101f0d8ff30a08f108a60a5de031e8469b86cd937a84a7a05e01c35826941d",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "host-path-volumes: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.host-path-volumes",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "edge: non-workload kinds and malformed workloads are ignored",
+      "ruleId": "kubernetes-hardening.privilege-escalation",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privilege-escalation: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.privilege-escalation",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privilege-escalation: missing field and true value fail",
+      "ruleId": "kubernetes-hardening.privilege-escalation",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privilege-escalation",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"worker\" does not set securityContext.allowPrivilegeEscalation: false",
+          "key": "document:0:Deployment/app container \"worker\" does not set securityContext.allowPrivilegeEscalation: false",
+          "fingerprint": "2a7454f6fafbde2a64c36d3112a271c00e5d25515f47d1558863fa7578aa2adf",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privilege-escalation",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" does not set securityContext.allowPrivilegeEscalation: false",
+          "key": "document:0:Deployment/app container \"app\" does not set securityContext.allowPrivilegeEscalation: false",
+          "fingerprint": "bbd065ac38500766efb833e5c0c68a6112cfa57a13e77e411f0ad0dc943f860e",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privilege-escalation: pod securityContext cannot satisfy container field",
+      "ruleId": "kubernetes-hardening.privilege-escalation",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privilege-escalation",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" does not set securityContext.allowPrivilegeEscalation: false",
+          "key": "document:0:Deployment/app container \"app\" does not set securityContext.allowPrivilegeEscalation: false",
+          "fingerprint": "bbd065ac38500766efb833e5c0c68a6112cfa57a13e77e411f0ad0dc943f860e",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privilege-escalation: string false is not boolean false",
+      "ruleId": "kubernetes-hardening.privilege-escalation",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privilege-escalation",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" does not set securityContext.allowPrivilegeEscalation: false",
+          "key": "document:0:Deployment/app container \"app\" does not set securityContext.allowPrivilegeEscalation: false",
+          "fingerprint": "bbd065ac38500766efb833e5c0c68a6112cfa57a13e77e411f0ad0dc943f860e",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: CronJob init and ephemeral containers are inspected",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "CronJob/nightly initContainer \"bootstrap\" sets securityContext.privileged: true",
+          "key": "document:0:CronJob/nightly initContainer \"bootstrap\" sets securityContext.privileged: true",
+          "fingerprint": "3cdccba4f0e27713f3a4cec464d0026d8a20ef5d6b40cb855cd71732916d932a",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "CronJob/nightly ephemeralContainer \"debug\" sets securityContext.privileged: true",
+          "key": "document:0:CronJob/nightly ephemeralContainer \"debug\" sets securityContext.privileged: true",
+          "fingerprint": "d0f07828ba28374d5f89a3aa447e41864379a392ba120fcd72ca89cb2206e113",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: Helm templates are excluded by default",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "edge: List items and CronJob jobTemplate are inspected",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/list.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/debug container \"shell\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/debug container \"shell\" sets securityContext.privileged: true",
+          "fingerprint": "2755d50c3e1ca294693d067194967dc23ff76f94c804a0078799dc32c4b0412e",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/list.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "CronJob/nightly container \"report\" sets securityContext.privileged: true",
+          "key": "document:0:CronJob/nightly container \"report\" sets securityContext.privileged: true",
+          "fingerprint": "bc69f061ef1d4763cefb1e29d7f97a921dc7992aca1a03320c198253b2c345e7",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: YAML merge does not hide privileged security context",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/merged container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/merged container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "674147f939e4819a69ae25586eb7027de57c7e4ffa2fdfe708caf8e9043afdcd",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: custom manifest_globs select other directories",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "manifests/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/app container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "1fc8cd8441a57819b483ff50514164cfff25397dcbca0b36169215378f890af3",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: duplicate List occurrences retain distinct finding keys",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/repeated container \"app\" sets securityContext.privileged: true#2",
+          "fingerprint": "3a6e0663452da5b39fbc3b577ea0826831f4c010853f200da76c4d2b2ad64cbd",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "dddbf98efc27c3a3f599463385ec7f9f8a1ad1fea92df5c74b0604928c849401",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: duplicate YAML keys are operational errors",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule kubernetes-hardening.privileged: deploy/app.yaml: duplicate key \"kind\" at 2:1 (first at 1:1)"
+    },
+    {
+      "name": "edge: empty documents are skipped and lines point at each document",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/multi.yaml",
+          "line": 20,
+          "column": 1,
+          "message": "Deployment/bad container \"app\" sets securityContext.privileged: true",
+          "key": "document:3:Deployment/bad container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "8272329fce536df73818a8d272864c4062120887e3d7fa8cb549aab6d541d678",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: every offending container in a large List gets its own finding",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d5 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d5 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "002b34ac3b4b35a1ccf17e126f8b994ef56b2fd18cd7d39342ac08303f11954c",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d6 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d6 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "09497ae2381bdbbb7af9d9569e545c1de0fdb3bdfcc7339a51c2a96a01d1948a",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d0 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d0 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "0c3420023230d2ddc38906d8f357486c4b09846a2fcd7f411a4c61229ccae291",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d8 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d8 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "1507c33550dca3fd2796066352719c156092ceaeba9441819d448d672963ce3b",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d6 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d6 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "1597ac8ce7bdda6b498ef4ea43b9a088bce1fdf175045da609fd195fbb221d6f",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d3 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d3 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "1ab1c84f2a7da1ad8e3dc3c42ac14bc381ca634d9954bf40b9b11ec760b3889f",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d7 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d7 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "1c69b0d920942ba6a94cdb225b2fb8841eebe94b8e0972ee3be6af6aba3147bf",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d3 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d3 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "27c92500e3544d84e0a6c81469754d61e24fd0d6f5cb51274d36286d2bd5f304",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d2 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d2 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "2c08839885b5ef31d4456af6ad43f4ac606a632facfed7eb2f48695b0a2f31e6",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d0 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d0 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "2e546da7cb158f9599ad90669d5c4dfb383c50bbeac120d09103987c81e1e9ed",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d8 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d8 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "31cc450a6bd56e3d6589a91ed6131e363b3bee1d1b76b9b65847b77f09c0a599",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d3 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d3 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "38174094f65a109273724a84bc7c6e00f1ed3e63ef45cbdc12ce861615c03e9f",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d6 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d6 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "44ae4028761c7f269956d3a1b3cf274dda3c026ed47f4768589251379944a857",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d6 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d6 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "468b386c690b3d0e20c83f8b923fc09777d0566e6d0d8e22c06cc9cc74a65c4b",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d10 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d10 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "4962e73750f625cbf743bea396e6dc98a47685cca4ce87b280bece22710622e2",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d10 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d10 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "4c3d32412bc94835f0ec9f72d3d31b294aeac5bece6ca2b43ba6a8895c2da114",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d11 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d11 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "4cdc7def6276fbbada89e6c2d91bf226cbba5bc280d23c02f70bae42f5e6d5c5",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d3 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d3 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "5a369478c89992d9a1535f48ee4d1f491285c98c82d7ebe804fca92e384175b2",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d8 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d8 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "5ae137b1df9a6b455bcc0f890de70c1efdf773f69c61897b655b9c9a203bbee1",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d7 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d7 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "5b77cc619d9338419eac0b91511484e5c73e2a3f4d33eadf093211bfa63d7f72",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d5 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d5 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "603556db966d3b2f0b5bab4e69503c2b2129bd989a2e0906be64ec195f5cf884",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d1 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d1 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "6b82ab61f1550f7d17b8fd1503c50ebb62ac59e62b35b365c825c0f88a821c1a",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d7 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d7 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "6fc58b2d5e4f8a722879231c96f1c1a6e6a5770778845ef4204c1311d651379b",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d4 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d4 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "753d20b0705a732b6ad25bb972c43a85e5cf2aab4792cf506ad2843d90449819",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d3 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d3 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "7b7cbcf64a7576597f072aa73825d1780b346ae40d9d85e988b61d1889a78b01",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d11 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d11 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "8202ad055b4ac77c03bbcf90764d2bc4120dc0b94bf6556ff5e3d62afdd8728d",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d4 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d4 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "82334154d4f3b65d835a8c988577c688b6f2ca95e1504f5721c608ddd921f3f8",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d11 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d11 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "8cea08b6ee2f8dfb4d38bbfd456591311a2b0ef6e30658002e8dc6a5b642d325",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d5 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d5 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "8e311cf1343630bc66398430566fdb983c0cd8bb847c7eb8cc558eab251e0afd",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d2 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d2 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "8ead7e9f461e964b4c2852fab64f463f7cd211cbc9701c3db960bf2859868fac",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d8 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d8 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "96593553ea3b8065e12fd7a175020c1a1deefcfd77f92ca06486843b2973412f",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d7 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d7 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "97487235a180eae7d2ce161e6a4ba5719fd2019162cb0647f856cd5eb977b315",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d1 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d1 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "a05d952ca2a53092cdb1b52c62a43a19c1fee45b9fabc1112f37564fa27e6225",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d9 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d9 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "a3d7bf9b0f71c9ec1933efb9023d16186602a4c61a04cd4d597a3fd7a5b42219",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d2 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d2 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "a6b0188f1cb3fe6ca55994619ba02f8c58363f6cce1ddd3fdedf012706f2bbcf",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d4 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d4 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "a82ce5628d69bc06028b9c8f988074f01e45d6fa2fd0e0333b7c8c13e96af7d4",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d1 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d1 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "ad6412ad64cfe123991be971a80df449599faf981e1bb2b8412f6e34cd5808f0",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d2 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d2 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "adae97a8928aac1591c7fea264f60146c390721feb6ae0a2ec65eee608741bea",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d11 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d11 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "ae269473b902385508d17dbeb80a0960ca7db729ebd8dc753a22b44766d57c0d",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d5 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d5 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "b07b401632b69a60c6fdceca2c1ba6feac66c6ebc299f3491545e0e21bf74ffe",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d5 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d5 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "b40baa2b22d2c923039ae8b9aedf3ff619dedc6a4bf010ad7283ec368ee60490",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d0 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d0 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "ba1d0cedb6af184d1436678ce5e794cfa0d9b7603946d7de46e80bfdf09aca25",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d11 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d11 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "be794c14b3b5a9637ccb5b5ea55528d806812adf4519201c8431d1b797185dd8",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d9 container \"c0\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d9 container \"c0\" sets securityContext.privileged: true",
+          "fingerprint": "c3d0b7bfb6cbfa0dbcdf39c0acd335f2af732ac986f9384e1a486524fd1f92a5",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d7 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d7 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "c4beddb988a11e8de75300e3e3a7b576a0eba11994c68035a7aaec596147d030",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d1 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d1 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "c57aae97bd51b8da024e81fe4a7509b3c9946f25e9529a80665b5446be0e750c",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d6 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d6 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "cf25440d6514c735148eeec2b067bd8f6fb52b4c587caa29e72b56daa8680ad9",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d2 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d2 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "cf791a51b0e9fd0e7f95a08656aa8f3612d30b9b6a79b8f568a54d2ba05e72e0",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d0 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d0 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "cf9fc79f98694a8e6002cdfdc2e9f4935672abeeec48e2f6a832f476043e45b2",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d9 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d9 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "d99f31b408c6176689ac30b37c422062f8b5a7d1c1fad506006859d4cbb8dad8",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d4 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d4 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "dd7be01481987a9445089648e1ec89842290f9c2fb29e8cb2f3575947fe7bbd4",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d10 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d10 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "df4f916360eb2ccabdf844f8cc6d99c8105cb1bf0803247b7654da2704a6f99e",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d10 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d10 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "e01663182bb8c701b73e5a574a977f96defec33e2203b46892912bcf615f57a7",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d0 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d0 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "e2d1f55ff2ea989f38095c585312fa48b49c0634a465bdc2d298626a836fb96d",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d10 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d10 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "e924b7ace7ed3ea3652392f080bc56433bbefd91df920e8c8d6fc6889cd2327c",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d4 container \"c4\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d4 container \"c4\" sets securityContext.privileged: true",
+          "fingerprint": "ebce5d32b0530b0a9022406d5fdf04cb852e2fea6efec85a023a4d3613353400",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d8 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d8 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "f35e245b6dc150b870a4c7a7800d11449ae0b21f15b6c770622992601d2a1c9b",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d9 container \"c2\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d9 container \"c2\" sets securityContext.privileged: true",
+          "fingerprint": "f67cea95ba63b4c621db814383360b427b9d3c88e3af10c79a907b3ab0522f75",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d9 container \"c3\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d9 container \"c3\" sets securityContext.privileged: true",
+          "fingerprint": "f68c34b27c1c97a34d296d24264bf84c12608ea223fe8baab9feafba651d8732",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/big.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/d1 container \"c1\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/d1 container \"c1\" sets securityContext.privileged: true",
+          "fingerprint": "f7c5ff8608f21c92ea4004c07e205104523d54b75d2d0c41ad3c0cca57b67984",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: excluded_paths and manifest_globs are honoured",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "edge: explicit fields override merged privileged defaults",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "edge: identical workloads in different YAML documents retain distinct locations",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "dddbf98efc27c3a3f599463385ec7f9f8a1ad1fea92df5c74b0604928c849401",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 6,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:1:Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "90bbf22fc8830de8c708b28459cf81c941fc702d37c1a4d1cdcc2a42c7563154",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: malformed YAML is an operational error",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "error",
+      "findings": [],
+      "error": "rule kubernetes-hardening.privileged: deploy/app.yaml: yaml: line 1: did not find expected ',' or ']'"
+    },
+    {
+      "name": "edge: no manifests passes",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "edge: non workload List items are ignored",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "edge: repeated YAML aliases are inspected independently",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/aliases container \"one\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/aliases container \"one\" sets securityContext.privileged: true",
+          "fingerprint": "0eac3148b9724ac60bb9c410254366831a07d17cb4106c4c72ed298adb984a2f",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/aliases container \"two\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/aliases container \"two\" sets securityContext.privileged: true",
+          "fingerprint": "eaf4f7a2003ef88cef65934780e8026ffb393fb342a970467c15a42dea060058",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: same workload names in different namespaces retain both findings",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/repeated container \"app\" sets securityContext.privileged: true#2",
+          "fingerprint": "3a6e0663452da5b39fbc3b577ea0826831f4c010853f200da76c4d2b2ad64cbd",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/aliases.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/repeated container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "dddbf98efc27c3a3f599463385ec7f9f8a1ad1fea92df5c74b0604928c849401",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: unnamed workload and container are labelled",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/pod.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/(unnamed) container \"(unnamed)\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/(unnamed) container \"(unnamed)\" sets securityContext.privileged: true",
+          "fingerprint": "076d3ae3e4610ecc2bc38014b27b2e0a94138f234aa74c91dae7d01071cc412b",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged: allowlist is exact Kind/name",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/agent.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/node-agent container \"agent\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/node-agent container \"agent\" sets securityContext.privileged: true",
+          "fingerprint": "b8043c21e0950905ef8d494b451d58b00c7403744c62be36bdd7488b2181b7d4",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged: allowlisted workload passes",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privileged: ephemeralContainer is checked",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "k8s/pod.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Pod/debug ephemeralContainer \"shell\" sets securityContext.privileged: true",
+          "key": "document:0:Pod/debug ephemeralContainer \"shell\" sets securityContext.privileged: true",
+          "fingerprint": "bd0856bc3ca63ffc855514ca71e2a75260f6845cfdb759428f1db1f4cdd128cc",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "privileged: explicit false passes",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privileged: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "privileged: privileged initContainer and container both fail",
+      "ruleId": "kubernetes-hardening.privileged",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app initContainer \"init\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/app initContainer \"init\" sets securityContext.privileged: true",
+          "fingerprint": "9ab9ea4474d8db7a06da81a6f6127d8f6684334ff069ceff6fc14fe368b20821",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.privileged",
+          "severity": "error",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" sets securityContext.privileged: true",
+          "key": "document:0:Deployment/app container \"app\" sets securityContext.privileged: true",
+          "fingerprint": "d97813d0b8102c9caee4bcc2fe9166b1e7e08c63a024e827be22f29b64f1f2f2",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "probes: Jobs, CronJobs, and bare Pods are not long-running workloads",
+      "ruleId": "kubernetes-hardening.probes",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "probes: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.probes",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "probes: missing liveness, readiness, or both are distinguished",
+      "ruleId": "kubernetes-hardening.probes",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.probes",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"ready\" has no livenessProbe",
+          "key": "document:0:Deployment/app container \"ready\" has no livenessProbe",
+          "fingerprint": "1bdc62997d07f7b5272c37e061738263724ebafc0a25a0ea44a7b745fa9bb7e3",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.probes",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" has no livenessProbe or readinessProbe",
+          "key": "document:0:Deployment/app container \"app\" has no livenessProbe or readinessProbe",
+          "fingerprint": "925b2a4da24736706009d2bb0006f389d0e0b7b42b5945df0867ec68a314d9ab",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.probes",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"live\" has no readinessProbe",
+          "key": "document:0:Deployment/app container \"live\" has no readinessProbe",
+          "fingerprint": "fef2699260fd482588891803f00cd922e2e60d89ec59b39d0f49efda4aadd32a",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "probes: ordinary initContainers need no probes but restartable sidecars do",
+      "ruleId": "kubernetes-hardening.probes",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.probes",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app initContainer \"proxy\" has no livenessProbe or readinessProbe",
+          "key": "document:0:Deployment/app initContainer \"proxy\" has no livenessProbe or readinessProbe",
+          "fingerprint": "38bff074a8212c8c23aae74742160fc17de36a2f2d784a5db08ff1f9f16515ff",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "edge: container securityContext false overrides nothing at pod level",
+      "ruleId": "kubernetes-hardening.read-only-root-filesystem",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.read-only-root-filesystem",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" does not set securityContext.readOnlyRootFilesystem: true",
+          "key": "document:0:Deployment/app container \"app\" does not set securityContext.readOnlyRootFilesystem: true",
+          "fingerprint": "2a3a57146f07fd5a4d9c8b9f998c2a6627f4b5ae74762ddce76705138806fe5c",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "read-only-root-filesystem: false and missing values warn",
+      "ruleId": "kubernetes-hardening.read-only-root-filesystem",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.read-only-root-filesystem",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" does not set securityContext.readOnlyRootFilesystem: true",
+          "key": "document:0:Deployment/app container \"app\" does not set securityContext.readOnlyRootFilesystem: true",
+          "fingerprint": "2a3a57146f07fd5a4d9c8b9f998c2a6627f4b5ae74762ddce76705138806fe5c",
+          "waived": false,
+          "hasFix": false
+        },
+        {
+          "ruleId": "kubernetes-hardening.read-only-root-filesystem",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app initContainer \"migrate\" does not set securityContext.readOnlyRootFilesystem: true",
+          "key": "document:0:Deployment/app initContainer \"migrate\" does not set securityContext.readOnlyRootFilesystem: true",
+          "fingerprint": "d6bb7fe50fd2c099adb05eebca74e2098c89b2615207b9d8d6cac525bdbae657",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "read-only-root-filesystem: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.read-only-root-filesystem",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "seccomp-profile: container Localhost passes without pod profile",
+      "ruleId": "kubernetes-hardening.seccomp-profile",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "seccomp-profile: container Unconfined overrides pod RuntimeDefault",
+      "ruleId": "kubernetes-hardening.seccomp-profile",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.seccomp-profile",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app container \"app\" has no effective seccompProfile of an allowed type (container or pod level)",
+          "key": "document:0:Deployment/app container \"app\" has no effective seccompProfile of an allowed type (container or pod level)",
+          "fingerprint": "8cee7af2978fed2fc796217fec4ba50a5fdaf0c2448e8f58bae8cb490a39ea50",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "seccomp-profile: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.seccomp-profile",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "seccomp-profile: missing pod and container profiles warn",
+      "ruleId": "kubernetes-hardening.seccomp-profile",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.seccomp-profile",
+          "severity": "warning",
+          "path": "deploy/db.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "StatefulSet/db container \"db\" has no effective seccompProfile of an allowed type (container or pod level)",
+          "key": "document:0:StatefulSet/db container \"db\" has no effective seccompProfile of an allowed type (container or pod level)",
+          "fingerprint": "6c9d888b2b99c8bf92ec8442b2fb1c8c84e4b198d7af897f0951669e34328866",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "seccomp-profile: pod-level RuntimeDefault is inherited by every container",
+      "ruleId": "kubernetes-hardening.seccomp-profile",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "seccomp-profile: restricted allowlist rejects Localhost",
+      "ruleId": "kubernetes-hardening.seccomp-profile",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.seccomp-profile",
+          "severity": "warning",
+          "path": "deploy/db.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "StatefulSet/db container \"db\" has no effective seccompProfile of an allowed type (container or pod level)",
+          "key": "document:0:StatefulSet/db container \"db\" has no effective seccompProfile of an allowed type (container or pod level)",
+          "fingerprint": "6c9d888b2b99c8bf92ec8442b2fb1c8c84e4b198d7af897f0951669e34328866",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "service-account-token: allowlisted service account passes",
+      "ruleId": "kubernetes-hardening.service-account-token",
+      "outcome": "pass",
+      "findings": []
+    },
+    {
+      "name": "service-account-token: automount default warns and names the service account",
+      "ruleId": "kubernetes-hardening.service-account-token",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.service-account-token",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app does not set automountServiceAccountToken: false (serviceAccountName operator)",
+          "key": "document:0:Deployment/app does not set automountServiceAccountToken: false (serviceAccountName operator)",
+          "fingerprint": "b1501891c89d2e28a02015023107f4e7a299f0f2995008d8b786e0e6b6b9617f",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "service-account-token: explicit true warns",
+      "ruleId": "kubernetes-hardening.service-account-token",
+      "outcome": "fail",
+      "findings": [
+        {
+          "ruleId": "kubernetes-hardening.service-account-token",
+          "severity": "warning",
+          "path": "deploy/app.yaml",
+          "line": 1,
+          "column": 1,
+          "message": "Deployment/app does not set automountServiceAccountToken: false",
+          "key": "document:0:Deployment/app does not set automountServiceAccountToken: false",
+          "fingerprint": "4e99ba0ca14857dccb4376c46a661b644faa02b38e048af137be5fb1833535d4",
+          "waived": false,
+          "hasFix": false
+        }
+      ]
+    },
+    {
+      "name": "service-account-token: hardened Deployment passes",
+      "ruleId": "kubernetes-hardening.service-account-token",
+      "outcome": "pass",
+      "findings": []
+    }
+  ]
+}

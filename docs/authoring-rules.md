@@ -28,6 +28,17 @@ controls:
 
 ## Core kinds
 
+### `deployment.invariants` resource limits
+
+When `requireResourceLimits` is enabled, CPU and memory limits must be complete
+positive quantities. Kubernetes accepts case-sensitive SI and binary suffixes
+and decimal exponents. Compose CPU values are numeric; Compose memory values
+accept Docker byte units, including case-insensitive `m`, `MB`, and `MiB`.
+Numeric YAML limits are supported. Compose memory quantities that truncate
+to zero bytes fail because they do not establish a memory limit.
+An otherwise positive numeric prefix does not make an unknown suffix valid.
+These focused checks do not replace platform schema validation.
+
 ### `files`
 
 Requires, forbids, or counts glob matches. `mode` is `require`, `forbid`, or `count`; count accepts `minimum` and `maximum`. A require rule may offer one safe `create` edit.
@@ -45,9 +56,73 @@ Parses JSON, YAML, TOML, XML, dotenv, or INI and evaluates CEL. Variables:
 - `repo`: repository root and project directory name.
 - `git`: branch, commit, dirty state, and merge-request title.
 - `params`: project parameters.
+- `pack`: the enclosing pack's checked parameters, its defaults plus the
+  project's `with:` values, as a string-keyed map. It is separate from
+  `params`, so a project parameter with the same name never shadows a pack
+  value. Rules defined directly in the project see an empty map. Hoolicy
+  attaches parameters only when the type-checked expression reads `pack`
+  (string literals, `params.pack` fields, and comprehension variables named
+  `pack` do not count). For such a rule the values are part of its policy
+  digest, so changing a `with:` value makes that rule's baseline entries
+  stale; rules that do not read `pack` keep their existing digest.
+  `hoolicy lint` counts `pack.name` and `pack['name']` reads as parameter
+  use; dynamic reads such as `pack[key]` mark every pack parameter as used.
 - `now`: timestamp.
 
-Expression returns `true` for pass, `false` for one finding, or a list of objects with optional `message`, `path`, `key`, `line`, and `column`. Default cost limit is 100,000; maximum is 1,000,000.
+Expression returns `true` for pass, `false` for one finding, or a list of objects with optional `message`, `path`, `key`, `line`, and `column`. Violation fields must have the documented types (strings, or non-negative integers for `line` and `column`), and `path` must be repository-relative; other fields are ignored. Default cost limit is 100,000; maximum is 1,000,000.
+
+Besides the CEL standard library, expressions can use these deterministic,
+offline extensions. Library versions are pinned and every function is
+charged against `costLimit`, so an oversized `flatten`, `join`, or `sort`
+fails the check as an operational error (exit 2) like any other budget breach.
+Calls whose output or work grows faster than their inputs (`flatten`,
+`distinct`, `sort`, `sortBy`, `join`, `replace`, and `format`) are rejected
+before they run when their known cost already exceeds the limit, and
+`format` is also charged for the text it renders.
+
+- Lists (version 4): `slice`, `flatten`, `flatten(depth)`, `distinct`,
+  `reverse`, `sort`, `sortBy`, `first`, `last`, and `lists.range(n)` with
+  `n` at most 100,000.
+- Strings (version 5): `charAt`, `indexOf`, `lastIndexOf`, `lowerAscii`,
+  `upperAscii`, `replace`, `split`, `substring`, `trim`, `reverse`, `join`,
+  `format` (format strings are checked at compile time), and `strings.quote`.
+- Two-variable comprehensions: `all`, `exists`, `existsOne`,
+  `transformList`, `transformMap`, and `transformMapEntry` over `(index, value)`
+  for lists or `(key, value)` for maps.
+
+Set, math, regex-extraction, encoding, network, and additional clock
+functions are not available. `flatten` and `transformList` combine naturally
+into one finding per occurrence:
+
+```yaml
+spec:
+  format: json
+  expression: >-
+    documents.map(d, d.data.services.transformList(name, service,
+      service.replicas < 2
+        ? [{'message': [name, 'needs at least two replicas'].join(' '), 'path': d.path, 'key': name}]
+        : [])).flatten(2)
+  message: Services need at least two replicas
+```
+
+`flatten()` removes one nesting level; nested `map`/`transformList` results
+need `flatten(2)`.
+
+Inside a pack, prefer `pack` over whole-value `{{ }}` substitution when an
+expression needs a parameter value:
+
+```yaml
+parameters:
+  minimum_replicas: {type: number, default: 2, description: Replica floor.}
+rules:
+  - id: example.replicas
+    kind: structured.cel
+    files: [deploy/*.json]
+    spec:
+      format: json
+      expression: documents.all(d, d.data.replicas >= pack.minimum_replicas)
+      message: Deployments need the configured replica floor
+```
 
 ```yaml
 kind: structured.cel
@@ -82,7 +157,7 @@ Compares one authoritative JSON pointer against target file pointers. Empty poin
 
 ### `sources.allowed`
 
-Parses npm registry entries, NuGet XML sources, Dockerfile `FROM`, and structured `image` or `repository` values. Supports registry hosts in `registries`, absolute HTTP(S) URLs in `npm` and `nuget`, plus `requireDigest`. Credentials, URL queries, and fragments in allowlists are rejected.
+Parses npm registry entries, NuGet XML sources, Dockerfile `FROM`, and structured `image` or `repository` values. Supports registry hosts in `registries`, absolute HTTP(S) URLs in `npm` and `nuget`, plus `requireDigest`. Credentials, URL queries, and fragments in allowlists are rejected. Scanned YAML may repeat mapping keys, as GitLab CI allows; every occurrence is checked, merge keys and custom tags such as `!reference` are resolved, and malformed YAML still fails closed. Hoolicy's own configuration, pack, and waiver files keep strict duplicate-key rejection.
 
 ### `dependency.governance`
 

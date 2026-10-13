@@ -3,7 +3,6 @@ package rules
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/openhoo/hoolicy/internal/document"
 	"github.com/openhoo/hoolicy/sdk"
+	"go.yaml.in/yaml/v3"
 )
 
 type SourcesAllowed struct{}
@@ -198,28 +198,204 @@ func checkDockerfileSources(rule sdk.Rule, file sdk.File, spec sourcesSpec, mess
 }
 
 func checkStructuredImages(rule sdk.Rule, file sdk.File, spec sourcesSpec, message string, metrics *sdk.EvaluationMetrics) ([]sdk.Finding, error) {
-	documents, hit, err := document.ParseCached(file, "auto")
-	if err != nil {
-		if json.Valid(file.Data) || strings.HasSuffix(file.Path, ".json") {
+	var findings []sdk.Finding
+	visit := func(line, column int) func(string, string) {
+		return func(_ string, image string) {
+			if strings.ContainsAny(image, "${}") {
+				return
+			}
+			if problem := imageProblem(image, spec); problem != "" {
+				findings = append(findings, finding(rule, message+": "+problem, file.Path, "image:"+image, line, column))
+			}
+		}
+	}
+	if extension := strings.ToLower(filepath.Ext(file.Path)); extension == ".yaml" || extension == ".yml" {
+		// Scanned YAML belongs to foreign tools. Some, such as GitLab CI,
+		// accept repeated mapping keys, so inspect the syntax tree and visit
+		// every occurrence rather than rejecting or silently collapsing it.
+		documents, hit, err := document.ParseCachedYAMLNodes(file)
+		if err != nil {
 			return nil, err
 		}
+		if hit && metrics != nil {
+			metrics.ParseCacheHits++
+		}
+		for _, item := range documents {
+			walker := yamlImageWalker{visited: map[yamlWalkKey]bool{}}
+			if err := walker.walk(item.Node, "", visit(item.Line, item.Column)); err != nil {
+				return nil, fmt.Errorf("%s: %w", file.Path, err)
+			}
+		}
+		return findings, nil
+	}
+	documents, hit, err := document.ParseCached(file, "auto")
+	if err != nil {
 		return nil, err
 	}
 	if hit && metrics != nil {
 		metrics.ParseCacheHits++
 	}
-	var findings []sdk.Finding
 	for _, item := range documents {
-		walkImages(item.Data, "", func(key, image string) {
-			if strings.ContainsAny(image, "${}") {
-				return
-			}
-			if problem := imageProblem(image, spec); problem != "" {
-				findings = append(findings, finding(rule, message+": "+problem, file.Path, "image:"+image, item.Line, item.Column))
-			}
-		})
+		walkImages(item.Data, "", visit(item.Line, item.Column))
 	}
 	return findings, nil
+}
+
+// yamlWalkLimit bounds node visits so alias and merge graphs cannot expand
+// exponentially; normal documents stay far below it.
+const yamlWalkLimit = 1_000_000
+
+type yamlWalkKey struct {
+	node      *yaml.Node
+	parentKey string
+}
+
+type yamlImageWalker struct {
+	visited map[yamlWalkKey]bool
+	steps   int
+}
+
+type yamlPair struct {
+	key   string
+	value *yaml.Node
+}
+
+// walk mirrors walkImages for a YAML syntax tree. Duplicate keys are all
+// visited; sibling lookups use the last occurrence like common forge
+// parsers. Merge keys and aliases are resolved, and each node is processed
+// at most once per parent key.
+func (w *yamlImageWalker) walk(node *yaml.Node, parentKey string, visit func(key, image string)) error {
+	node = resolveYAMLAlias(node)
+	if node == nil {
+		return nil
+	}
+	walkKey := yamlWalkKey{node: node, parentKey: parentKey}
+	if w.visited[walkKey] {
+		return nil
+	}
+	w.visited[walkKey] = true
+	w.steps++
+	if w.steps > yamlWalkLimit {
+		return fmt.Errorf("YAML alias expansion exceeds %d nodes", yamlWalkLimit)
+	}
+	switch node.Kind {
+	case yaml.MappingNode:
+		pairs, err := w.mappingPairs(node, 0)
+		if err != nil {
+			return err
+		}
+		object := make(map[string]any, len(pairs))
+		for _, pair := range pairs {
+			object[pair.key] = yamlScalarValue(pair.value)
+		}
+		for _, pair := range pairs {
+			lower := strings.ToLower(pair.key)
+			if text, ok := yamlScalarValue(pair.value).(string); ok {
+				if lower == "image" && structuredImageValue(text, parentKey, object) {
+					visit(pair.key, strings.TrimSpace(text))
+				}
+				if lower == "repository" && imageConfiguration(parentKey, object) {
+					image := strings.TrimSpace(text)
+					if digest, ok := object["digest"].(string); ok && strings.TrimSpace(digest) != "" {
+						image += "@" + strings.TrimPrefix(strings.TrimSpace(digest), "@")
+					}
+					visit(pair.key, image)
+				}
+			}
+			if err := w.walk(pair.value, pair.key, visit); err != nil {
+				return err
+			}
+		}
+	case yaml.SequenceNode:
+		for _, child := range node.Content {
+			if err := w.walk(child, parentKey, visit); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// mappingPairs returns the effective pairs of a mapping: inherited merge-key
+// pairs not overridden by an explicit key (earlier merge sources win), then
+// every explicit pair in document order, including repeated keys.
+func (w *yamlImageWalker) mappingPairs(node *yaml.Node, depth int) ([]yamlPair, error) {
+	if depth > 64 {
+		return nil, errors.New("YAML merge nesting is too deep")
+	}
+	var merged, own []yamlPair
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		key, value := node.Content[index], node.Content[index+1]
+		w.steps++
+		if w.steps > yamlWalkLimit {
+			return nil, fmt.Errorf("YAML alias expansion exceeds %d nodes", yamlWalkLimit)
+		}
+		if key.Kind == yaml.ScalarNode && key.Value == "<<" && key.ShortTag() == "!!merge" {
+			sources := []*yaml.Node{value}
+			if resolved := resolveYAMLAlias(value); resolved != nil && resolved.Kind == yaml.SequenceNode {
+				sources = resolved.Content
+			}
+			for position := range sources {
+				source := resolveYAMLAlias(sources[position])
+				if source == nil || source.Kind != yaml.MappingNode {
+					continue
+				}
+				pairs, err := w.mappingPairs(source, depth+1)
+				if err != nil {
+					return nil, err
+				}
+				merged = append(merged, pairs...)
+			}
+			continue
+		}
+		name, ok := yamlScalarValue(key).(string)
+		if !ok {
+			if decoded := yamlScalarValue(key); decoded != nil {
+				name = fmt.Sprint(decoded)
+			} else {
+				name = key.Value
+			}
+		}
+		own = append(own, yamlPair{key: name, value: value})
+	}
+	explicit := make(map[string]bool, len(own))
+	for _, pair := range own {
+		explicit[pair.key] = true
+	}
+	effective := make([]yamlPair, 0, len(merged)+len(own))
+	inherited := make(map[string]bool, len(merged))
+	for _, pair := range merged {
+		if explicit[pair.key] || inherited[pair.key] {
+			continue
+		}
+		inherited[pair.key] = true
+		effective = append(effective, pair)
+	}
+	return append(effective, own...), nil
+}
+
+func resolveYAMLAlias(node *yaml.Node) *yaml.Node {
+	for depth := 0; node != nil && node.Kind == yaml.AliasNode; depth++ {
+		if depth > 64 {
+			return nil
+		}
+		node = node.Alias
+	}
+	return node
+}
+
+// yamlScalarValue decodes a scalar like the value decoder would, including
+// custom forge tags such as !reference, and returns nil for collections.
+func yamlScalarValue(node *yaml.Node) any {
+	node = resolveYAMLAlias(node)
+	if node == nil || node.Kind != yaml.ScalarNode {
+		return nil
+	}
+	var value any
+	if err := node.Decode(&value); err != nil {
+		return node.Value
+	}
+	return value
 }
 
 func walkImages(value any, parentKey string, visit func(key, image string)) {

@@ -29,11 +29,26 @@ type Document struct {
 
 const parseCacheLimit = 512
 
+type parseMode uint8
+
+const (
+	normalizedValues parseMode = iota
+	preservedJSONNumbers
+	yamlSyntaxNodes
+)
+
+// Keep parser semantics in typed fields: a user-supplied format must never
+// select a private cache namespace by including its string delimiter.
+type parseCacheKey struct {
+	path, format, digest string
+	mode                 parseMode
+}
+
 var sharedParseCache = struct {
 	sync.Mutex
-	entries map[string][]Document
-	order   []string
-}{entries: make(map[string][]Document)}
+	entries map[parseCacheKey][]Document
+	order   []parseCacheKey
+}{entries: make(map[parseCacheKey][]Document)}
 
 // ParseCached caches immutable parsed documents by path, format, and content
 // digest. Changed content naturally invalidates the entry; callers receive a
@@ -49,11 +64,35 @@ func ParseCachedPreservingJSONNumbers(file sdk.File, format string) ([]Document,
 	return parseCached(file, format, true)
 }
 
+// ParseCachedYAMLNodes parses every YAML document of a scanned foreign file
+// into its syntax tree without decoding it into a value. Duplicate mapping
+// keys are retained as separate entries instead of being rejected, so rules
+// that inspect arbitrary repository content (for example GitLab CI files,
+// whose forge accepts repeated job keys) can examine every occurrence.
+// Documents carry Node only; Data is nil. Syntax errors still fail closed.
+// Hoolicy's own policy inputs never use this lenient path.
+func ParseCachedYAMLNodes(file sdk.File) ([]Document, bool, error) {
+	return parseCachedMode(file, "yaml", yamlSyntaxNodes, parseYAMLNodes)
+}
+
 func parseCached(file sdk.File, format string, preserveJSONNumbers bool) ([]Document, bool, error) {
-	key := file.Path + "\x00" + strings.ToLower(format) + "\x00" + file.SHA256()
-	if preserveJSONNumbers {
-		key += "\x00preserve-json-numbers"
+	resolved := strings.ToLower(format)
+	if resolved == "" || resolved == "auto" {
+		resolved = detect(file.Path)
 	}
+	if preserveJSONNumbers {
+		return parseCachedMode(file, resolved, preservedJSONNumbers, func(file sdk.File) ([]Document, error) {
+			if resolved == "json" {
+				return parseJSONData(file, true)
+			}
+			return Parse(file, resolved)
+		})
+	}
+	return parseCachedMode(file, resolved, normalizedValues, func(file sdk.File) ([]Document, error) { return Parse(file, resolved) })
+}
+
+func parseCachedMode(file sdk.File, format string, mode parseMode, parse func(sdk.File) ([]Document, error)) ([]Document, bool, error) {
+	key := parseCacheKey{path: file.Path, format: format, digest: file.SHA256(), mode: mode}
 	sharedParseCache.Lock()
 	if cached, exists := sharedParseCache.entries[key]; exists {
 		result := append([]Document(nil), cached...)
@@ -61,17 +100,7 @@ func parseCached(file sdk.File, format string, preserveJSONNumbers bool) ([]Docu
 		return result, true, nil
 	}
 	sharedParseCache.Unlock()
-	var parsed []Document
-	var err error
-	resolved := strings.ToLower(format)
-	if resolved == "" || resolved == "auto" {
-		resolved = detect(file.Path)
-	}
-	if preserveJSONNumbers && resolved == "json" {
-		parsed, err = parseJSONData(file, true)
-	} else {
-		parsed, err = Parse(file, format)
-	}
+	parsed, err := parse(file)
 	if err != nil {
 		return nil, false, err
 	}
@@ -93,6 +122,7 @@ func parseCached(file sdk.File, format string, preserveJSONNumbers bool) ([]Docu
 }
 
 func Parse(file sdk.File, format string) ([]Document, error) {
+	format = strings.ToLower(format)
 	if format == "" || format == "auto" {
 		format = detect(file.Path)
 	}
@@ -180,6 +210,27 @@ func parseYAML(file sdk.File) ([]Document, error) {
 			Path: file.Path, Index: index, Line: content.Line, Column: content.Column,
 			Data: normalize(value), Node: content,
 		})
+	}
+	return documents, nil
+}
+
+func parseYAMLNodes(file sdk.File) ([]Document, error) {
+	decoder := yaml.NewDecoder(bytes.NewReader(file.Data))
+	var documents []Document
+	for index := 0; ; index++ {
+		var node yaml.Node
+		err := decoder.Decode(&node)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", file.Path, err)
+		}
+		if len(node.Content) == 0 {
+			continue
+		}
+		content := node.Content[0]
+		documents = append(documents, Document{Path: file.Path, Index: index, Line: content.Line, Column: content.Column, Node: content})
 	}
 	return documents, nil
 }
@@ -343,10 +394,11 @@ func uniqueKeys(node *yaml.Node) error {
 		seen := map[string]*yaml.Node{}
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			key := node.Content[i]
-			if previous, exists := seen[key.Value]; exists {
+			canonical := canonicalKey(key)
+			if previous, exists := seen[canonical]; exists {
 				return fmt.Errorf("duplicate key %q at %d:%d (first at %d:%d)", key.Value, key.Line, key.Column, previous.Line, previous.Column)
 			}
-			seen[key.Value] = key
+			seen[canonical] = key
 		}
 	}
 	for _, child := range node.Content {
@@ -355,4 +407,19 @@ func uniqueKeys(node *yaml.Node) error {
 		}
 	}
 	return nil
+}
+
+// canonicalKey returns the string under which normalize stores a decoded
+// mapping key. Distinct spellings such as 1 and 1.0, or null and ~, resolve
+// to the same normalized key; accepting both would make the surviving value
+// depend on map iteration order.
+func canonicalKey(key *yaml.Node) string {
+	if key.Kind == yaml.ScalarNode && key.ShortTag() == "!!str" {
+		return key.Value
+	}
+	var value any
+	if err := key.Decode(&value); err != nil {
+		return "\x00undecodable\x00" + key.Value
+	}
+	return fmt.Sprint(normalize(value))
 }

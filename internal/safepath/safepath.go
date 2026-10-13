@@ -12,6 +12,18 @@ import (
 
 var ErrSymlink = errors.New("symbolic link in repository path")
 
+// GitMetadataPath identifies reserved Git components, including portable
+// case and trailing-dot aliases and Windows alternate data streams.
+func GitMetadataPath(path string) bool {
+	for _, component := range strings.Split(path, "/") {
+		component = strings.SplitN(component, ":", 2)[0]
+		if strings.EqualFold(strings.TrimRight(component, " ."), ".git") {
+			return true
+		}
+	}
+	return false
+}
+
 func Existing(root, path string) (string, string, error) {
 	return resolve(root, path, false)
 }

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -127,6 +128,21 @@ func TestOCIManifestRequiresExactArtifactAndLayerMediaTypes(t *testing.T) {
 	}
 }
 
+func TestOCIManifestRejectsDuplicateJSONKeys(t *testing.T) {
+	t.Parallel()
+	valid := manifestFixture(packManifestExpectation)
+	for _, metadata := range []string{
+		`"artifactType":"invalid",`,
+		`"artifact\u0054ype":"invalid",`,
+		`"annotations":{"owner":"one","owner":"two"},`,
+	} {
+		ambiguous := "{" + metadata + strings.TrimPrefix(valid, "{")
+		if err := validateOCIManifest([]byte(ambiguous), packManifestExpectation); err == nil || !strings.Contains(err.Error(), "duplicate") {
+			t.Errorf("ambiguous OCI manifest accepted: %s: %v", metadata, err)
+		}
+	}
+}
+
 func TestReadRegularArtifactRejectsOversizedInput(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -163,6 +179,7 @@ while [ "$#" -gt 0 ]; do if [ "$1" = --output ]; then shift; out="$1"; fi; shift
 	artifact := buildArtifactFixture(t)
 	var manifest map[string]any
 	data, _ := os.ReadFile(filepath.Join(artifact, "release-manifest.json"))
+	validManifest := append([]byte(nil), data...)
 	_ = json.Unmarshal(data, &manifest)
 	manifest["packDigest"] = "sha256:" + strings.Repeat("f", 64)
 	data, _ = json.Marshal(manifest)
@@ -175,6 +192,13 @@ while [ "$#" -gt 0 ]; do if [ "$1" = --output ]; then shift; out="$1"; fi; shift
 	t.Setenv("FAKE_OCI_MANIFEST", manifestPath)
 	if _, err := Pull(root, "ghcr.io/openhoo/policy:v1", "trust.yaml", filepath.Join(root, "vendor")); err == nil || !strings.Contains(err.Error(), "does not bind") {
 		t.Fatalf("digest mismatch accepted: %v", err)
+	}
+	for index, metadata := range []string{`"version":999,`, `"ver\u0073ion":999,`} {
+		ambiguous := "{" + metadata + strings.TrimPrefix(string(validManifest), "{")
+		writeOCIFile(t, filepath.Join(artifact, "release-manifest.json"), ambiguous)
+		if _, err := Pull(root, "ghcr.io/openhoo/policy:v1", "trust.yaml", filepath.Join(root, fmt.Sprintf("duplicate-%d", index))); err == nil || !strings.Contains(err.Error(), "duplicate") {
+			t.Errorf("ambiguous release manifest accepted: %s: %v", metadata, err)
+		}
 	}
 }
 

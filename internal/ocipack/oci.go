@@ -21,6 +21,7 @@ import (
 	"github.com/openhoo/hoolicy/internal/config"
 	"github.com/openhoo/hoolicy/internal/packarchive"
 	"github.com/openhoo/hoolicy/internal/safepath"
+	"github.com/openhoo/hoolicy/internal/strictjson"
 )
 
 var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
@@ -95,6 +96,9 @@ func Pull(projectRoot, reference, trustRelative, target string) (Pulled, error) 
 	manifestData, err := readRegularArtifact(download, "release-manifest.json", MaxMetadataSize)
 	if err != nil {
 		return Pulled{}, fmt.Errorf("artifact lacks release-manifest.json: %w", err)
+	}
+	if _, err := strictjson.Decode(manifestData); err != nil {
+		return Pulled{}, fmt.Errorf("release manifest: %w", err)
 	}
 	var manifest releaseManifest
 	decoder := json.NewDecoder(bytes.NewReader(manifestData))
@@ -182,6 +186,9 @@ func validateRemoteManifest(digestReference string, expected manifestExpectation
 }
 
 func validateOCIManifest(data []byte, expected manifestExpectation) error {
+	if _, err := strictjson.Decode(data); err != nil {
+		return fmt.Errorf("OCI manifest: %w", err)
+	}
 	var manifest struct {
 		SchemaVersion int    `json:"schemaVersion"`
 		ArtifactType  string `json:"artifactType"`

@@ -98,6 +98,9 @@ func BuildSnapshot(ctx context.Context, packPath string, registry *sdk.Registry)
 	}
 	snapshot := &Snapshot{Version: 1, Pack: pack.Name, Release: pack.Release, Cases: make([]SnapshotCase, 0, len(tests.Cases))}
 	for _, testCase := range tests.Cases {
+		if err := validateCaseFixtures(testCase); err != nil {
+			return nil, fmt.Errorf("%s: %w", testCase.Name, err)
+		}
 		selected, err := instantiateRule(pack, merge(tests.Parameters, testCase.Parameters), testCase.Rule)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", testCase.Name, err)
@@ -169,6 +172,12 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 		caseNames[testCase.Name] = true
 		if !knownRules[testCase.Rule] {
 			result.Errors = append(result.Errors, testCase.Name+": unknown rule "+testCase.Rule)
+			continue
+		}
+		// An expected evaluation error may exercise malformed policy inputs,
+		// but must not turn invalid test-harness paths into a passing fixture.
+		if err := validateCaseFixtures(testCase); err != nil {
+			result.Errors = append(result.Errors, testCase.Name+": "+err.Error())
 			continue
 		}
 		if coverage[testCase.Rule] == nil {
@@ -253,6 +262,12 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 	if err != nil {
 		return nil, err
 	}
+	// The YAML round trip drops instantiation-only fields such as Pack and
+	// PackParameters. Evaluate the exact instantiated rule instead.
+	if len(loaded.Rules) != 1 || loaded.Rules[0].ID != rule.ID {
+		return nil, fmt.Errorf("fixture project did not preserve rule %s", rule.ID)
+	}
+	loaded.Rules[0] = rule
 	gitContext, now, err := fixtureContext(testCase)
 	if err != nil {
 		return nil, err
@@ -287,6 +302,44 @@ func writeCaseFixtures(root string, testCase Case) error {
 		}
 		if err := writeFixture(root, path, content); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateCaseFixtures(testCase Case) error {
+	allPaths := make(map[string]bool, len(testCase.Files)+len(testCase.Documents))
+	portablePaths := make(map[string]string, len(testCase.Files)+len(testCase.Documents))
+	for _, paths := range [][]string{sortedFixturePaths(testCase.Files), sortedFixturePaths(testCase.Documents)} {
+		for _, path := range paths {
+			clean, err := safeFixturePath(path)
+			if err != nil {
+				return err
+			}
+			if reservedFixturePath(clean) {
+				return fmt.Errorf("fixture path %s is reserved for the test harness", filepath.ToSlash(clean))
+			}
+			portable := strings.ToLower(clean)
+			if previous, exists := portablePaths[portable]; exists && previous != clean {
+				return fmt.Errorf("fixture paths %s and %s differ only by case", filepath.ToSlash(previous), filepath.ToSlash(clean))
+			}
+			portablePaths[portable] = clean
+			allPaths[clean] = true
+		}
+	}
+	for _, path := range sortedFixturePaths(testCase.Documents) {
+		if _, exists := testCase.Files[path]; exists {
+			return fmt.Errorf("fixture path %s is present in both files and documents", path)
+		}
+	}
+	portableNames := sortedFixturePaths(portablePaths)
+	for _, path := range sortedFixturePaths(allPaths) {
+		prefix := strings.ToLower(path) + string(filepath.Separator)
+		// Search for descendants once per fixture instead of walking every
+		// parent: very deep paths must not cause quadratic validation work.
+		index := sort.SearchStrings(portableNames, prefix)
+		if index < len(portableNames) && strings.HasPrefix(portableNames[index], prefix) {
+			return fmt.Errorf("fixture path %s has file ancestor %s", filepath.ToSlash(portablePaths[portableNames[index]]), filepath.ToSlash(path))
 		}
 	}
 	return nil
@@ -465,6 +518,13 @@ func fixtureWindowsVolume(path string) bool {
 }
 
 func reservedFixturePath(path string) bool {
-	path = filepath.ToSlash(path)
-	return path == config.DefaultFilename || path == config.DefaultLockfile || path == config.DefaultWaivers || strings.HasPrefix(path, ".hoolicy/vendor/")
+	// Reserve metadata on case-insensitive filesystems as well as portable
+	// file/directory aliases of harness-owned files.
+	path = strings.ToLower(filepath.ToSlash(path))
+	for _, reserved := range []string{config.DefaultFilename, config.DefaultLockfile, config.DefaultWaivers, ".hoolicy/vendor", ".git"} {
+		if path == reserved || strings.HasPrefix(path, reserved+"/") || strings.HasPrefix(reserved, path+"/") {
+			return true
+		}
+	}
+	return false
 }

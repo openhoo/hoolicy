@@ -13,8 +13,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/openhoo/hoolicy/internal/celenv"
 	"github.com/openhoo/hoolicy/internal/repository"
 	"github.com/openhoo/hoolicy/internal/strictjson"
 	"github.com/openhoo/hoolicy/sdk"
@@ -814,9 +816,54 @@ func (p *Pack) Instantiate(values map[string]any) ([]sdk.Rule, error) {
 		}
 		rule.Pack = p.Name
 		rule.PackVersion = p.Release
+		if rule.Kind == "structured.cel" && celReadsPack(rule) {
+			rule.PackParameters = copyPackParameters(parameters)
+		}
 		rules = append(rules, rule)
 	}
 	return rules, nil
+}
+
+var packCELEnvironment = sync.OnceValues(celenv.New)
+
+// celReadsPack reports whether a structured.cel rule's checked expression
+// reads the pack variable. The parameter map is part of the rule digest, so
+// attaching it only when the expression uses it keeps the policy identity,
+// and existing baselines, of every other rule byte-identical. Expressions
+// that fail to compile are left unattached; rule validation rejects them.
+func celReadsPack(rule sdk.Rule) bool {
+	expression, ok := rule.Spec["expression"].(string)
+	if !ok {
+		return false
+	}
+	environment, err := packCELEnvironment()
+	if err != nil {
+		return false
+	}
+	reads, err := celenv.ReferencesPack(environment, expression)
+	return err == nil && reads
+}
+
+// copyPackParameters returns an independent copy of checked parameter values
+// so rules cannot share or mutate each other's maps. String lists become
+// []any for a uniform CEL list representation.
+func copyPackParameters(parameters map[string]any) map[string]any {
+	result := make(map[string]any, len(parameters))
+	for name, value := range parameters {
+		switch current := value.(type) {
+		case []string:
+			list := make([]any, len(current))
+			for index, entry := range current {
+				list[index] = entry
+			}
+			result[name] = list
+		case []any:
+			result[name] = append([]any{}, current...)
+		default:
+			result[name] = current
+		}
+	}
+	return result
 }
 
 func sortedMapKeys[V any](values map[string]V) []string {

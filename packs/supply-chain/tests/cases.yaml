@@ -23,6 +23,34 @@ cases:
       - path: Dockerfile
         messageContains: approved
         waived: false
+  - name: forge YAML with duplicate keys, custom tags, and merge anchors passes
+    rule: supply-chain.approved-sources
+    outcome: pass
+    files:
+      .gitlab-ci.yml: |
+        .template: &template
+          image: registry.example.com/ci/base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        build:
+          image: registry.example.com/ci/build@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        build:
+          <<: *template
+          script: !reference [.setup, script]
+  - name: forge YAML duplicate key cannot hide an unapproved image
+    rule: supply-chain.approved-sources
+    outcome: fail
+    files:
+      .gitlab-ci.yml: |
+        .template: &template
+          image: docker.io/library/alpine:latest
+        build:
+          image: registry.example.com/ci/build@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        build:
+          <<: *template
+          script: !reference [.setup, script]
+    expect:
+      - path: .gitlab-ci.yml
+        messageContains: registry docker.io is not allowed
+        waived: false
   - name: narrow current exception passes
     rule: supply-chain.exception-lifecycle
     outcome: pass

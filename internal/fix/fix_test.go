@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -97,6 +98,46 @@ func TestApplyRechecksGitIndexAfterPreview(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(root, "tracked.txt"))
 	if err != nil || string(data) != "old\n" {
 		t.Fatalf("worktree changed: %q, %v", data, err)
+	}
+}
+
+func TestFixRejectsDirtyGitPathspecMagicTarget(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows filenames cannot contain colon")
+	}
+	path := ":(literal)tracked.txt"
+	root := cleanGitRepository(t, map[string]string{path: "old\n"})
+	if err := os.WriteFile(filepath.Join(root, path), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	finding := sdk.Finding{RuleID: "demo.edit", Fix: &sdk.Fix{Edits: []sdk.Edit{{
+		Path: path, ExpectedSHA256: digest([]byte("dirty\n")), Start: 0, End: 5, Replacement: []byte("fixed"),
+	}}}}
+	if _, err := Build(root, []sdk.Finding{finding}, nil); err == nil || !strings.Contains(err.Error(), "dirty target") {
+		t.Fatalf("dirty target with Git pathspec magic accepted: %v", err)
+	}
+}
+
+func TestFixRejectsGitMetadataTargets(t *testing.T) {
+	t.Parallel()
+	root := cleanGitRepository(t, map[string]string{"tracked.txt": "old\n"})
+	for _, path := range []string{".git/info/attributes", ".git/hooks/pre-commit", "nested/.git/config", ".GIT/info/attributes"} {
+		finding := sdk.Finding{RuleID: "demo.create", Fix: &sdk.Fix{Edits: []sdk.Edit{{
+			Path: path, ExpectedSHA256: "missing", Replacement: []byte("unsafe metadata\n"),
+		}}}}
+		if _, err := Build(root, []sdk.Finding{finding}, nil); err == nil || !strings.Contains(err.Error(), "Git metadata") {
+			t.Errorf("Git metadata fix %q accepted: %v", path, err)
+		}
+		// A direct plan must enforce the same boundary again during apply.
+		plan := &Plan{Root: root, Files: []FilePlan{{Path: path, Mode: 0o644, New: []byte("unsafe metadata\n")}}}
+		if err := plan.Apply(); err == nil || !strings.Contains(err.Error(), "Git metadata") {
+			t.Errorf("direct Git metadata plan %q applied: %v", path, err)
+		}
+	}
+	metadataRoot := filepath.Join(root, ".git")
+	if _, err := Build(metadataRoot, []sdk.Finding{{RuleID: "demo.create", Fix: &sdk.Fix{Edits: []sdk.Edit{{Path: "info/new-attributes", ExpectedSHA256: "missing", Replacement: []byte("unsafe metadata\n")}}}}}, nil); err == nil || !strings.Contains(err.Error(), "Git metadata") {
+		t.Fatalf("metadata-scoped project fix accepted: %v", err)
 	}
 }
 

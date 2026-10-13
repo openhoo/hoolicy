@@ -361,6 +361,142 @@ func TestEvidenceCreateAndVerifyWithoutCIUI(t *testing.T) {
 	}
 }
 
+func TestEvidencePreflightsAllOutputsWithoutChangingSource(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"unignored", "missing parent", "tracked ignored", "signing output", "symlink", "policy input", "nested project", "metadata"} {
+		t.Run(scenario, func(t *testing.T) {
+			root := t.TempDir()
+			configPath := filepath.Join(root, config.DefaultFilename)
+			writeCLIFile(t, configPath, "version: 1\nproject: demo\nrules: []\n")
+			writeCLIFile(t, filepath.Join(root, ".gitignore"), "ignored/\n")
+			if scenario == "tracked ignored" {
+				writeCLIFile(t, filepath.Join(root, "tracked.json"), "old output\n")
+				writeCLIFile(t, filepath.Join(root, ".gitignore"), "ignored/\ntracked.json\n")
+			}
+			if scenario == "policy input" {
+				writeCLIFile(t, filepath.Join(root, ".gitignore"), "hoolicy.yaml\n")
+			}
+			runCLICommand(t, root, "git", "init", "-q", "-b", "main")
+			runCLICommand(t, root, "git", "config", "user.name", "Hoolicy Tests")
+			runCLICommand(t, root, "git", "config", "user.email", "tests@hoolicy.invalid")
+			runCLICommand(t, root, "git", "add", ".")
+			if scenario == "tracked ignored" {
+				runCLICommand(t, root, "git", "add", "-f", "tracked.json")
+			}
+			runCLICommand(t, root, "git", "commit", "-qm", "test: evidence outputs")
+			output := filepath.Join(root, "evidence.json")
+			args := []string{"evidence", "--config", configPath}
+			switch scenario {
+			case "missing parent":
+				output = filepath.Join(root, "new", "nested", "evidence.json")
+			case "tracked ignored":
+				output = filepath.Join(root, "tracked.json")
+			case "signing output":
+				output = filepath.Join(t.TempDir(), "evidence.json")
+				args = append(args, "--attestation", filepath.Join(root, "decision.json"), "--signature-bundle", filepath.Join(t.TempDir(), "signature.json"), "--sign-key", "key")
+			case "symlink":
+				if err := os.Symlink(filepath.Join(t.TempDir(), "victim.json"), output); err != nil {
+					t.Fatal(err)
+				}
+			case "policy input":
+				output = configPath
+			case "nested project":
+				configPath = filepath.Join(root, "nested", "hoolicy.yaml")
+				writeCLIFile(t, configPath, "version: 1\nproject: demo\nrules: []\n")
+				args = []string{"evidence", "--config", configPath}
+			case "metadata":
+				output = filepath.Join(root, ".git", "info", "evidence.json")
+			}
+			before, readErr := os.ReadFile(output)
+			app, _, stderr := testApplication(t)
+			args = append(args, "--output", output)
+			if code := app.run(context.Background(), args); code != 2 || !strings.Contains(stderr.String(), "evidence output") {
+				t.Fatalf("code=%d stderr=%q", code, stderr.String())
+			}
+			after, afterErr := os.ReadFile(output)
+			if (readErr == nil) != (afterErr == nil) || !bytes.Equal(before, after) {
+				t.Fatalf("rejected output changed: before=%q after=%q err=%v", before, after, afterErr)
+			}
+			if scenario == "missing parent" {
+				if _, err := os.Lstat(filepath.Join(root, "new")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("preflight created missing output parents: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestEvidenceIgnoredOutputsRemainVerifiable(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, configPath, "version: 1\nproject: demo\nrules: []\n")
+	writeCLIFile(t, filepath.Join(root, ".gitignore"), "artifacts/\n")
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"config", "user.name", "Hoolicy Tests"}, {"config", "user.email", "tests@hoolicy.invalid"}, {"add", "."}, {"commit", "-qm", "test: ignored evidence"}} {
+		runCLICommand(t, root, "git", args...)
+	}
+	output := filepath.Join(root, "artifacts", "evidence.json")
+	app, _, stderr := testApplication(t)
+	for _, args := range [][]string{{"evidence", "--config", configPath, "--output", output}, {"evidence", "verify", "--config", configPath, output}} {
+		if code := app.run(context.Background(), args); code != 0 {
+			t.Fatalf("args=%v code=%d stderr=%q", args, code, stderr.String())
+		}
+	}
+}
+
+func TestEvidenceRejectsAncestorArtifactOutputsBeforeWriting(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, config.DefaultFilename)
+	writeCLIFile(t, configPath, "version: 1\nproject: demo\nrules: []\n")
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"config", "user.name", "Hoolicy Tests"}, {"config", "user.email", "tests@hoolicy.invalid"}, {"add", "."}, {"commit", "-qm", "test: artifact ancestors"}} {
+		runCLICommand(t, root, "git", args...)
+	}
+	for _, parent := range []string{"bundle", "attestation", "signature", "dangling alias"} {
+		t.Run(parent, func(t *testing.T) {
+			directory := t.TempDir()
+			bundle := filepath.Join(directory, "bundle.json")
+			attestation := filepath.Join(directory, "statement.json")
+			signature := filepath.Join(directory, "signature.json")
+			errorFragment := "evidence artifact outputs"
+			alias := ""
+			switch parent {
+			case "bundle":
+				attestation = filepath.Join(bundle, "statement.json")
+			case "attestation":
+				bundle = filepath.Join(attestation, "bundle.json")
+			case "signature":
+				attestation = filepath.Join(signature, "statement.json")
+			case "dangling alias":
+				alias = filepath.Join(directory, "alias")
+				if err := os.Symlink(bundle, alias); err != nil {
+					t.Fatal(err)
+				}
+				attestation = filepath.Join(alias, "nested", "statement.json")
+				errorFragment = "evidence output"
+			}
+			before, err := os.ReadDir(directory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			app, _, stderr := testApplication(t)
+			args := []string{"evidence", "--config", configPath, "--output", bundle, "--attestation", attestation, "--signature-bundle", signature, "--sign-key", "synthetic-key"}
+			if code := app.run(context.Background(), args); code != 2 || !strings.Contains(stderr.String(), errorFragment) {
+				t.Errorf("overlapping outputs: code=%d stderr=%q", code, stderr.String())
+			}
+			entries, err := os.ReadDir(directory)
+			if err != nil || len(entries) != len(before) {
+				t.Errorf("rejected outputs created artifacts or parents: entries=%v err=%v", entries, err)
+			}
+			if alias != "" {
+				if target, err := os.Readlink(alias); err != nil || target != bundle {
+					t.Errorf("preflight changed the dangling alias: target=%q err=%v", target, err)
+				}
+			}
+		})
+	}
+}
+
 func TestWaiverCreateIsPreviewFirstAndFindingBound(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -612,6 +748,46 @@ func TestFailedAttestationSigningPublishesNoFinalFiles(t *testing.T) {
 	for _, path := range []string{statementPath, bundlePath} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("failed signing published %s: %v", path, err)
+		}
+	}
+}
+
+func TestDecisionAttestationRejectsDuplicateJSONKeys(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake executable fixture uses POSIX shell")
+	}
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	cosign := filepath.Join(bin, "cosign")
+	writeCLIFile(t, cosign, "#!/bin/sh\nif [ \"$1\" = sign-blob ]; then\n  while [ \"$#\" -gt 0 ]; do\n    if [ \"$1\" = --bundle ]; then shift; printf '{}' > \"$1\"; exit 0; fi\n    shift\n  done\nfi\nexit 0\n")
+	if err := os.Chmod(cosign, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	statementPath := filepath.Join(root, "decision.intoto.json")
+	signaturePath := filepath.Join(root, "decision.sigstore.json")
+	evidencePath := filepath.Join(root, "evidence.json")
+	data := []byte("{}\n")
+	writeCLIFile(t, evidencePath, string(data))
+	bundle := &evidence.Bundle{Project: "demo", Revision: strings.Repeat("a", 40), PolicyDigest: "sha256:" + strings.Repeat("b", 64), Decision: &engine.Report{}}
+	if err := createDecisionAttestation(statementPath, signaturePath, "key", false, bundle, data); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyDecisionAttestation(bundle, evidencePath, statementPath, signaturePath, "key", "", ""); err != nil {
+		t.Fatalf("valid signed attestation rejected: %v", err)
+	}
+	valid, err := os.ReadFile(statementPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ambiguous := range []string{
+		`{"_type":"invalid",` + strings.TrimPrefix(string(valid), "{"),
+		`{"_\u0074ype":"invalid",` + strings.TrimPrefix(string(valid), "{"),
+		strings.Replace(string(valid), `"project": "demo"`, `"project": "wrong", "project": "demo"`, 1),
+	} {
+		writeCLIFile(t, statementPath, ambiguous)
+		if err := verifyDecisionAttestation(bundle, evidencePath, statementPath, signaturePath, "key", "", ""); err == nil || !strings.Contains(err.Error(), "duplicate") {
+			t.Errorf("ambiguous signed attestation accepted: %v", err)
 		}
 	}
 }

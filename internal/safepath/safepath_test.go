@@ -51,3 +51,17 @@ func TestRelativeDoesNotTouchFilesystem(t *testing.T) {
 		t.Fatal("Relative accepted traversal")
 	}
 }
+
+func TestGitMetadataPathRecognizesPortableAliases(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{".git/config", "nested/.git", ".GIT/hooks/pre-commit", ".git./config", ".git::$DATA"} {
+		if !GitMetadataPath(path) {
+			t.Errorf("metadata path %q not recognized", path)
+		}
+	}
+	for _, path := range []string{".github/workflows/check.yaml", "git/config", ".gitignore", ".gitmodules"} {
+		if GitMetadataPath(path) {
+			t.Errorf("source path %q identified as Git metadata", path)
+		}
+	}
+}

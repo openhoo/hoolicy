@@ -26,7 +26,7 @@ func TestConcurrentParseCacheKeepsOneEvictionEntryPerKey(t *testing.T) {
 	workers.Wait()
 	sharedParseCache.Lock()
 	defer sharedParseCache.Unlock()
-	seen := map[string]bool{}
+	seen := map[parseCacheKey]bool{}
 	for _, key := range sharedParseCache.order {
 		if seen[key] {
 			t.Fatal("concurrent misses duplicated a cache eviction key")
@@ -136,7 +136,7 @@ func TestJSONNormalizationPreservesUnderflow(t *testing.T) {
 }
 
 func TestPreciseJSONCacheSeparatesNormalizationAndPreservesTokens(t *testing.T) {
-	file := sdk.File{Path: t.Name() + ".json", Data: []byte(`{"number":9007199254740993e0,"fraction":1.0000000000000000001}`)}
+	file := sdk.File{Path: t.TempDir() + "/numbers.json", Data: []byte(`{"number":9007199254740993e0,"fraction":1.0000000000000000001}`)}
 	ordinary, _, err := ParseCached(file, "json")
 	if err != nil {
 		t.Fatal(err)
@@ -161,6 +161,21 @@ func TestPreciseJSONCacheSeparatesNormalizationAndPreservesTokens(t *testing.T) 
 	changed, hit, err := ParseCachedPreservingJSONNumbers(file, "json")
 	if err != nil || hit || changed[0].Data.(map[string]any)["number"] != json.Number("2") {
 		t.Fatalf("changed content cached incorrectly: %#v %v %v", changed, hit, err)
+	}
+}
+
+func TestAutoFormatCaseHasSameColdAndWarmSemantics(t *testing.T) {
+	for _, format := range []string{"auto", "AUTO", "Auto"} {
+		file := sdk.File{Path: t.TempDir() + "/numbers.json", Data: []byte(`{"number":1.0}`)}
+		for attempt := range 2 {
+			parsed, hit, err := ParseCached(file, format)
+			if err != nil || len(parsed) != 1 || hit != (attempt == 1) || parsed[0].Data.(map[string]any)["number"] != float64(1) {
+				t.Fatalf("format=%q attempt=%d documents=%v hit=%v err=%v", format, attempt, parsed, hit, err)
+			}
+		}
+		if _, err := Parse(file, format); err != nil {
+			t.Fatalf("direct format=%q: %v", format, err)
+		}
 	}
 }
 
@@ -193,5 +208,41 @@ func TestPreciseJSONParserParity(t *testing.T) {
 	}
 	if _, _, err := ParseCachedPreservingJSONNumbers(sdk.File{Path: "config.json", Data: []byte(`{}`)}, "json-exact"); err == nil {
 		t.Fatal("private precision mode exposed as document format")
+	}
+}
+
+// Keys with distinct YAML spellings that normalize to one map key made the
+// surviving value depend on map iteration order.
+func TestYAMLRejectsKeysThatCollideAfterNormalization(t *testing.T) {
+	t.Parallel()
+	for _, data := range []string{"1: first\n1.0: second\n", "null: a\n~: b\n", "true: a\nTrue: b\n", "0x10: a\n16: b\n"} {
+		if _, err := Parse(sdk.File{Path: "collide.yaml", Data: []byte(data)}, "yaml"); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+			t.Fatalf("normalized collision accepted for %q: %v", data, err)
+		}
+	}
+	documents, err := Parse(sdk.File{Path: "distinct.yaml", Data: []byte("\"1\": quoted\n1.5: number\nname: value\n")}, "yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := documents[0].Data.(map[string]any); len(got) != 3 {
+		t.Fatalf("distinct keys merged: %#v", got)
+	}
+}
+
+func TestForeignYAMLNodesRetainDuplicateKeysButRejectSyntaxErrors(t *testing.T) {
+	t.Parallel()
+	file := sdk.File{Path: t.Name() + ".yml", Data: []byte("build: {image: a}\nbuild: {image: b}\n---\nother: !reference [.x]\n")}
+	documents, _, err := ParseCachedYAMLNodes(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(documents) != 2 || len(documents[0].Node.Content) != 4 || documents[0].Data != nil {
+		t.Fatalf("duplicate keys not retained as syntax: %#v", documents)
+	}
+	if _, err := Parse(file, "yaml"); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("strict parser must still reject duplicates: %v", err)
+	}
+	if _, _, err := ParseCachedYAMLNodes(sdk.File{Path: t.Name() + "-bad.yml", Data: []byte("a: [b\n")}); err == nil {
+		t.Fatal("foreign YAML syntax error accepted")
 	}
 }

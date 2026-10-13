@@ -35,6 +35,7 @@ import (
 	"github.com/openhoo/hoolicy/internal/repository"
 	"github.com/openhoo/hoolicy/internal/rules"
 	"github.com/openhoo/hoolicy/internal/safepath"
+	"github.com/openhoo/hoolicy/internal/strictjson"
 	"github.com/openhoo/hoolicy/sdk"
 	"go.yaml.in/yaml/v3"
 )
@@ -946,6 +947,14 @@ func (a application) evidenceCreate(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
+	outputs := []string{*output}
+	if *attestation != "" {
+		outputs = append(outputs, *attestation, *signatureBundle)
+	}
+	paths, err := evidence.OutputPaths(project, outputs)
+	if err != nil {
+		return a.fail(err)
+	}
 	rules, err := a.engine.Validate(project)
 	if err != nil {
 		return a.fail(err)
@@ -962,11 +971,18 @@ func (a application) evidenceCreate(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	if err := writeReportFile(*output, data); err != nil {
+	currentPaths, err := evidence.OutputPaths(project, outputs)
+	if err != nil {
+		return a.fail(err)
+	}
+	if !jsonEqual(paths, currentPaths) {
+		return a.fail(errors.New("evidence output paths changed during evaluation"))
+	}
+	if err := writeReportFile(paths[0], data); err != nil {
 		return a.fail(err)
 	}
 	if *attestation != "" {
-		if err := createDecisionAttestation(*attestation, *signatureBundle, *signKey, *keyless, bundle, data); err != nil {
+		if err := createDecisionAttestation(paths[1], paths[2], *signKey, *keyless, bundle, data); err != nil {
 			return a.fail(err)
 		}
 	}
@@ -1102,6 +1118,9 @@ func verifyDecisionAttestation(bundle *evidence.Bundle, evidencePath, attestatio
 	statementData, err := os.ReadFile(attestation)
 	if err != nil {
 		return err
+	}
+	if _, err := strictjson.Decode(statementData); err != nil {
+		return fmt.Errorf("attestation: %w", err)
 	}
 	var statement decisionStatement
 	decoder := json.NewDecoder(bytes.NewReader(statementData))

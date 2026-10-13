@@ -266,6 +266,40 @@ func TestInspectGit(t *testing.T) {
 	}
 }
 
+func TestGitPathDirtyTreatsTargetAsLiteralPath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	paths := []string{"[a].txt", "a.txt"}
+	if runtime.GOOS != "windows" {
+		paths = append(paths, ":(literal)a.txt")
+	}
+	for _, path := range paths {
+		if err := os.WriteFile(filepath.Join(root, path), []byte("old\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-qm", "test: literal targets")
+	// A dirty glob match must not make the actual clean target dirty.
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dirty, err := GitPathDirty(root, "[a].txt"); err != nil || dirty {
+		t.Errorf("clean literal bracket target: dirty=%v, err=%v", dirty, err)
+	}
+	for _, path := range paths {
+		if err := os.WriteFile(filepath.Join(root, path), []byte("dirty\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if dirty, err := GitPathDirty(root, path); err != nil || !dirty {
+			t.Errorf("dirty literal target %q: dirty=%v, err=%v", path, dirty, err)
+		}
+	}
+}
+
 func TestRepositoryUsesPureGoGitFallback(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init", "-b", "main")
