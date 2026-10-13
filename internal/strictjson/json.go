@@ -7,11 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"unicode/utf8"
 )
 
 // Decode retains json.Number values so callers can normalize numbers without
 // losing integer precision. Exactly one JSON value is required.
 func Decode(data []byte) (any, error) {
+	if !utf8.Valid(data) {
+		return nil, fmt.Errorf("JSON input must be valid UTF-8")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	value, err := decodeJSONValue(decoder, 0)

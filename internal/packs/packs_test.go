@@ -52,6 +52,53 @@ func TestDigestEnforcesPackFileLimit(t *testing.T) {
 	}
 }
 
+func TestVendoredDigestRejectsGitMetadata(t *testing.T) {
+	t.Parallel()
+	for _, metadata := range []string{".git", "nested/.git", "nested/.GiT"} {
+		t.Run(metadata, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writePackFile(t, root, "pack.yaml", "policy fixture")
+			if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(metadata)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := digestVendored(root); err == nil || !strings.Contains(err.Error(), "Git metadata") {
+				t.Fatalf("empty vendored Git metadata directory accepted: %v", err)
+			}
+			writePackFile(t, root, metadata+"/config", "hidden configuration")
+			if _, err := digestVendored(root); err == nil || !strings.Contains(err.Error(), "Git metadata") {
+				t.Fatalf("vendored Git metadata content accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestDigestPreservesSourceCheckoutMetadataExclusion(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writePackFile(t, root, "pack.yaml", "policy fixture")
+	want, err := Digest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePackFile(t, root, ".git/config", "legitimate source metadata")
+	got, err := Digest(root)
+	if err != nil || got != want {
+		t.Fatalf("source checkout metadata affected content digest: got=%s want=%s err=%v", got, want, err)
+	}
+	if err := os.RemoveAll(filepath.Join(root, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	writePackFile(t, root, ".git", "gitdir: /source/.git/worktrees/policy\n")
+	got, err = Digest(root)
+	if err != nil || got != want {
+		t.Fatalf("linked worktree metadata affected content digest: got=%s want=%s err=%v", got, want, err)
+	}
+	if _, err := digestVendored(root); err == nil || !strings.Contains(err.Error(), "Git metadata") {
+		t.Fatalf("vendored Git indirection file accepted: %v", err)
+	}
+}
+
 func TestRemotePackSyncLocksAndChecksOffline(t *testing.T) {
 	t.Parallel()
 	remote := t.TempDir()
@@ -125,6 +172,85 @@ func TestResolveRejectsStaleLockWithoutRemotePacks(t *testing.T) {
 	project := &config.Project{Version: 1, Project: "consumer", Root: root}
 	if _, err := Resolve(project); err == nil || !strings.Contains(err.Error(), "stale pack") {
 		t.Fatalf("expected stale lock rejection, got %v", err)
+	}
+}
+
+func TestResolveBindsLockedReleaseAndOCIArchive(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		oci       bool
+		pinned    bool
+		mutate    func(*config.LockedPack)
+		wantError string
+	}{
+		{name: "git release matches"},
+		{name: "legacy git lock without release", mutate: func(lock *config.LockedPack) { lock.Release = "" }},
+		{name: "git release mismatch", mutate: func(lock *config.LockedPack) { lock.Release = "0.0.1" }, wantError: "release mismatch"},
+		{name: "oci archive matches", oci: true},
+		{name: "oci pinned manifest matches", oci: true, pinned: true},
+		{name: "oci archive digest mismatch", oci: true, mutate: func(lock *config.LockedPack) { lock.PackDigest = "sha256:" + strings.Repeat("f", 64) }, wantError: "archive digest mismatch"},
+		{name: "oci pinned manifest mismatch", oci: true, pinned: true, mutate: func(lock *config.LockedPack) { lock.ManifestDigest = "sha256:" + strings.Repeat("b", 64) }, wantError: "pinned OCI manifest digest"},
+		{name: "oci release mismatch", oci: true, mutate: func(lock *config.LockedPack) { lock.Release = "0.0.1" }, wantError: "release mismatch"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			vendor := ".hoolicy/vendor/demo"
+			writePackFile(t, root, vendor+"/pack.yaml", `version: 1
+name: demo
+release: 1.2.3
+description: Locked metadata regression fixture.
+rules:
+  - id: demo.required
+    title: Required document
+    description: Requires the fixture document.
+    rationale: Exercise offline metadata consistency.
+    remediation: Add the required document at REQUIRED.md.
+    severity: error
+    kind: files
+    files: [REQUIRED.md]
+    spec: {mode: require, message: Missing required document}
+`)
+			digest, err := Digest(filepath.Join(root, filepath.FromSlash(vendor)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			reference := config.PackRef{Name: "demo", Git: "https://example.com/policy.git", Ref: "v1.2.3"}
+			locked := config.LockedPack{Name: "demo", Git: reference.Git, Ref: reference.Ref, Commit: strings.Repeat("a", 40), Digest: digest, Vendor: vendor, Release: "1.2.3"}
+			if test.oci {
+				reference.Git, reference.Ref = "", ""
+				reference.OCI = "ghcr.io/example/policy:1.2.3"
+				locked.Git, locked.Ref, locked.Commit = "", "", ""
+				locked.ManifestDigest = "sha256:" + strings.Repeat("a", 64)
+				if test.pinned {
+					reference.OCI = "ghcr.io/example/policy@" + locked.ManifestDigest
+				}
+				locked.OCI = reference.OCI
+				locked.VerifiedBy = "official"
+				_, locked.PackDigest, err = packarchive.Build(filepath.Join(root, filepath.FromSlash(vendor)))
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if test.mutate != nil {
+				test.mutate(&locked)
+			}
+			if err := config.SaveLock(filepath.Join(root, config.DefaultLockfile), config.Lock{Version: 1, Packs: []config.LockedPack{locked}}); err != nil {
+				t.Fatal(err)
+			}
+			project := &config.Project{Version: 1, Project: "consumer", Root: root, Packs: []config.PackRef{reference}}
+			rules, err := Resolve(project)
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("inconsistent locked metadata accepted: rules=%v err=%v, want %q", rules, err, test.wantError)
+				}
+				return
+			}
+			if err != nil || len(rules) != 1 || rules[0].ID != "demo.required" {
+				t.Fatalf("valid locked pack rejected: rules=%v err=%v", rules, err)
+			}
+		})
 	}
 }
 

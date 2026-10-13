@@ -128,6 +128,9 @@ func TestMigrateJSONPreservesV1FingerprintForWaiverScope(t *testing.T) {
 			if finding.Fingerprint == waivedFinding.Fingerprint {
 				t.Fatal("migration did not derive the v2 finding identity")
 			}
+			if len(migrated.Waivers) != 1 || !containsString(migrated.Waivers[0].Fingerprints, finding.Fingerprint) {
+				t.Fatal("migration did not bind the verified waiver to the v2 finding identity")
+			}
 		}
 	}
 	if !foundWaived {

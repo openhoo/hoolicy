@@ -79,6 +79,18 @@ Run `hoolicy pack update my-pack` to preview the resolved pack changes. After re
 
 Pack files must be NUL-free text. Acquisition and offline digest verification reject NUL bytes to keep file boundaries unambiguous. Applying an update rehashes the reviewed staged files and revalidates destination paths before replacing vendored content; altered staging or symlink destinations fail closed.
 
+Pack content paths must be canonical and portable: case or Unicode normalization
+aliases, file/directory conflicts, Git metadata components, Windows device names
+or alternate data streams, trailing dots/spaces, and control characters are
+rejected. Paths have at most 4096 bytes and 64 components; path validation uses
+a component trie and rejects excessive depth before expanding the namespace.
+Archive validation finishes before extraction writes any files. The source
+checkout's top-level `.git` directory or linked-worktree indirection file is
+excluded when building or verifying a source pack; vendored packs reject Git
+metadata even when it is empty.
+When a lock records a release, it must match the vendored pack manifest. Older
+Git locks that omit the optional release field remain supported.
+
 Treat pack releases like APIs: document behavior changes, keep IDs stable, add regression fixtures before fixing a false positive, and make severity increases explicit in release notes.
 
 Compatibility ranges support whitespace-separated intersections and `||` alternatives. Repository-owned packs may use a narrow prerelease alternative while developing the engine version that introduces them, for example `>=0.1.3-0 <0.1.3 || >=0.2.0 <2.0.0`. This admits VCS pseudo-versions built from the unreleased source, rejects stable `0.1.3`, and admits the real `0.2.0` release. Remove obsolete prerelease alternatives after the first compatible release support window ends.
@@ -88,5 +100,9 @@ Compatibility ranges support whitespace-separated intersections and `||` alterna
 `hoolicy pack publish` requires a release-tagged OCI coordinate, passing fixtures, clean lint, reviewed behavior snapshot, compatibility report, provenance reference, canonical archive, and exactly one signing mode. The signed release manifest binds pack digest, test results, compatibility report, maturity, owner, and provenance.
 
 Consumers configure an OCI coordinate plus `.hoolicy/trust.yaml` requirement using either an exact key or exact identity and issuer. `pack update` resolves a tag once, verifies the digest reference, requires the exact Hoolicy artifact type and complete layer-media-type set, extracts only a bounded canonical archive, previews digest/rule/severity/parameter/control/maturity changes, and writes only with `--apply`. Later validation is offline against the exact lock and vendor digest.
+
+Offline OCI validation also rebuilds the canonical archive to check its locked
+pack digest. A digest-pinned OCI coordinate must match the recorded manifest
+digest. These consistency checks use vendored bytes and never contact a registry.
 
 Signed static catalogs recommend pack release coordinates. `pack catalog pull` requires the dedicated catalog artifact and layer media types, then records catalog content digest, OCI manifest digest, and verified identity. Catalog selection never overrides the consuming repository lock.

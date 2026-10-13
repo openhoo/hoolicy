@@ -2,6 +2,7 @@ package rules
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -92,6 +93,9 @@ func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Ru
 			input.Metrics.ParseCacheHits++
 		}
 		for _, item := range parsed {
+			if err := validateCELNumberRange(ctx, item.Data); err != nil {
+				return nil, fmt.Errorf("%s: %w", item.Path, err)
+			}
 			documents = append(documents, map[string]any{
 				"path": item.Path, "index": int64(item.Index), "line": int64(item.Line),
 				"column": int64(item.Column), "data": item.Data,
@@ -138,6 +142,34 @@ func (kind CEL) Evaluate(ctx context.Context, input sdk.EvalContext, rule sdk.Ru
 		findings = append(findings, finding(rule, violation.message, violation.path, violation.key, violation.line, violation.column))
 	}
 	return findings, nil
+}
+
+// Normalized JSON retains lexical numbers when they underflow, overflow, or
+// do not fit CEL's int/uint range. The CEL adapter otherwise rounds these
+// tokens to doubles or turns them into error values, and container equality
+// can ignore nested error values. Reject them before evaluating any policy.
+// structured.fields uses the separate exact-number path for such inputs.
+func validateCELNumberRange(ctx context.Context, value any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	switch current := value.(type) {
+	case json.Number:
+		return fmt.Errorf("JSON number is outside CEL's supported numeric range; use structured.fields for exact numeric constraints")
+	case map[string]any:
+		for _, item := range current {
+			if err := validateCELNumberRange(ctx, item); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, item := range current {
+			if err := validateCELNumberRange(ctx, item); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // packParameters exposes the rule's own pack parameters. It is deliberately

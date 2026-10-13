@@ -125,6 +125,18 @@ const (
 	FindingWaived   FindingState = "waived"
 )
 
+// Validate checks implementation-supplied finding data before configured rule
+// metadata and reviewed dispositions are bound by Finalize and the engine.
+func (f Finding) Validate() error {
+	if f.Location.Line < 0 || f.Location.Column < 0 {
+		return fmt.Errorf("location line and column must be nonnegative")
+	}
+	if _, err := json.Marshal(f); err != nil {
+		return fmt.Errorf("finding must be JSON-serializable: %w", err)
+	}
+	return nil
+}
+
 func (f *Finding) Finalize(rule Rule) {
 	f.RuleID = rule.ID
 	f.Title = rule.Title
@@ -153,14 +165,18 @@ func (f *Finding) Finalize(rule Rule) {
 // RuleDigest identifies the complete policy decision contract for one rule.
 // It deliberately includes severity and remediation so a baseline cannot hide
 // a materially changed rule behind a stable finding fingerprint.
+// It returns an empty string when rule metadata cannot be encoded as JSON.
 func RuleDigest(rule Rule) string {
-	data, _ := json.Marshal(rule)
+	data, err := json.Marshal(rule)
+	if err != nil {
+		return ""
+	}
 	hash := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(hash[:])
 }
 
 func findingDigest(finding Finding) string {
-	data, _ := json.Marshal(struct {
+	data, err := json.Marshal(struct {
 		RuleID      string         `json:"ruleId"`
 		Message     string         `json:"message"`
 		Remediation string         `json:"remediation"`
@@ -171,6 +187,9 @@ func findingDigest(finding Finding) string {
 		Key         string         `json:"key"`
 		Properties  map[string]any `json:"properties,omitempty"`
 	}{finding.RuleID, finding.Message, finding.Remediation, finding.Severity, finding.Location, finding.Workspace, finding.Owner, finding.Key, finding.Properties})
+	if err != nil {
+		return ""
+	}
 	hash := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(hash[:])
 }

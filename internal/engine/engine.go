@@ -340,6 +340,9 @@ func (e *Engine) evaluate(ctx context.Context, project *config.Project, rules []
 				return nil, metrics, fmt.Errorf("rule %s exceeded execution budget %s", rule.ID, ruleLimit)
 			}
 			for index := range result {
+				if err := result[index].Validate(); err != nil {
+					return nil, metrics, fmt.Errorf("rule %s returned invalid finding %d: %w", rule.ID, index, err)
+				}
 				if scope.global && len(project.Workspaces) > 0 {
 					result[index].Workspace, result[index].Owner = routeGlobalFinding(project, result[index].Location.Path)
 				} else {

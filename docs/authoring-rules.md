@@ -71,6 +71,15 @@ Parses JSON, YAML, TOML, XML, dotenv, or INI and evaluates CEL. Variables:
 
 Expression returns `true` for pass, `false` for one finding, or a list of objects with optional `message`, `path`, `key`, `line`, and `column`. Violation fields must have the documented types (strings, or non-negative integers for `line` and `column`), and `path` must be repository-relative; other fields are ignored. Default cost limit is 100,000; maximum is 1,000,000.
 
+JSON numbers that cannot normalize to a CEL signed integer, unsigned integer,
+or representable floating-point value fail as operational errors. This includes
+integers outside the 64-bit ranges, overflowing decimal exponents, and nonzero
+decimals that underflow to zero. Use `structured.fields` for exact constraints
+on numbers outside CEL's supported range. JSON must be valid UTF-8; malformed
+bytes are rejected instead of replaced. XML attributes must have distinct local
+names within each element, including across namespaces, because the document
+representation exposes attributes by local name.
+
 Besides the CEL standard library, expressions can use these deterministic,
 offline extensions. Library versions are pinned and every function is
 charged against `costLimit`, so an oversized `flatten`, `join`, or `sort`
@@ -157,7 +166,7 @@ Compares one authoritative JSON pointer against target file pointers. Empty poin
 
 ### `sources.allowed`
 
-Parses npm registry entries, NuGet XML sources, Dockerfile `FROM`, and structured `image` or `repository` values. Supports registry hosts in `registries`, absolute HTTP(S) URLs in `npm` and `nuget`, plus `requireDigest`. Credentials, URL queries, and fragments in allowlists are rejected. Scanned YAML may repeat mapping keys, as GitLab CI allows; every occurrence is checked, merge keys and custom tags such as `!reference` are resolved, and malformed YAML still fails closed. Hoolicy's own configuration, pack, and waiver files keep strict duplicate-key rejection.
+Parses npm registry entries, NuGet XML sources, Dockerfile `FROM`, and structured `image` or `repository` values. Supports registry hosts in `registries`, absolute HTTP(S) URLs in `npm` and `nuget`, plus `requireDigest`. Credentials, URL queries, and fragments in allowlists are rejected. NuGet XML requires one root element and distinct attribute local names within each element; nested elements do not disable checks on the enclosing `packageSources`. Scanned YAML may repeat mapping keys, as GitLab CI allows; every occurrence is checked, merge keys and custom tags such as `!reference` are resolved, and malformed YAML still fails closed. Hoolicy's own configuration, pack, and waiver files keep strict duplicate-key rejection.
 
 ### `dependency.governance`
 

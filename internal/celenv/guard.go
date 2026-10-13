@@ -241,7 +241,10 @@ func formatBound(args []ref.Val, limit uint64) uint64 {
 		}
 		switch current := value.(type) {
 		case types.String:
-			total += runes(current)
+			// Empty strings still take time to visit and delimit in a rendered
+			// list. Charging only their rune count lets shared nested lists of
+			// empty strings bypass the pre-call guard by millions of elements.
+			total += max(1, runes(current))
 		case traits.Mapper:
 			total++
 			for iterator := current.Iterator(); iterator.HasNext() == types.True && total <= limit; {

@@ -94,6 +94,7 @@ func resolveLock(project *config.Project) (map[string]config.LockedPack, error) 
 
 func resolvePack(project *config.Project, reference config.PackRef, lockedByName map[string]config.LockedPack, toolVersion string) ([]sdk.Rule, error) {
 	path := reference.Path
+	var remoteLock *config.LockedPack
 	if reference.Git != "" || reference.OCI != "" {
 		locked, exists := lockedByName[reference.Name]
 		if !exists {
@@ -101,6 +102,10 @@ func resolvePack(project *config.Project, reference config.PackRef, lockedByName
 		}
 		if locked.Git != reference.Git || locked.Ref != reference.Ref || locked.Subdir != reference.Subdir || locked.OCI != reference.OCI {
 			return nil, fmt.Errorf("pack %s config and lock disagree", reference.Name)
+		}
+		remoteLock = &locked
+		if at := strings.LastIndexByte(reference.OCI, '@'); at >= 0 && reference.OCI[at+1:] != locked.ManifestDigest {
+			return nil, fmt.Errorf("pack %s pinned OCI manifest digest disagrees with lock", reference.Name)
 		}
 		if reference.Git != "" && !commitPattern.MatchString(locked.Commit) {
 			return nil, fmt.Errorf("pack %s lock has invalid commit", reference.Name)
@@ -114,12 +119,21 @@ func resolvePack(project *config.Project, reference config.PackRef, lockedByName
 		if err != nil {
 			return nil, fmt.Errorf("pack %s: %w", reference.Name, err)
 		}
-		digest, err := Digest(absolute)
+		digest, err := digestVendored(absolute)
 		if err != nil {
 			return nil, fmt.Errorf("pack %s: %w", reference.Name, err)
 		}
 		if digest != locked.Digest {
 			return nil, fmt.Errorf("pack %s digest mismatch: lock %s, vendor %s", reference.Name, locked.Digest, digest)
+		}
+		if reference.OCI != "" {
+			_, archiveDigest, err := packarchive.Build(absolute)
+			if err != nil {
+				return nil, fmt.Errorf("pack %s canonical archive: %w", reference.Name, err)
+			}
+			if archiveDigest != locked.PackDigest {
+				return nil, fmt.Errorf("pack %s archive digest mismatch: lock %s, vendor %s", reference.Name, locked.PackDigest, archiveDigest)
+			}
 		}
 	}
 	_, absolute, err := safepath.Existing(project.Root, path)
@@ -133,6 +147,9 @@ func resolvePack(project *config.Project, reference config.PackRef, lockedByName
 	if pack.Name != reference.Name {
 		return nil, fmt.Errorf("pack reference %s loaded manifest %s", reference.Name, pack.Name)
 	}
+	if remoteLock != nil && remoteLock.Release != "" && remoteLock.Release != pack.Release {
+		return nil, fmt.Errorf("pack %s release mismatch: lock %s, manifest %s", reference.Name, remoteLock.Release, pack.Release)
+	}
 	if err := config.ValidatePackCompatibility(pack, toolVersion); err != nil {
 		return nil, err
 	}
@@ -140,6 +157,16 @@ func resolvePack(project *config.Project, reference config.PackRef, lockedByName
 }
 
 func Digest(root string) (string, error) {
+	return digest(root, true)
+}
+
+// Vendored packs contain policy files only. Unlike a source checkout, they
+// must not carry Git metadata that would escape the integrity digest.
+func digestVendored(root string) (string, error) {
+	return digest(root, false)
+}
+
+func digest(root string, sourceCheckout bool) (string, error) {
 	info, err := os.Lstat(root)
 	if err != nil {
 		return "", err
@@ -156,8 +183,16 @@ func Digest(root string) (string, error) {
 		if relErr != nil {
 			return relErr
 		}
-		if relative == ".git" && entry.IsDir() {
-			return filepath.SkipDir
+		if sourceCheckout && relative == ".git" {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			if entry.Type().IsRegular() {
+				return nil
+			}
+		}
+		if safepath.GitMetadataPath(filepath.ToSlash(relative)) {
+			return fmt.Errorf("Git metadata is forbidden in pack: %s", filepath.ToSlash(relative))
 		}
 		if relative == "." || entry.IsDir() {
 			return nil
@@ -185,6 +220,9 @@ func Digest(root string) (string, error) {
 		return "", err
 	}
 	sort.Strings(paths)
+	if err := packarchive.ValidatePaths(paths); err != nil {
+		return "", err
+	}
 	hash := sha256.New()
 	var total int64
 	for _, path := range paths {
@@ -363,7 +401,7 @@ func acquireGit(project *config.Project, reference config.PackRef, toolVersion s
 	if err := copyTree(source, staged); err != nil {
 		return nil, err
 	}
-	digest, err := Digest(staged)
+	digest, err := digestVendored(staged)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +446,7 @@ func acquireOCI(project *config.Project, reference config.PackRef, toolVersion s
 	if err := config.ValidatePackCompatibility(pack, toolVersion); err != nil {
 		return nil, err
 	}
-	treeDigest, err := Digest(staged)
+	treeDigest, err := digestVendored(staged)
 	if err != nil {
 		return nil, err
 	}
@@ -491,7 +529,7 @@ func validateUpdateTargets(root string, acquired []*acquiredPack, removals []str
 		if _, _, err := safepath.Writable(root, pack.locked.Vendor); err != nil {
 			return fmt.Errorf("unsafe pack vendor destination: %w", err)
 		}
-		digest, err := Digest(pack.staged)
+		digest, err := digestVendored(pack.staged)
 		if err != nil {
 			return fmt.Errorf("reviewed pack %s: %w", pack.locked.Name, err)
 		}

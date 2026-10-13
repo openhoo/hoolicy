@@ -322,6 +322,13 @@ func (a application) check(ctx context.Context, args []string) int {
 			return a.fail(fmt.Errorf("--fail-on may not weaken project threshold %s", project.FailOn))
 		}
 	}
+	if *output != "" {
+		canonical, err := evidence.ReportOutputPath(project, *output)
+		if err != nil {
+			return a.fail(err)
+		}
+		*output = canonical
+	}
 	result, err := a.engine.Check(ctx, project, engine.Options{BaseSHA: *base, Branch: *branch, MergeRequestTitle: *mrTitle, ToolVersion: a.info.Version})
 	if err != nil {
 		return a.fail(err)
@@ -651,6 +658,13 @@ func (a application) inventory(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
+	if *output != "" {
+		canonical, err := evidence.ReportOutputPath(project, *output)
+		if err != nil {
+			return a.fail(err)
+		}
+		*output = canonical
+	}
 	inventory, err := a.buildInventory(ctx, project, *branch)
 	if err != nil {
 		return a.fail(err)
@@ -883,6 +897,14 @@ func (a application) migrate(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("historical project configuration: %w", err))
 	}
+	target := *output
+	if target == "" {
+		target = inputPath
+	}
+	target, err = evidence.ReportOutputPath(project, target)
+	if err != nil {
+		return a.fail(err)
+	}
 	rules, err := a.engine.Validate(project)
 	if err != nil {
 		return a.fail(fmt.Errorf("historical project policy: %w", err))
@@ -908,10 +930,6 @@ func (a application) migrate(args []string) int {
 	if !*apply {
 		fmt.Fprintln(a.stdout, "No files changed. Re-run with --apply after review.")
 		return 0
-	}
-	target := *output
-	if target == "" {
-		target = inputPath
 	}
 	if err := writeReportFile(target, encoded.Bytes()); err != nil {
 		return a.fail(err)

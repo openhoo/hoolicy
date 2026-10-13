@@ -102,6 +102,27 @@ func TestXMLRejectsTrailingRootElement(t *testing.T) {
 	}
 }
 
+func TestXMLRejectsAttributeNamesThatLoseSourceValues(t *testing.T) {
+	t.Parallel()
+	for _, data := range []string{
+		`<root trusted="true" trusted="false"/>`,
+		`<root xmlns:a="urn:a" xmlns:b="urn:b" a:trusted="true" b:trusted="false"/>`,
+		`<root><child a="first" a="second"/></root>`,
+	} {
+		if documents, err := Parse(sdk.File{Path: "ambiguous.xml", Data: []byte(data)}, "xml"); err == nil {
+			t.Fatalf("ambiguous attribute values were silently discarded: input=%s documents=%#v", data, documents)
+		}
+	}
+	for _, data := range []string{
+		`<root xmlns:a="urn:a" a:trusted="true" other="value"/>`,
+		`<root><first id="one"/><second id="two"/></root>`,
+	} {
+		if _, err := Parse(sdk.File{Path: "valid.xml", Data: []byte(data)}, "xml"); err != nil {
+			t.Fatalf("distinct attribute names were rejected: input=%s err=%v", data, err)
+		}
+	}
+}
+
 func FuzzParseJSON(f *testing.F) {
 	f.Add([]byte(`{"ok": true}`))
 	f.Add([]byte(`[]`))

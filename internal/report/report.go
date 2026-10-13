@@ -813,6 +813,9 @@ func validateLegacyEnvelope(input *legacyReport, project *config.Project) error 
 	if !input.FailOn.Valid() {
 		return errors.New("report v1 failOn is invalid")
 	}
+	if input.FailOn.Rank() > project.FailOn.Rank() {
+		return errors.New("report v1 failOn may not weaken historical project threshold")
+	}
 	return nil
 }
 
@@ -1200,6 +1203,12 @@ func MigrateJSON(path string, project *config.Project, rules []sdk.Rule, expecte
 			finding.WaiverID = expectedWaiver.waiverID
 			finding.State = sdk.FindingWaived
 			finding.StateSource = "waiver"
+			// The historical scope was verified against its v1 fingerprint.
+			// Carry that exact finding's new identity into the migrated scope.
+			if !containsString(waiver.Fingerprints, finding.Fingerprint) {
+				waiver.Fingerprints = append(waiver.Fingerprints, finding.Fingerprint)
+				waiverByID[waiver.ID] = waiver
+			}
 		} else {
 			finding.State = sdk.FindingNew
 			finding.StateSource = ""
@@ -1214,7 +1223,7 @@ func MigrateJSON(path string, project *config.Project, rules []sdk.Rule, expecte
 	})
 	migratedWaivers := make([]config.Waiver, 0, len(waivers))
 	for _, waiver := range waivers {
-		migratedWaivers = append(migratedWaivers, waiver.migrated)
+		migratedWaivers = append(migratedWaivers, waiverByID[waiver.migrated.ID])
 	}
 	result := &engine.Report{
 		ReportVersion: 2, Tool: input.Tool, Project: input.Project, GeneratedAt: input.GeneratedAt,
@@ -1278,6 +1287,9 @@ func ValidateV2(input *engine.Report, project *config.Project, rules []sdk.Rule)
 	if input == nil || project == nil || input.ReportVersion != 2 || input.Tool.Name != "hoolicy" || strings.TrimSpace(input.Tool.Version) == "" || input.Project == "" || input.Project != project.Project || input.GeneratedAt.IsZero() || !legacyDigestPattern.MatchString(input.ConfigDigest) || !legacyDigestPattern.MatchString(input.PolicyDigest) || !input.FailOn.Valid() || input.Findings == nil || input.Waivers == nil || input.Metrics.Rules == nil || input.Git.CommitSubjects == nil {
 		return errors.New("report does not satisfy the version 2 envelope")
 	}
+	if input.FailOn.Rank() > project.FailOn.Rank() {
+		return errors.New("report failOn may not weaken project threshold")
+	}
 	currentDigest, err := engine.ProjectDigest(project, rules)
 	if err != nil || input.PolicyDigest != currentDigest {
 		return errors.New("report policy digest does not match project")
@@ -1321,6 +1333,9 @@ func ValidateV2(input *engine.Report, project *config.Project, rules []sdk.Rule)
 		if !exists {
 			return fmt.Errorf("report finding uses unknown rule %s", finding.RuleID)
 		}
+		if err := finding.Validate(); err != nil {
+			return fmt.Errorf("report finding %s is invalid: %w", finding.RuleID, err)
+		}
 		if finding.Location.Line < 0 || finding.Location.Column < 0 || !fingerprintPattern.MatchString(finding.Fingerprint) || !legacyDigestPattern.MatchString(finding.PolicyDigest) || !legacyDigestPattern.MatchString(finding.FindingDigest) {
 			return fmt.Errorf("report finding %s has invalid fields", finding.RuleID)
 		}
@@ -1335,6 +1350,9 @@ func ValidateV2(input *engine.Report, project *config.Project, rules []sdk.Rule)
 			return fmt.Errorf("report contains duplicate finding fingerprint %s", finding.Fingerprint)
 		}
 		seen[finding.Fingerprint] = struct{}{}
+		if strings.HasPrefix(finding.RuleID, "hoolicy.") && (finding.Waived || finding.State != sdk.FindingNew) {
+			return fmt.Errorf("report lifecycle finding %s cannot be suppressed", finding.RuleID)
+		}
 		if finding.Waived {
 			if finding.State != sdk.FindingWaived || finding.StateSource != "waiver" || finding.WaiverID == "" {
 				return fmt.Errorf("report finding %s has inconsistent waived state", finding.RuleID)
@@ -1342,6 +1360,17 @@ func ValidateV2(input *engine.Report, project *config.Project, rules []sdk.Rule)
 			waiver, exists := waiverByID[finding.WaiverID]
 			if !exists || waiver.Rule != finding.RuleID {
 				return fmt.Errorf("report finding %s references invalid waiver %s", finding.RuleID, finding.WaiverID)
+			}
+			matched := containsString(waiver.Fingerprints, finding.Fingerprint)
+			if !matched && finding.Location.Path != "" && len(waiver.Paths) > 0 {
+				var err error
+				matched, err = repository.Matches(finding.Location.Path, waiver.Paths)
+				if err != nil {
+					return fmt.Errorf("report finding %s has invalid waiver scope: %w", finding.RuleID, err)
+				}
+			}
+			if !matched {
+				return fmt.Errorf("report finding %s does not match waiver scope %s", finding.RuleID, finding.WaiverID)
 			}
 			summary.Waived++
 		} else {
@@ -1373,6 +1402,20 @@ func ValidateV2(input *engine.Report, project *config.Project, rules []sdk.Rule)
 			summary.Warnings++
 		case sdk.SeverityInfo:
 			summary.Info++
+		}
+	}
+	for _, change := range input.Changes {
+		if !fingerprintPattern.MatchString(change.Fingerprint) || !legacyRuleIDPattern.MatchString(change.RuleID) || !change.Severity.Valid() || !legacyDigestPattern.MatchString(change.PolicyDigest) || !legacyDigestPattern.MatchString(change.FindingDigest) {
+			return errors.New("report contains invalid change fields")
+		}
+		switch change.State {
+		case "fixed":
+			summary.Fixed++
+		case "stale":
+			summary.Stale++
+		case "new", "existing":
+		default:
+			return errors.New("report contains invalid change state")
 		}
 	}
 	summary.Rules = len(rules)
