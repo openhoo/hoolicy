@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1 (2026-10-13)
+
+### Bug Fixes
+
+- harden policy boundaries found in release smoke tests (b68b1c2)
+
 ## 0.6.0 (2026-10-13)
 
 ### Features
