@@ -66,6 +66,7 @@ type Rule struct {
 	Spec         map[string]any `json:"spec,omitempty" yaml:"spec,omitempty"`
 	Pack         string         `json:"pack,omitempty" yaml:"-"`
 	PackVersion  string         `json:"packVersion,omitempty" yaml:"-"`
+	Explanation  *Explanation   `json:"explanation,omitempty" yaml:"explanation,omitempty"`
 	// PackParameters holds the pack's checked parameter values (defaults
 	// plus the project's with: values) for rule kinds that read them at
 	// evaluation time, currently structured.cel. It is set only by pack
@@ -115,6 +116,7 @@ type Finding struct {
 	WaiverID      string         `json:"waiverId,omitempty"`
 	Fix           *Fix           `json:"fix,omitempty"`
 	Properties    map[string]any `json:"properties,omitempty"`
+	Policy        *PolicyContext `json:"policy,omitempty"`
 }
 
 type FindingState string
@@ -144,6 +146,7 @@ func (f *Finding) Finalize(rule Rule) {
 	f.Severity = rule.Severity
 	f.Controls = append([]Control(nil), rule.Controls...)
 	f.Pack = rule.Pack
+	f.Policy = rule.PolicyContext()
 	h := sha256.Sum256([]byte(strings.Join([]string{
 		f.RuleID,
 		f.Workspace,

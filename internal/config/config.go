@@ -538,6 +538,9 @@ func (p *Project) validateWorkspaces(packs map[string]struct{}) []string {
 
 func ValidateRule(rule sdk.Rule) []string {
 	var problems []string
+	if err := rule.Explanation.Validate(); err != nil {
+		problems = append(problems, err.Error())
+	}
 	if !ruleIDPattern.MatchString(rule.ID) {
 		problems = append(problems, "id must be lowercase dot/hyphen-separated")
 	}
@@ -816,6 +819,9 @@ func (p *Pack) Instantiate(values map[string]any) ([]sdk.Rule, error) {
 		}
 		rule.Pack = p.Name
 		rule.PackVersion = p.Release
+		if err := rule.Explanation.Validate(); err != nil {
+			return nil, fmt.Errorf("pack %s rule %s: %w", p.Name, rule.ID, err)
+		}
 		if rule.Kind == "structured.cel" && celReadsPack(rule) {
 			rule.PackParameters = copyPackParameters(parameters)
 		}

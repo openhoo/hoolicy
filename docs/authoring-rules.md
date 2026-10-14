@@ -16,6 +16,12 @@ Avoid rules such as minimum README length, mandatory comments, exact prose, inde
 
 Every rule requires `id`, `title`, `description`, `rationale`, `remediation`, `severity`, `kind`, and a kind-specific `spec`. IDs use lowercase dot or hyphen segments. Packs must prefix IDs with their pack name.
 
+Optional `explanation` metadata supplies `expectation`, `impact`, ordered `steps`,
+and titled HTTPS `references`. Reports include existing descriptions and
+rationale automatically and bind extra guidance to the configured rule. See
+[policy explanations](policy-explanations.md) for a complete example, strict
+limits, report formats, and operational diagnostics.
+
 `severity` describes impact. `failOn` describes enforcement threshold. Start uncertain policies at `warning`; move to `error` after measuring false positives and documenting ownership.
 
 Optional `controls` map evidence to a real control without claiming certification:

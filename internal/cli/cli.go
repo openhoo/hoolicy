@@ -22,6 +22,7 @@ import (
 	"unicode"
 
 	"github.com/openhoo/hoolicy/internal/config"
+	"github.com/openhoo/hoolicy/internal/diagnostic"
 	"github.com/openhoo/hoolicy/internal/engine"
 	"github.com/openhoo/hoolicy/internal/evidence"
 	"github.com/openhoo/hoolicy/internal/fix"
@@ -47,11 +48,12 @@ type BuildInfo struct {
 }
 
 type application struct {
-	stdout   io.Writer
-	stderr   io.Writer
-	info     BuildInfo
-	registry *sdk.Registry
-	engine   *engine.Engine
+	stdout      io.Writer
+	stderr      io.Writer
+	info        BuildInfo
+	registry    *sdk.Registry
+	engine      *engine.Engine
+	errorFormat string
 }
 
 func Run(ctx context.Context, args []string, info BuildInfo) int {
@@ -294,6 +296,7 @@ func (a application) check(ctx context.Context, args []string) int {
 	configPath := flags.String("config", "", "configuration path")
 	format := flags.String("format", "text", "text, json, sarif (GitHub code scanning), junit, github (step summary), or gitlab-codequality")
 	output := flags.String("output", "", "write only the selected report to a file; exit status is unchanged")
+	errorFormat := flags.String("error-format", "", "text or json operational diagnostics on stderr (defaults to json with --format json)")
 	base := flags.String("base", envFirst("HOOLICY_BASE_SHA", "CI_MERGE_REQUEST_DIFF_BASE_SHA"), "base commit for commit-range checks")
 	branch := flags.String("branch", envFirst("HOOLICY_BRANCH", "GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"), "source branch for detached checkouts")
 	mrTitle := flags.String("merge-request-title", envFirst("HOOLICY_MERGE_REQUEST_TITLE", "CI_MERGE_REQUEST_TITLE"), "merge request title")
@@ -301,11 +304,20 @@ func (a application) check(ctx context.Context, args []string) int {
 	if err := flags.Parse(args); err != nil {
 		return flagErrorCode(err)
 	}
+	if strings.EqualFold(*format, "json") {
+		a.errorFormat = "json"
+	}
+	if *errorFormat != "" && *errorFormat != "text" && *errorFormat != "json" {
+		return a.fail(&diagnostic.OperationError{Phase: "arguments", Cause: fmt.Errorf("unknown error format %q; use text or json", *errorFormat)})
+	}
+	if *errorFormat != "" {
+		a.errorFormat = *errorFormat
+	}
 	if flags.NArg() != 0 {
-		return a.unexpectedArguments("check", flags.Args())
+		return a.fail(&diagnostic.OperationError{Phase: "arguments", Cause: fmt.Errorf("check does not accept positional arguments: %s", strings.Join(flags.Args(), " "))})
 	}
 	if !report.ValidFormat(*format) {
-		return a.fail(fmt.Errorf("unknown report format %q", *format))
+		return a.fail(&diagnostic.OperationError{Phase: "arguments", Cause: fmt.Errorf("unknown report format %q", *format)})
 	}
 	project, err := loadProject(*configPath)
 	if err != nil {
@@ -314,18 +326,18 @@ func (a application) check(ctx context.Context, args []string) int {
 	if *failOn != "" {
 		candidate := sdk.Severity(*failOn)
 		if !candidate.Valid() {
-			return a.fail(fmt.Errorf("invalid --fail-on %q", *failOn))
+			return a.fail(&diagnostic.OperationError{Phase: "arguments", Cause: fmt.Errorf("invalid --fail-on %q", *failOn)})
 		}
 		if candidate.Rank() < project.FailOn.Rank() {
 			project.FailOn = candidate
 		} else if candidate.Rank() > project.FailOn.Rank() {
-			return a.fail(fmt.Errorf("--fail-on may not weaken project threshold %s", project.FailOn))
+			return a.fail(&diagnostic.OperationError{Phase: "arguments", Cause: fmt.Errorf("--fail-on may not weaken project threshold %s", project.FailOn)})
 		}
 	}
 	if *output != "" {
 		canonical, err := evidence.ReportOutputPath(project, *output)
 		if err != nil {
-			return a.fail(err)
+			return a.fail(&diagnostic.OperationError{Phase: "output", Cause: err})
 		}
 		*output = canonical
 	}
@@ -336,13 +348,13 @@ func (a application) check(ctx context.Context, args []string) int {
 	if *output != "" {
 		var encoded bytes.Buffer
 		if err := report.Write(&encoded, *format, result, false); err != nil {
-			return a.fail(err)
+			return a.fail(&diagnostic.OperationError{Phase: "output", Cause: err})
 		}
 		if err := writeReportFile(*output, encoded.Bytes()); err != nil {
-			return a.fail(err)
+			return a.fail(&diagnostic.OperationError{Phase: "output", Cause: err})
 		}
 	} else if err := report.Write(a.stdout, *format, result, colorEnabled(a.stdout)); err != nil {
-		return a.fail(err)
+		return a.fail(&diagnostic.OperationError{Phase: "output", Cause: err})
 	}
 	if result.Summary.Blocking > 0 {
 		return 1
@@ -391,11 +403,15 @@ func (a application) list(args []string) int {
 	flags := flag.NewFlagSet("list", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
 	configPath := flags.String("config", "", "configuration path")
+	format := flags.String("format", "text", "text or json")
 	if err := flags.Parse(args); err != nil {
 		return flagErrorCode(err)
 	}
 	if flags.NArg() != 0 {
 		return a.unexpectedArguments("list", flags.Args())
+	}
+	if *format != "text" && *format != "json" {
+		return a.fail(fmt.Errorf("unknown list format %q; use text or json", *format))
 	}
 	project, err := loadProject(*configPath)
 	if err != nil {
@@ -404,6 +420,17 @@ func (a application) list(args []string) int {
 	active, err := a.engine.Validate(project)
 	if err != nil {
 		return a.fail(err)
+	}
+	if *format == "json" {
+		if active == nil {
+			active = []sdk.Rule{}
+		}
+		encoder := json.NewEncoder(a.stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(active); err != nil {
+			return a.fail(err)
+		}
+		return 0
 	}
 	for _, rule := range active {
 		source := "project"
@@ -425,6 +452,9 @@ func (a application) explain(args []string) int {
 	}
 	if flags.NArg() != 1 {
 		return a.fail(fmt.Errorf("usage: hoolicy explain [--config path] <rule-id>"))
+	}
+	if *format != "text" && *format != "json" {
+		return a.fail(fmt.Errorf("unknown explain format %q; use text or json", *format))
 	}
 	project, err := loadProject(*configPath)
 	if err != nil {
@@ -452,10 +482,16 @@ func (a application) explain(args []string) int {
 			}
 			return 0
 		}
-		if *format != "text" {
-			return a.fail(fmt.Errorf("unknown explain format %q", *format))
-		}
 		fmt.Fprintf(a.stdout, "%s — %s\n\nSeverity: %s\nKind: %s\nSource: %s@%s\n\n%s\n\nWhy: %s\n\nFix: %s\n", rule.ID, terminalText(rule.Title, false), rule.Severity, rule.Kind, fallback(rule.Pack, "project"), fallback(rule.PackVersion, "local"), terminalText(rule.Description, true), terminalText(rule.Rationale, true), terminalText(rule.Remediation, true))
+		if err := report.WriteExplanation(a.stdout, rule.Explanation); err != nil {
+			return a.fail(err)
+		}
+		if len(rule.Files) > 0 {
+			fmt.Fprintf(a.stdout, "\nFiles: %s\n", terminalText(strings.Join(rule.Files, ", "), false))
+		}
+		if len(rule.Exclude) > 0 {
+			fmt.Fprintf(a.stdout, "Exclude: %s\n", terminalText(strings.Join(rule.Exclude, ", "), false))
+		}
 		if len(rule.Controls) > 0 {
 			fmt.Fprintln(a.stdout, "\nControls:")
 			for _, control := range rule.Controls {
@@ -464,12 +500,12 @@ func (a application) explain(args []string) int {
 		}
 		return 0
 	}
-	return a.fail(fmt.Errorf("unknown rule %s", flags.Arg(0)))
+	return a.fail(fmt.Errorf("unknown rule %s; run 'hoolicy list' to see active rule IDs", flags.Arg(0)))
 }
 
 func terminalText(value string, multiline bool) string {
 	return strings.Map(func(character rune) rune {
-		if unicode.IsControl(character) && !(multiline && character == '\n') {
+		if (unicode.IsControl(character) || unicode.Is(unicode.Cf, character)) && !(multiline && character == '\n') {
 			return ' '
 		}
 		return character
@@ -633,13 +669,16 @@ type inventoryScope struct {
 }
 
 type inventoryRule struct {
-	ID          string        `json:"id"`
-	Kind        string        `json:"kind"`
-	Severity    sdk.Severity  `json:"severity"`
-	Digest      string        `json:"digest"`
-	Pack        string        `json:"pack,omitempty"`
-	PackVersion string        `json:"packVersion,omitempty"`
-	Controls    []sdk.Control `json:"controls"`
+	ID          string             `json:"id"`
+	Kind        string             `json:"kind"`
+	Severity    sdk.Severity       `json:"severity"`
+	Digest      string             `json:"digest"`
+	Pack        string             `json:"pack,omitempty"`
+	PackVersion string             `json:"packVersion,omitempty"`
+	Controls    []sdk.Control      `json:"controls"`
+	Title       string             `json:"title"`
+	Remediation string             `json:"remediation"`
+	Policy      *sdk.PolicyContext `json:"policy,omitempty"`
 }
 
 func (a application) inventory(ctx context.Context, args []string) int {
@@ -698,7 +737,7 @@ func (a application) buildInventory(ctx context.Context, project *config.Project
 		if controls == nil {
 			controls = []sdk.Control{}
 		}
-		return inventoryRule{ID: rule.ID, Kind: rule.Kind, Severity: rule.Severity, Digest: sdk.RuleDigest(rule), Pack: rule.Pack, PackVersion: rule.PackVersion, Controls: controls}
+		return inventoryRule{ID: rule.ID, Kind: rule.Kind, Severity: rule.Severity, Digest: sdk.RuleDigest(rule), Pack: rule.Pack, PackVersion: rule.PackVersion, Controls: controls, Title: rule.Title, Remediation: rule.Remediation, Policy: rule.PolicyContext()}
 	}
 	scopes := []inventoryScope{}
 	if len(project.Workspaces) == 0 {
@@ -2291,6 +2330,7 @@ func comparePackRules(previous, current *config.Pack) packComparison {
 				"description": old.Description != rule.Description,
 				"rationale":   old.Rationale != rule.Rationale,
 				"remediation": old.Remediation != rule.Remediation,
+				"explanation": !jsonEqual(old.Explanation, rule.Explanation),
 			} {
 				if changed {
 					result.MetadataChanged = append(result.MetadataChanged, id+" "+name+" changed")
@@ -2735,12 +2775,16 @@ func (a application) packVerify(ctx context.Context, args []string) int {
 func loadProject(explicit string) (*config.Project, error) {
 	path, err := config.Find(".", explicit)
 	if err != nil {
-		return nil, err
+		return nil, &diagnostic.OperationError{Phase: "configuration", Cause: err}
 	}
-	return config.LoadProject(path)
+	project, err := config.LoadProject(path)
+	if err != nil {
+		return nil, &diagnostic.OperationError{Phase: "configuration", Cause: err}
+	}
+	return project, nil
 }
 func (a application) fail(err error) int {
-	fmt.Fprintln(a.stderr, "hoolicy:", terminalText(err.Error(), false))
+	_ = report.WriteDiagnostic(a.stderr, a.errorFormat, err)
 	return 2
 }
 func (a application) unexpectedArguments(command string, args []string) int {
@@ -2878,6 +2922,7 @@ func starterRules(profile string) ([]sdk.Rule, error) {
 		return sdk.Rule{
 			ID: id, Title: title, Description: description, Rationale: rationale,
 			Remediation: remediation, Severity: sdk.SeverityError, Kind: kind, Files: files, Spec: spec,
+			Explanation: starterExplanation(id),
 		}
 	}
 	rules := []sdk.Rule{

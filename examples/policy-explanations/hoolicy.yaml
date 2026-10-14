@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/hoolicy.schema.json
+version: 1
+project: policy-explanations-example
+failOn: error
+rules:
+  - id: service.production-debug
+    title: Production debug mode must be disabled
+    description: Checks that the production configuration explicitly disables debug mode.
+    rationale: Production diagnostics must not disclose internal service details.
+    remediation: Set debug to false in production.yaml and rerun the check.
+    severity: error
+    kind: structured.fields
+    files: [production.yaml]
+    explanation:
+      expectation: The debug field is present, boolean, and false.
+      impact: Debug output can expose internal request and service details.
+      steps:
+        - Review production.yaml with the service owner.
+        - Set debug to false while preserving the other configuration settings.
+        - Rerun hoolicy check with the same policy.
+      references:
+        - title: Structured configuration rules
+          url: https://github.com/openhoo/hoolicy/blob/main/docs/structured-data-rules.md
+    spec:
+      format: yaml
+      fields:
+        - pointer: /debug
+          required: true
+          type: boolean
+          allowedValues: [false]
+      message: Production debug configuration violates its reviewed contract

@@ -63,6 +63,12 @@ depending on it. Do not bypass digest/tampering failures by deleting the lock.
 
 ## Adoption and CI
 
+For binaries supporting explanation metadata, use
+[the bundled explanation guide](references/policy-explanations.md). Rules can
+provide expectations, impact, steps, and references. Existing rationale also
+appears in reports. `check --format json` emits operational diagnostics on
+stderr; these are incomplete checks with exit 2, not baselineable findings.
+
 Existing debt can be recorded with a reviewed exact baseline while full checks
 still evaluate the repository. Do not baseline new defects merely to get green.
 Temporary waivers need owned, narrow, justified, ticketed expiry decisions.

@@ -1,5 +1,13 @@
 # Compatibility and support
 
+The optional rule `explanation`, finding `policy`, and inventory guidance fields
+are additive extensions to existing on-disk versions. Previously published
+v1 schema files remain unchanged; latest project, pack, report, and inventory
+schemas admit these additions. New diagnostic envelopes have their own version
+1 contract. `check --format json` emits operational JSON diagnostics on stderr;
+`--error-format text` selects human-readable errors. See
+[policy explanations](policy-explanations.md) for schema and digest details.
+
 Hoolicy uses semantic versioning for the CLI and Go module. Stable on-disk contracts carry their own integer version: project config `1`, pack `1`, lock `1`, baseline `1`, waiver `1`, evidence policy `1`, evidence bundle `1`, and JSON report `2`.
 
 Before `v1.0.0`, the latest published `v0` minor line receives support. The compatibility suite retains unchanged `v0.1` project and pack fixtures because the current on-disk version `1` originated there; the report migration suite upgrades JSON report v1 to v2. A future on-disk contract version must add immutable compatibility fixtures before release.

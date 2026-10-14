@@ -28,7 +28,9 @@
         "id": { "type": "string" }, "kind": { "type": "string" },
         "severity": { "enum": ["info", "warning", "error"] }, "digest": { "$ref": "#/$defs/sha256" },
         "pack": { "type": "string" }, "packVersion": { "type": "string" },
-        "controls": { "type": "array", "items": { "$ref": "#/$defs/control" } }
+        "controls": { "type": "array", "items": { "$ref": "#/$defs/control" } },
+        "title": { "type": "string" }, "remediation": { "type": "string" },
+        "policy": { "$ref": "policy-context.schema.json" }
       }
     },
     "scope": {

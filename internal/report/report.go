@@ -73,9 +73,27 @@ func writeJSON(writer io.Writer, report *engine.Report) error {
 }
 
 func writeText(writer io.Writer, report *engine.Report, color bool) error {
-	for _, item := range report.Findings {
+	status := "PASS"
+	if report.Summary.Blocking > 0 {
+		status = "FAIL"
+	}
+	fmt.Fprintf(writer, "Hoolicy — %s\n%s: %s (failOn=%s)\n", singleLine(report.Project), status, countLabel(report.Summary.Blocking, "blocking finding"), singleLine(string(report.FailOn)))
+	previousRule := ""
+	findings := textFindings(report.Findings, report.FailOn)
+	for index, item := range findings {
+		if item.RuleID != previousRule || previousRule == "" {
+			fmt.Fprintf(writer, "\n%s — %s\n", singleLine(item.RuleID), singleLine(item.Title))
+			if item.Pack != "" {
+				source := item.Pack
+				if item.Policy != nil && item.Policy.PackVersion != "" {
+					source += "@" + item.Policy.PackVersion
+				}
+				fmt.Fprintf(writer, "  Source: %s\n", singleLine(source))
+			}
+			previousRule = item.RuleID
+		}
 		label := singleLine(strings.ToUpper(string(item.Severity)))
-		if item.Waived {
+		if findingState(item) == string(sdk.FindingWaived) {
 			label = "WAIVED"
 		} else if item.State == sdk.FindingExisting {
 			label = "EXISTING"
@@ -83,23 +101,28 @@ func writeText(writer io.Writer, report *engine.Report, color bool) error {
 		if color {
 			label = colorLabel(label, item)
 		}
-		location := singleLine(item.Location.Path)
-		if location != "" && item.Location.Line > 0 {
-			location += fmt.Sprintf(":%d:%d", item.Location.Line, item.Location.Column)
+		fmt.Fprintf(writer, "  %s %s: %s\n", label, singleLine(findingLocation(item)), singleLine(item.Message))
+		fmt.Fprintf(writer, "    Status: %s\n", singleLine(findingDisposition(item, report.FailOn)))
+		if item.Workspace != "" && item.Owner != "" {
+			fmt.Fprintf(writer, "    Workspace: %s; owner: %s\n", singleLine(item.Workspace), singleLine(item.Owner))
+		} else if item.Workspace != "" {
+			fmt.Fprintf(writer, "    Workspace: %s\n", singleLine(item.Workspace))
+		} else if item.Owner != "" {
+			fmt.Fprintf(writer, "    Owner: %s\n", singleLine(item.Owner))
 		}
-		if location != "" {
-			location += " "
-		}
-		fmt.Fprintf(writer, "%s %s%s %s\n", label, location, singleLine(item.RuleID), singleLine(item.Message))
-		fmt.Fprintf(writer, "  Fix: %s\n", singleLine(item.Remediation))
-		if item.Waived {
-			fmt.Fprintf(writer, "  Waiver: %s\n", singleLine(item.WaiverID))
+		if index+1 == len(findings) || findings[index+1].RuleID != item.RuleID {
+			for _, line := range policyLines(item.Policy, item.Remediation) {
+				fmt.Fprintf(writer, "  %s\n", singleLine(line))
+			}
 		}
 	}
 	for _, change := range report.Changes {
 		fmt.Fprintf(writer, "%s %s %s (%s)\n", singleLine(strings.ToUpper(change.State)), singleLine(change.RuleID), singleLine(shortFingerprint(change.Fingerprint)), singleLine(change.Reason))
 	}
-	fmt.Fprintf(writer, "\n%d rules, %d findings: %d new, %d existing, %d waived, %d fixed, %d stale, %d blocking\n", report.Summary.Rules, len(report.Findings), report.Summary.New, report.Summary.Existing, report.Summary.Waived, report.Summary.Fixed, report.Summary.Stale, report.Summary.Blocking)
+	fmt.Fprintf(writer, "\n%s, %s: %d new, %d existing, %d waived, %d fixed, %d stale, %d blocking\n", countLabel(report.Summary.Rules, "rule"), countLabel(len(report.Findings), "finding"), report.Summary.New, report.Summary.Existing, report.Summary.Waived, report.Summary.Fixed, report.Summary.Stale, report.Summary.Blocking)
+	if len(report.Findings) > 0 {
+		fmt.Fprintln(writer, "Explain a policy: hoolicy explain <rule-id>")
+	}
 	return nil
 }
 
@@ -188,7 +211,7 @@ func findingFingerprint(item sdk.Finding) string {
 // forge location output because the forge contracts require a real relative path.
 func reportRelativePath(value string) (string, bool) {
 	for _, character := range value {
-		if unicode.IsControl(character) {
+		if unicode.IsControl(character) || unicode.Is(unicode.Cf, character) {
 			return "", false
 		}
 	}
@@ -278,7 +301,7 @@ func singleLine(value string) string {
 		if character == '\n' || character == '\r' || character == '\t' {
 			return ' '
 		}
-		if unicode.IsControl(character) {
+		if unicode.IsControl(character) || unicode.Is(unicode.Cf, character) {
 			return -1
 		}
 		return character
@@ -358,7 +381,7 @@ func writeSARIF(writer io.Writer, input *engine.Report) error {
 	results := make([]sarifResult, 0, len(findings))
 	for _, item := range findings {
 		if _, exists := rules[item.RuleID]; !exists {
-			rules[item.RuleID] = sarifRule{ID: item.RuleID, Name: item.Title, ShortDescription: sarifMessage{Text: item.Title}, Help: sarifMessage{Text: item.Remediation}}
+			rules[item.RuleID] = sarifRule{ID: item.RuleID, Name: item.Title, ShortDescription: sarifMessage{Text: item.Title}, Help: sarifMessage{Text: strings.Join(policyLines(item.Policy, item.Remediation), "\n")}}
 		}
 		level := "note"
 		if item.Severity == sdk.SeverityError {
@@ -375,6 +398,13 @@ func writeSARIF(writer io.Writer, input *engine.Report) error {
 			}
 		}
 		properties := map[string]string{"hoolicy.state": state}
+		properties["hoolicy.disposition"] = findingDisposition(item, input.FailOn)
+		if item.Owner != "" {
+			properties["hoolicy.owner"] = item.Owner
+		}
+		if item.Workspace != "" {
+			properties["hoolicy.workspace"] = item.Workspace
+		}
 		if item.StateSource != "" {
 			properties["hoolicy.stateSource"] = item.StateSource
 		}
@@ -458,7 +488,7 @@ func writeJUnit(writer io.Writer, input *engine.Report) error {
 		if len(fingerprint) > 12 {
 			fingerprint = fingerprint[:12]
 		}
-		caseItem := testCase{Name: strings.TrimSpace(item.RuleID + " " + fingerprint), Classname: "hoolicy." + input.Project, SystemOut: item.Location.Path}
+		caseItem := testCase{Name: strings.TrimSpace(item.RuleID + " " + fingerprint), Classname: "hoolicy." + input.Project, SystemOut: findingDetails(item, input.FailOn)}
 		if item.Waived || item.State == sdk.FindingExisting {
 			reason := "Existing finding"
 			if item.Waived {
@@ -467,7 +497,7 @@ func writeJUnit(writer io.Writer, input *engine.Report) error {
 			caseItem.Skipped = &testSkipped{Message: reason}
 			suite.Skipped++
 		} else if item.Severity.Rank() >= input.FailOn.Rank() {
-			caseItem.Failure = &testFailure{Message: item.Message, Type: string(item.Severity), Body: item.Remediation}
+			caseItem.Failure = &testFailure{Message: item.Message, Type: string(item.Severity), Body: findingDetails(item, input.FailOn)}
 			suite.Failures++
 		} else {
 			caseItem.SystemOut = strings.TrimSpace(caseItem.SystemOut + "\nNon-blocking: " + item.Message)
@@ -509,11 +539,19 @@ func writeGitHubSummary(writer io.Writer, input *engine.Report) error {
 		if state == "" {
 			state = string(sdk.FindingNew)
 		}
-		location := item.Location.Path
-		if item.Location.Line > 0 {
-			location += fmt.Sprintf(":%d", item.Location.Line)
+		location := findingLocation(item)
+		details := []string{item.Message, "Status: " + findingDisposition(item, input.FailOn)}
+		if item.Workspace != "" {
+			details = append(details, "Workspace: "+item.Workspace)
 		}
-		fmt.Fprintf(writer, "| %s | %s | `%s` | `%s` | %s<br><sub>Fix: %s</sub> |\n", markdownCell(state), markdownCell(string(item.Severity)), markdownCell(item.RuleID), markdownCell(location), markdownCell(item.Message), markdownCell(item.Remediation))
+		if item.Owner != "" {
+			details = append(details, "Owner: "+item.Owner)
+		}
+		details = append(details, policyLines(item.Policy, item.Remediation)...)
+		for index := range details {
+			details[index] = markdownCell(details[index])
+		}
+		fmt.Fprintf(writer, "| %s | %s | `%s` | `%s` | %s |\n", markdownCell(state), markdownCell(string(item.Severity)), markdownCell(item.RuleID), markdownCell(location), strings.Join(details, "<br>"))
 		count++
 	}
 	for _, change := range input.Changes {
@@ -583,6 +621,13 @@ func writeGitLabCodeQuality(writer io.Writer, input *engine.Report) error {
 			}
 		}
 		description := "State: " + state + ". " + item.Message + " Remediation: " + item.Remediation
+		description += " Status: " + findingDisposition(item, input.FailOn) + "."
+		if item.Owner != "" {
+			description += " Owner: " + item.Owner + "."
+		}
+		if guidance := policyLines(item.Policy, ""); len(guidance) > 0 {
+			description += " " + strings.Join(guidance, " ")
+		}
 		if item.Waived || state == string(sdk.FindingWaived) {
 			description += " Waiver: " + item.WaiverID
 		}
@@ -1341,6 +1386,15 @@ func ValidateV2(input *engine.Report, project *config.Project, rules []sdk.Rule)
 		}
 		expected := finding
 		expected.Finalize(rule)
+		// Older v2 reports omit policy context. If present, it must match the
+		// configured rule exactly; presentation metadata cannot be forged.
+		if finding.Policy != nil {
+			expectedPolicy, _ := json.Marshal(expected.Policy)
+			actualPolicy, _ := json.Marshal(finding.Policy)
+			if !bytes.Equal(expectedPolicy, actualPolicy) {
+				return fmt.Errorf("report finding %s has invalid policy explanation", finding.RuleID)
+			}
+		}
 		expectedControls, _ := json.Marshal(expected.Controls)
 		actualControls, _ := json.Marshal(finding.Controls)
 		if finding.Title != expected.Title || finding.Remediation != expected.Remediation || finding.Severity != expected.Severity || finding.Pack != expected.Pack || !bytes.Equal(expectedControls, actualControls) || expected.Fingerprint != finding.Fingerprint || expected.PolicyDigest != finding.PolicyDigest || expected.FindingDigest != finding.FindingDigest {

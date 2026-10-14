@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/policy-context.schema.json",
+  "title": "Hoolicy finding policy context",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "type": "string"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "packVersion": {
+      "type": "string"
+    },
+    "explanation": {
+      "$ref": "rule-explanation.schema.json"
+    }
+  }
+}

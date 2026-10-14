@@ -566,8 +566,21 @@ rules:
 	}
 	sum := sha256.Sum256(encoded.Bytes())
 	reportDigest := hex.EncodeToString(sum[:])
-	if reportDigest != "4172e93cda291cdf796791cada3ad34c01ab762ba5c6fbd10c4cd5d41fe636ca" || result.PolicyDigest != "sha256:e9b7bcfab1f259a31f555fd25e986f1cad83d37d76e1c853b98b94fdfb85c4eb" {
+	if reportDigest != "32779e2a2daa31b82be82e4884fcd11fb5e006291404d3eb3aa76bf838e060a3" || result.PolicyDigest != "sha256:e9b7bcfab1f259a31f555fd25e986f1cad83d37d76e1c853b98b94fdfb85c4eb" {
 		t.Fatalf("golden changed: report=%s policy=%s\n%s", reportDigest, result.PolicyDigest, encoded.String())
+	}
+	// Removing the optional presentation field must reproduce the historical
+	// report byte for byte, including all fingerprints and decision digests.
+	for index := range result.Findings {
+		result.Findings[index].Policy = nil
+	}
+	encoded.Reset()
+	if err := report.Write(&encoded, "json", result, false); err != nil {
+		t.Fatal(err)
+	}
+	historical := sha256.Sum256(encoded.Bytes())
+	if hex.EncodeToString(historical[:]) != "4172e93cda291cdf796791cada3ad34c01ab762ba5c6fbd10c4cd5d41fe636ca" {
+		t.Fatal("historical decision identity changed")
 	}
 }
 
