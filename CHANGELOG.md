@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 (2026-10-14)
+
+### Features
+
+- **hoolicy:** explain policy failures and polish diagnostics (7a98d1e)
+
 ## 0.6.1 (2026-10-13)
 
 ### Bug Fixes
