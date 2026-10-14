@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes target the latest `v0.6.x` release until a newer minor line is published.
+Security fixes target the latest `v0.7.x` release until a newer minor line is published.
 
 ## Reporting a vulnerability
 
