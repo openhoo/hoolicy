@@ -30,6 +30,28 @@ func TestVersionedSchemasMatchPublishedV1Contracts(t *testing.T) {
 		}
 		delete(latest, "$id")
 		delete(versioned, "$id")
+		// Published v1 files remain immutable. Latest schemas admit these
+		// explicitly tested optional additions to the same on-disk versions.
+		if name == "hoolicy.schema.json" || name == "report.schema.json" {
+			definition, field, reference := "rule", "explanation", "rule-explanation.schema.json"
+			if name == "report.schema.json" {
+				definition, field, reference = "finding", "policy", "policy-context.schema.json"
+			}
+			properties := latest["$defs"].(map[string]any)[definition].(map[string]any)["properties"].(map[string]any)
+			if !reflect.DeepEqual(properties[field], map[string]any{"$ref": reference}) {
+				t.Fatalf("%s has an unreviewed %s extension", name, field)
+			}
+			delete(properties, field)
+		}
+		if name == "inventory.schema.json" {
+			properties := latest["$defs"].(map[string]any)["rule"].(map[string]any)["properties"].(map[string]any)
+			for field, expected := range map[string]any{"title": map[string]any{"type": "string"}, "remediation": map[string]any{"type": "string"}, "policy": map[string]any{"$ref": "policy-context.schema.json"}} {
+				if !reflect.DeepEqual(properties[field], expected) {
+					t.Fatalf("inventory has an unreviewed %s extension", field)
+				}
+				delete(properties, field)
+			}
+		}
 		if !reflect.DeepEqual(latest, versioned) {
 			t.Fatalf("%s differs from immutable schemas/v1 contract", name)
 		}

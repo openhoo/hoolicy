@@ -314,7 +314,7 @@ func TestReportFormats(t *testing.T) {
 			}
 			switch format {
 			case "text":
-				if !strings.Contains(output.String(), "demo.rule Failed") || !strings.Contains(output.String(), "1 blocking") {
+				if !strings.Contains(output.String(), "demo.rule — Demo rule") || !strings.Contains(output.String(), "demo.yaml:2:3: Failed") || !strings.Contains(output.String(), "1 blocking") {
 					t.Fatalf("unexpected text report: %s", output.String())
 				}
 			case "json", "sarif", "gitlab-codequality":

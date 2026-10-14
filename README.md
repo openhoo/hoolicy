@@ -121,6 +121,13 @@ Reports: human text, JSON, SARIF 2.1.0, JUnit XML, GitHub step summaries, and Gi
 
 Options must precede positional arguments, for example `hoolicy explain --format json <rule-id>` and `hoolicy pack update --apply repository`. Use `hoolicy <command> --help` for available options.
 
+Policies can include structured `explanation` metadata with expectations,
+impact, ordered remediation steps, and documentation references. Text output
+groups guidance by rule and identifies each finding's blocking or accepted
+status; machine reports carry the same policy context. Read
+[policy explanations and operational diagnostics](docs/policy-explanations.md)
+or run [the deliberately failing example](examples/policy-explanations/).
+
 ### Choose a workflow
 
 | Goal | Start here | Next step |

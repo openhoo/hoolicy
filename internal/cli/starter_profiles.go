@@ -21,7 +21,8 @@ func stackStarterRules(profile string) []sdk.Rule {
 		result = append(result, sdk.Rule{
 			ID: id, Title: title, Description: description, Rationale: rationale,
 			Remediation: remediation, Severity: sdk.SeverityError, Kind: kind, Files: files, Spec: spec,
-			Exclude: []string{".hoolicy/vendor/**", "**/node_modules/**", "node_modules/**", "vendor/**", "dist/**", "build/**"},
+			Explanation: starterExplanation(id),
+			Exclude:     []string{".hoolicy/vendor/**", "**/node_modules/**", "node_modules/**", "vendor/**", "dist/**", "build/**"},
 		})
 	}
 	require := func(id, title, rationale, remediation string, files ...string) {
@@ -47,4 +48,25 @@ func stackStarterRules(profile string) []sdk.Rule {
 		require("service.runbook", "Service operating runbook is required", "Operators need discoverable recovery and deployment instructions.", "Add a reviewed RUNBOOK.md or docs/runbook.md covering operation and recovery.", "RUNBOOK.md", "docs/runbook.md")
 	}
 	return result
+}
+
+func starterExplanation(id string) *sdk.Explanation {
+	switch id {
+	case "repository.readme":
+		return &sdk.Explanation{Expectation: "README.md exists at the repository root and is included in the repository snapshot.", Impact: "Contributors cannot discover how to set up, use, or operate this project.", Steps: []string{"Add a README with the project's actual setup and usage instructions.", "Verify that Git includes the file and rerun hoolicy check."}}
+	case "repository.license":
+		return &sdk.Explanation{Expectation: "A root LICENSE or LICENSE.* file declares the project's approved license.", Impact: "Users cannot determine their rights to use or distribute the project.", Steps: []string{"Confirm the project's license with its owner.", "Add the approved license text and rerun hoolicy check."}}
+	case "repository.security-policy":
+		return &sdk.Explanation{Expectation: "A root SECURITY.md documents the supported versions and private vulnerability reporting path.", Impact: "Reporters may disclose vulnerabilities publicly or contact an unmonitored channel.", Steps: []string{"Confirm the maintained reporting channel and support scope.", "Document them in SECURITY.md and rerun hoolicy check."}}
+	case "repository.git-naming":
+		return &sdk.Explanation{Expectation: "Feature branches use a prefix such as feat/ or fix/ with a lowercase hyphenated name; commit subjects use Conventional Commits, for example feat: add policy explanations.", Impact: "History and automated release classification become inconsistent.", Steps: []string{"Identify whether the finding refers to a branch name or a commit subject.", "Correct that name using the configured convention; coordinate any changes to shared history.", "In detached CI checkouts, provide the source branch with --branch or HOOLICY_BRANCH."}}
+	case "supply-chain.approved-sources":
+		return &sdk.Explanation{Expectation: "Artifact hosts match the configured registry and package-source allowlists; strict and container-service profiles also require container digests.", Impact: "An unreviewed or mutable artifact source can change the code installed or deployed.", Steps: []string{"Locate the source declaration reported by the finding.", "Use a reviewed artifact from an approved host; where required, pin the image to its sha256 digest.", "If a new host is necessary, have its owner review the policy allowlist and rerun the check."}}
+	case "go.dependencies", "node.dependencies":
+		return &sdk.Explanation{Expectation: "Dependencies use reviewed sources and all locks required by this profile are committed.", Impact: "A clean checkout can install different dependency code or depend on local-only files.", Steps: []string{"Review the exact dependency or lock reported in the finding.", "Generate and commit the appropriate lock with the project's approved package tool, or replace the unreviewed dependency source.", "Rerun hoolicy check from the same repository."}}
+	case "service.runbook":
+		return &sdk.Explanation{Expectation: "RUNBOOK.md or docs/runbook.md is present with operating and recovery guidance.", Impact: "An operator has no discoverable recovery procedure during an incident.", Steps: []string{"Document deployment, health checks, rollback, and recovery with the service owner.", "Commit the runbook and rerun hoolicy check."}}
+	default:
+		return nil
+	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openhoo/hoolicy/internal/config"
+	"github.com/openhoo/hoolicy/internal/diagnostic"
 	"github.com/openhoo/hoolicy/internal/packs"
 	"github.com/openhoo/hoolicy/internal/repository"
 	"github.com/openhoo/hoolicy/internal/safepath"
@@ -138,15 +139,18 @@ func (e *Engine) Validate(project *config.Project) ([]sdk.Rule, error) {
 func (e *Engine) validateRules(project *config.Project) ([]sdk.Rule, error) {
 	rules, err := packs.Resolve(project, e.version)
 	if err != nil {
-		return nil, err
+		return nil, &diagnostic.OperationError{Phase: "pack-resolution", Cause: err}
 	}
 	for _, rule := range rules {
+		if problems := config.ValidateRule(rule); len(problems) > 0 {
+			return nil, &diagnostic.RuleError{Phase: "validation", Rule: rule, Cause: fmt.Errorf("%s", strings.Join(problems, "; "))}
+		}
 		kind, exists := e.registry.Kind(rule.Kind)
 		if !exists {
-			return nil, fmt.Errorf("rule %s uses unknown kind %s", rule.ID, rule.Kind)
+			return nil, &diagnostic.RuleError{Phase: "validation", Rule: rule, Cause: fmt.Errorf("rule %s uses unknown kind %s", rule.ID, rule.Kind)}
 		}
 		if err := kind.Validate(rule); err != nil {
-			return nil, err
+			return nil, &diagnostic.RuleError{Phase: "validation", Rule: rule, Cause: err}
 		}
 	}
 	return rules, nil
@@ -167,7 +171,16 @@ func (e *Engine) Check(ctx context.Context, project *config.Project, options Opt
 		if err := parent.Err(); err != nil {
 			result, resultErr = nil, err
 		} else if err := ctx.Err(); err != nil {
-			result, resultErr = nil, fmt.Errorf("total execution budget exceeded: %w", err)
+			result = nil
+			var ruleError *diagnostic.RuleError
+			if !errors.As(resultErr, &ruleError) {
+				phase := "evaluation"
+				var operationError *diagnostic.OperationError
+				if errors.As(resultErr, &operationError) {
+					phase = operationError.Phase
+				}
+				resultErr = &diagnostic.OperationError{Phase: phase, Cause: fmt.Errorf("total execution budget exceeded: %w", err)}
+			}
 		}
 	}()
 	// Ownership is checked against the snapshot used for evaluation. Avoid
@@ -191,17 +204,21 @@ func (e *Engine) Check(ctx context.Context, project *config.Project, options Opt
 	repoOptions.BaseSHA, repoOptions.MergeRequestTitle, repoOptions.Branch, repoOptions.GitContext = options.BaseSHA, options.MergeRequestTitle, options.Branch, options.GitContext
 	repo, err := repository.Open(project.Root, repoOptions)
 	if err != nil {
-		return nil, err
+		return nil, &diagnostic.OperationError{Phase: "input", Cause: err}
 	}
 	findings, metrics, err := e.evaluate(ctx, project, rules, repo, now, digest)
 	if err != nil {
 		return nil, err
 	}
 	findings, waivers := applyWaivers(project, now, findings)
+	gitContext := repo.Git()
+	if gitContext.CommitSubjects == nil {
+		gitContext.CommitSubjects = []sdk.Commit{}
+	}
 	report := &Report{
 		ReportVersion: 2, Tool: Tool{Name: "hoolicy", Version: options.ToolVersion},
 		Project: project.Project, GeneratedAt: now, ConfigDigest: digest, PolicyDigest: digest,
-		Git: repo.Git(), FailOn: project.FailOn, Findings: findings, Waivers: waivers, Metrics: metrics,
+		Git: gitContext, FailOn: project.FailOn, Findings: findings, Waivers: waivers, Metrics: metrics,
 	}
 	baseline, baselinePath, err := loadBaseline(project)
 	if err != nil {
@@ -291,7 +308,7 @@ func (e *Engine) evaluate(ctx context.Context, project *config.Project, rules []
 			if len(rule.Files) > 0 {
 				matched, matchErr := scope.repository.Match(rule.Files, rule.Exclude)
 				if matchErr != nil {
-					return nil, metrics, matchErr
+					return nil, metrics, &diagnostic.RuleError{Phase: "input", Rule: rule, Workspace: scope.name, Cause: matchErr}
 				}
 				inputs = len(matched)
 			}
@@ -319,12 +336,16 @@ func (e *Engine) evaluate(ctx context.Context, project *config.Project, rules []
 				cancelRule()
 				metrics.Rules = append(metrics.Rules, RuleMetric{RuleID: rule.ID, Workspace: scope.name, Inputs: inputs, DurationMilliseconds: duration.Milliseconds()})
 				if err := ctx.Err(); err != nil {
-					return nil, metrics, err
+					cause := err
+					if errors.Is(err, context.DeadlineExceeded) {
+						cause = fmt.Errorf("total execution budget exceeded: %w", err)
+					}
+					return nil, metrics, &diagnostic.RuleError{Phase: "evaluation", Rule: rule, Workspace: scope.name, Cause: cause}
 				}
 				if errors.Is(totalContext.Err(), context.DeadlineExceeded) {
-					return nil, metrics, fmt.Errorf("total execution budget exceeded: %w", totalContext.Err())
+					return nil, metrics, &diagnostic.RuleError{Phase: "evaluation", Rule: rule, Workspace: scope.name, Cause: fmt.Errorf("total execution budget exceeded: %w", totalContext.Err())}
 				}
-				return nil, metrics, fmt.Errorf("rule %s exceeded execution budget %s", rule.ID, ruleLimit)
+				return nil, metrics, &diagnostic.RuleError{Phase: "evaluation", Rule: rule, Workspace: scope.name, Cause: fmt.Errorf("rule %s exceeded execution budget %s: %w", rule.ID, ruleLimit, context.DeadlineExceeded)}
 			}
 			ruleContextErr := ruleContext.Err()
 			cancelRule()
@@ -334,14 +355,14 @@ func (e *Engine) evaluate(ctx context.Context, project *config.Project, rules []
 			metrics.InputCacheHits += inputCacheHits
 			metrics.ParseCacheHits += ruleMetrics.ParseCacheHits
 			if evalErr != nil {
-				return nil, metrics, fmt.Errorf("rule %s: %w", rule.ID, evalErr)
+				return nil, metrics, &diagnostic.RuleError{Phase: "evaluation", Rule: rule, Workspace: scope.name, Cause: evalErr}
 			}
 			if duration > ruleLimit || ruleContextErr != nil {
-				return nil, metrics, fmt.Errorf("rule %s exceeded execution budget %s", rule.ID, ruleLimit)
+				return nil, metrics, &diagnostic.RuleError{Phase: "evaluation", Rule: rule, Workspace: scope.name, Cause: fmt.Errorf("rule %s exceeded execution budget %s: %w", rule.ID, ruleLimit, context.DeadlineExceeded)}
 			}
 			for index := range result {
 				if err := result[index].Validate(); err != nil {
-					return nil, metrics, fmt.Errorf("rule %s returned invalid finding %d: %w", rule.ID, index, err)
+					return nil, metrics, &diagnostic.RuleError{Phase: "finding", Rule: rule, Workspace: scope.name, Cause: fmt.Errorf("rule %s returned invalid finding %d: %w", rule.ID, index, err)}
 				}
 				if scope.global && len(project.Workspaces) > 0 {
 					result[index].Workspace, result[index].Owner = routeGlobalFinding(project, result[index].Location.Path)
@@ -352,7 +373,7 @@ func (e *Engine) evaluate(ctx context.Context, project *config.Project, rules []
 				result[index].Finalize(rule)
 				findings = append(findings, result[index])
 				if len(findings) > project.Budgets.MaximumFindings {
-					return nil, metrics, fmt.Errorf("resource budget exceeded: findings exceed maximum %d", project.Budgets.MaximumFindings)
+					return nil, metrics, &diagnostic.RuleError{Phase: "finding", Rule: rule, Workspace: scope.name, Cause: fmt.Errorf("resource budget exceeded: findings exceed maximum %d", project.Budgets.MaximumFindings)}
 				}
 			}
 		}

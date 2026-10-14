@@ -85,7 +85,8 @@
         "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "policyDigest": { "$ref": "#/$defs/sha256" },
         "findingDigest": { "$ref": "#/$defs/sha256" }, "state": { "enum": ["new", "existing", "waived"] },
         "stateSource": { "type": "string" }, "controls": { "type": "array", "items": { "$ref": "#/$defs/control" } }, "pack": { "type": "string" },
-        "waived": { "type": "boolean" }, "waiverId": { "type": "string" }, "fix": { "$ref": "#/$defs/fix" }, "properties": { "type": "object" }
+        "waived": { "type": "boolean" }, "waiverId": { "type": "string" }, "fix": { "$ref": "#/$defs/fix" }, "properties": { "type": "object" },
+        "policy": { "$ref": "policy-context.schema.json" }
       },
       "additionalProperties": false
     },

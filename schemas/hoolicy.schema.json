@@ -100,6 +100,7 @@
         "description": { "type": "string", "minLength": 1 },
         "rationale": { "type": "string", "minLength": 1 },
         "remediation": { "type": "string", "minLength": 1 },
+        "explanation": { "$ref": "rule-explanation.schema.json" },
         "severity": { "enum": ["info", "warning", "error"] },
         "kind": { "$ref": "#/$defs/kind" },
         "files": { "type": "array", "items": { "type": "string", "minLength": 1 } },

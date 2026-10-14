@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/openhoo/hoolicy/main/schemas/diagnostic.schema.json",
+  "title": "Hoolicy operational diagnostic",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "diagnosticVersion",
+    "error"
+  ],
+  "properties": {
+    "diagnosticVersion": {
+      "const": 1
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "phase",
+        "message",
+        "exitCode"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "ruleId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        },
+        "pack": {
+          "type": "string"
+        },
+        "remediation": {
+          "type": "string"
+        },
+        "exitCode": {
+          "const": 2
+        },
+        "policy": {
+          "$ref": "policy-context.schema.json"
+        }
+      }
+    }
+  }
+}
