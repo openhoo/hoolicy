@@ -106,7 +106,7 @@ jobs:
           format: table
           output: ""
       - name: Analyze with Hoonarqube
-        uses: openhoo/hoonarqube/actions/analyze@03b34bc8957995959d43531e82130a2c95bf01fa # v0.3.1
+        uses: openhoo/hoonarqube/actions/analyze@56279c1dd2d7af78571ad1e33e2079077e60759f # v0.11.1
         with:
           version: 0.3.1
           paths: |
