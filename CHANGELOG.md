@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1 (2026-10-15)
+
+### Performance
+
+- **policytest:** avoid per-case Git probing and pack re-instantiation (#52) (3ecc9b8)
+
 ## 0.7.0 (2026-10-14)
 
 ### Features
