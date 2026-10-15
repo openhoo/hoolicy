@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	git "github.com/go-git/go-git/v5"
@@ -65,14 +66,19 @@ func (o Options) checkSize(path string, size int64) error {
 	return o.context().Err()
 }
 
-func (o Options) readFile(path string, reader io.Reader) ([]byte, error) {
+// readFile reads reader within the document budget. size is the metadata
+// size that was already checked against the budget; it sizes the buffer so a
+// file is usually read with one call plus EOF instead of a growing buffer.
+func (o Options) readFile(path string, reader io.Reader, size int64) ([]byte, error) {
 	if o.MaximumDocumentBytes > 0 && o.MaximumDocumentBytes < int64(^uint64(0)>>1) {
 		reader = io.LimitReader(reader, o.MaximumDocumentBytes+1)
+		size = min(size, o.MaximumDocumentBytes)
 	}
-	data, err := io.ReadAll(reader)
-	if err != nil {
+	buffer := bytes.NewBuffer(make([]byte, 0, max(size, 0)+bytes.MinRead))
+	if _, err := buffer.ReadFrom(reader); err != nil {
 		return nil, err
 	}
+	data := buffer.Bytes()
 	if err := o.checkSize(path, int64(len(data))); err != nil {
 		return nil, err
 	}
@@ -194,7 +200,38 @@ func Open(root string, options Options) (*Repository, error) {
 	if err != nil {
 		return nil, err
 	}
+	var inspection chan gitInspection
+	cancelGit := func() {}
+	if options.GitContext == nil {
+		// Git status and the snapshot are both latency-bound on network and
+		// virtual-machine file systems, so inspect Git while reading files.
+		gitOptions := options
+		var gitCtx context.Context
+		gitCtx, cancelGit = context.WithCancel(options.context())
+		gitOptions.Context = gitCtx
+		inspection = make(chan gitInspection, 1)
+		go func() {
+			inspection <- inspectGitCommand(absolute, gitOptions)
+		}()
+	}
+	defer cancelGit()
 	files, err := discoverFiles(absolute, options)
+	if err != nil {
+		// The snapshot error takes precedence; stop Git instead of waiting.
+		cancelGit()
+	}
+	var inspected gitInspection
+	if inspection != nil {
+		inspected = <-inspection
+	} else {
+		inspected.context = *options.GitContext
+	}
+	if err != nil {
+		return nil, err
+	}
+	// The go-git fallback cannot be cancelled, so it only runs after the
+	// snapshot succeeded, matching the previous sequential behavior.
+	gitContext, err := inspected.complete(absolute, options)
 	if err != nil {
 		return nil, err
 	}
@@ -202,17 +239,25 @@ func Open(root string, options Options) (*Repository, error) {
 	for _, file := range files {
 		byPath[file.Path] = file
 	}
-	repository := &Repository{root: absolute, files: files, byPath: byPath}
-	if options.GitContext != nil {
-		repository.git = *options.GitContext
-	} else {
-		gitContext, gitErr := inspectGit(absolute, options)
-		if gitErr != nil {
-			return nil, gitErr
-		}
-		repository.git = gitContext
+	return &Repository{root: absolute, files: files, byPath: byPath, git: gitContext}, nil
+}
+
+// gitInspection holds the cancellable Git CLI result. commandErr marks a CLI
+// failure whose go-git fallback has not run yet.
+type gitInspection struct {
+	context    sdk.GitContext
+	err        error
+	commandErr error
+}
+
+func (inspection gitInspection) complete(root string, options Options) (sdk.GitContext, error) {
+	if inspection.err != nil {
+		return sdk.GitContext{}, inspection.err
 	}
-	return repository, nil
+	if inspection.commandErr == nil {
+		return inspection.context, nil
+	}
+	return inspectGitFallback(root, options, inspection.commandErr)
 }
 
 // OpenRevision creates a read-only full-repository snapshot from one Git
@@ -289,7 +334,7 @@ func OpenRevision(root, revision string, options Options) (*Repository, error) {
 		if err != nil {
 			return err
 		}
-		contents, readErr := options.readFile(path, reader)
+		contents, readErr := options.readFile(path, reader, file.Size)
 		if err := errors.Join(readErr, reader.Close()); err != nil {
 			return err
 		}
@@ -369,68 +414,136 @@ func Subset(base sdk.Repository, patterns []string) (*Repository, error) {
 	return &Repository{root: base.Root(), files: files, byPath: byPath, git: base.Git()}, nil
 }
 
+// snapshotWorkers bounds concurrent metadata and content reads of a worktree
+// snapshot. The snapshot is latency-bound on network and virtual-machine file
+// systems; the file and document budgets still bound retained memory.
+const snapshotWorkers = 16
+
+type snapshotCandidate struct {
+	path     string
+	absolute string
+	info     os.FileInfo
+	err      error
+}
+
 func discoverFiles(root string, options Options) ([]sdk.File, error) {
 	paths, err := listFiles(root, options)
 	if err != nil {
 		return nil, err
 	}
 	sort.Strings(paths)
-	capacity := len(paths)
-	if options.MaximumFiles > 0 && capacity > options.MaximumFiles {
-		capacity = options.MaximumFiles
+	resolver := safepath.NewResolver(root)
+	candidates := make([]snapshotCandidate, len(paths))
+	if err := forEachIndex(options.context(), len(paths), func(index int) {
+		candidates[index] = inspectSnapshotPath(resolver, paths[index])
+	}); err != nil {
+		return nil, err
 	}
-	files := make([]sdk.File, 0, capacity)
-	for _, path := range paths {
-		if err := options.context().Err(); err != nil {
-			return nil, err
+	// Apply budgets in path order as a sequential scan would, so the file
+	// limit and the first reported error stay deterministic. Files after the
+	// first failure are never read.
+	var selected []snapshotCandidate
+	var stopErr error
+	for _, candidate := range candidates {
+		if candidate.err != nil {
+			stopErr = candidate.err
+			break
 		}
-		if path == ".git" || strings.HasPrefix(path, ".git/") || strings.HasPrefix(path, ".hoolicy/vendor/") {
+		if candidate.info == nil {
 			continue
 		}
-		_, absolute, err := safePath(root, path)
-		if errors.Is(err, safepath.ErrSymlink) || errors.Is(err, os.ErrNotExist) {
-			continue
+		if stopErr = options.checkFileLimit(len(selected) + 1); stopErr != nil {
+			break
 		}
+		if stopErr = options.checkSize(candidate.path, candidate.info.Size()); stopErr != nil {
+			break
+		}
+		selected = append(selected, candidate)
+	}
+	files := make([]sdk.File, len(selected))
+	readErrs := make([]error, len(selected))
+	if err := forEachIndex(options.context(), len(selected), func(index int) {
+		files[index], readErrs[index] = readSnapshotFile(selected[index], options)
+	}); err != nil {
+		return nil, err
+	}
+	for _, err := range readErrs {
 		if err != nil {
 			return nil, err
 		}
-		info, err := os.Lstat(absolute)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-			continue
-		}
-		if err := options.checkFileLimit(len(files) + 1); err != nil {
-			return nil, err
-		}
-		if err := options.checkSize(path, info.Size()); err != nil {
-			return nil, err
-		}
-		file, err := os.Open(absolute)
-		if err != nil {
-			return nil, err
-		}
-		opened, statErr := file.Stat()
-		if statErr == nil && (!opened.Mode().IsRegular() || !os.SameFile(info, opened)) {
-			statErr = fmt.Errorf("repository file changed while opening: %s", path)
-		}
-		if statErr == nil {
-			statErr = options.checkSize(path, opened.Size())
-		}
-		if statErr != nil {
-			return nil, errors.Join(statErr, file.Close())
-		}
-		data, readErr := options.readFile(path, file)
-		if err := errors.Join(readErr, file.Close()); err != nil {
-			return nil, err
-		}
-		files = append(files, sdk.File{Path: filepath.ToSlash(path), Mode: info.Mode(), Data: data})
+	}
+	if stopErr != nil {
+		return nil, stopErr
 	}
 	return files, nil
+}
+
+func inspectSnapshotPath(resolver *safepath.Resolver, path string) snapshotCandidate {
+	skipped := snapshotCandidate{path: path}
+	if path == ".git" || strings.HasPrefix(path, ".git/") || strings.HasPrefix(path, ".hoolicy/vendor/") {
+		return skipped
+	}
+	_, absolute, info, err := resolver.Existing(path)
+	if errors.Is(err, safepath.ErrSymlink) || errors.Is(err, os.ErrNotExist) {
+		return skipped
+	}
+	if err != nil {
+		return snapshotCandidate{path: path, err: err}
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return skipped
+	}
+	return snapshotCandidate{path: path, absolute: absolute, info: info}
+}
+
+func readSnapshotFile(candidate snapshotCandidate, options Options) (sdk.File, error) {
+	if err := options.context().Err(); err != nil {
+		return sdk.File{}, err
+	}
+	file, err := os.Open(candidate.absolute)
+	if err != nil {
+		return sdk.File{}, err
+	}
+	opened, statErr := file.Stat()
+	if statErr == nil && (!opened.Mode().IsRegular() || !os.SameFile(candidate.info, opened)) {
+		statErr = fmt.Errorf("repository file changed while opening: %s", candidate.path)
+	}
+	if statErr == nil {
+		statErr = options.checkSize(candidate.path, opened.Size())
+	}
+	if statErr != nil {
+		return sdk.File{}, errors.Join(statErr, file.Close())
+	}
+	data, readErr := options.readFile(candidate.path, file, opened.Size())
+	if err := errors.Join(readErr, file.Close()); err != nil {
+		return sdk.File{}, err
+	}
+	return sdk.File{Path: filepath.ToSlash(candidate.path), Mode: candidate.info.Mode(), Data: data}, nil
+}
+
+// forEachIndex runs work for every index below count on at most
+// snapshotWorkers goroutines. It stops handing out work after cancellation
+// and then reports the context error.
+func forEachIndex(ctx context.Context, count int, work func(int)) error {
+	var next, completed atomic.Int64
+	var group sync.WaitGroup
+	for range min(snapshotWorkers, count) {
+		group.Go(func() {
+			for ctx.Err() == nil {
+				index := int(next.Add(1) - 1)
+				if index >= count {
+					return
+				}
+				work(index)
+				completed.Add(1)
+			}
+		})
+	}
+	group.Wait()
+	if completed.Load() < int64(count) {
+		return ctx.Err()
+	}
+	return nil
 }
 
 func listFiles(root string, options Options) ([]string, error) {
@@ -718,15 +831,28 @@ func verifyReadableRepositoryExclude(gitRoot string) error {
 }
 
 func inspectGit(root string, options Options) (sdk.GitContext, error) {
+	return inspectGitCommand(root, options).complete(root, options)
+}
+
+// inspectGitCommand validates caller-supplied revisions and runs only the
+// cancellable Git CLI.
+func inspectGitCommand(root string, options Options) gitInspection {
 	if options.BaseSHA != "" && (strings.TrimSpace(options.BaseSHA) != options.BaseSHA || strings.HasPrefix(options.BaseSHA, "-") || strings.ContainsAny(options.BaseSHA, "\x00\r\n")) {
-		return sdk.GitContext{}, fmt.Errorf("inspect Git repository: unsafe base revision %q", options.BaseSHA)
+		return gitInspection{err: fmt.Errorf("inspect Git repository: unsafe base revision %q", options.BaseSHA)}
 	}
 	if options.Branch != "" && (strings.TrimSpace(options.Branch) != options.Branch || strings.HasPrefix(options.Branch, "-") || strings.ContainsAny(options.Branch, "\x00\r\n")) {
-		return sdk.GitContext{}, fmt.Errorf("inspect Git repository: unsafe branch %q", options.Branch)
+		return gitInspection{err: fmt.Errorf("inspect Git repository: unsafe branch %q", options.Branch)}
 	}
 	context, err := inspectGitCLI(root, options)
-	if err == nil {
-		return context, nil
+	if err != nil {
+		return gitInspection{commandErr: err}
+	}
+	return gitInspection{context: context}
+}
+
+func inspectGitFallback(root string, options Options, err error) (sdk.GitContext, error) {
+	if ctxErr := options.context().Err(); ctxErr != nil {
+		return sdk.GitContext{}, ctxErr
 	}
 	context, fallbackErr := inspectGitGo(root, options)
 	if fallbackErr == nil {
@@ -740,7 +866,7 @@ func inspectGit(root string, options Options) (sdk.GitContext, error) {
 
 func inspectGitCLI(root string, options Options) (sdk.GitContext, error) {
 	context := sdk.GitContext{MergeRequestTitle: options.MergeRequestTitle, Properties: make(map[string]any)}
-	status, err := gitOutput(root, "status", "--porcelain=v2", "--branch", "--untracked-files=normal")
+	status, err := gitOutput(options.context(), root, "status", "--porcelain=v2", "--branch", "--untracked-files=normal")
 	if err != nil {
 		return sdk.GitContext{}, err
 	}
@@ -764,13 +890,13 @@ func inspectGitCLI(root string, options Options) (sdk.GitContext, error) {
 		context.Branch = options.Branch
 	}
 	if options.BaseSHA != "" && context.Commit != "" {
-		output, err := gitOutput(root, "log", "--format=%H%x00%s", "-z", options.BaseSHA+".."+context.Commit)
+		output, err := gitOutput(options.context(), root, "log", "--format=%H%x00%s", "-z", options.BaseSHA+".."+context.Commit)
 		if err != nil {
 			return sdk.GitContext{}, fmt.Errorf("read commit range %s..%s: %w", options.BaseSHA, context.Commit, err)
 		}
 		context.CommitSubjects = parseGitLog(output)
 	} else if context.Commit != "" {
-		output, err := gitOutput(root, "log", "-1", "--format=%H%x00%s", "-z", "HEAD")
+		output, err := gitOutput(options.context(), root, "log", "-1", "--format=%H%x00%s", "-z", "HEAD")
 		if err != nil {
 			return sdk.GitContext{}, fmt.Errorf("read HEAD subject: %w", err)
 		}
@@ -931,9 +1057,11 @@ func parseGitLog(output string) []sdk.Commit {
 	return commits
 }
 
-func gitOutput(root string, args ...string) (string, error) {
-	commandArgs := append([]string{"-C", root}, args...)
-	output, err := exec.Command("git", commandArgs...).Output()
+// gitOutput runs a read-only Git command. --no-optional-locks keeps status
+// from refreshing the index, so cancellation cannot leave an index lock.
+func gitOutput(ctx context.Context, root string, args ...string) (string, error) {
+	commandArgs := append([]string{"--no-optional-locks", "-C", root}, args...)
+	output, err := exec.CommandContext(ctx, "git", commandArgs...).Output()
 	if err != nil {
 		return "", err
 	}
@@ -996,8 +1124,4 @@ func findGitRoot(root string) (string, bool) {
 		}
 		current = parent
 	}
-}
-
-func safePath(root, path string) (string, string, error) {
-	return safepath.Existing(root, path)
 }

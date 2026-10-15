@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openhoo/hoolicy/sdk"
 )
@@ -64,6 +67,90 @@ func TestSnapshotRejectsSparseOversizedFileBeforeReading(t *testing.T) {
 	if _, err := Open(root, Options{MaximumDocumentBytes: 1024}); err == nil || !strings.Contains(err.Error(), "large.bin") {
 		t.Fatalf("oversized file accepted: %v", err)
 	}
+}
+
+func TestWorktreeSnapshotKeepsPathOrderAcrossConcurrentReads(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := t.TempDir()
+	var want []string
+	for index := range 120 {
+		path := fmt.Sprintf("d%d/e%d/f%03d.txt", index%3, index%7, index)
+		absolute := filepath.Join(root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(absolute, []byte(path), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, path)
+	}
+	slices.Sort(want)
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "d1", "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(root, "d2", "secret.txt")); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := Open(root, Options{DirectoryOnly: true, MaximumFiles: len(want)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, file := range repo.AllFiles() {
+		if string(file.Data) != file.Path || !file.Mode.IsRegular() {
+			t.Fatalf("snapshot entry %q has data %q and mode %v", file.Path, file.Data, file.Mode)
+		}
+		got = append(got, file.Path)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("snapshot paths = %v, want %v", got, want)
+	}
+}
+
+func TestWorktreeSnapshotReportsFirstFailureInPathOrder(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("requires POSIX permissions that apply to the current user")
+	}
+	write := func(t *testing.T, root, path, content string, mode os.FileMode) {
+		t.Helper()
+		absolute := filepath.Join(root, path)
+		if err := os.WriteFile(absolute, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(absolute, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("earlier unreadable file wins over later budget", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, root, "a.txt", "1", 0)
+		write(t, root, "b.txt", "too large", 0o644)
+		if _, err := Open(root, Options{DirectoryOnly: true, MaximumDocumentBytes: 4}); !errors.Is(err, fs.ErrPermission) {
+			t.Fatalf("expected permission error of a.txt, got %v", err)
+		}
+	})
+	t.Run("earlier budget wins over later unreadable file", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, root, "a.txt", "too large", 0o644)
+		write(t, root, "b.txt", "1", 0)
+		if _, err := Open(root, Options{DirectoryOnly: true, MaximumDocumentBytes: 4}); err == nil || !strings.Contains(err.Error(), "resource budget exceeded: a.txt") {
+			t.Fatalf("expected size budget error of a.txt, got %v", err)
+		}
+	})
+	t.Run("file limit stops before reading later files", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, root, "a.txt", "1", 0o644)
+		write(t, root, "b.txt", "2", 0o644)
+		write(t, root, "c.txt", "3", 0)
+		if _, err := Open(root, Options{DirectoryOnly: true, MaximumFiles: 1}); err == nil || !strings.Contains(err.Error(), "files exceed maximum 1") {
+			t.Fatalf("expected file budget error, got %v", err)
+		}
+	})
 }
 
 func TestSnapshotDeduplicatesUnmergedIndexStages(t *testing.T) {
@@ -506,6 +593,102 @@ func TestRepositoryRejectsInvalidBaseRevision(t *testing.T) {
 	}
 	if _, err := Open(root, Options{BaseSHA: "--all"}); err == nil || !strings.Contains(err.Error(), "unsafe base revision") {
 		t.Fatalf("expected option-like base rejection, got %v", err)
+	}
+	// Git is inspected while the snapshot is read; a snapshot failure still
+	// takes precedence over a Git failure.
+	if _, err := Open(root, Options{BaseSHA: "not-a-revision", MaximumDocumentBytes: 1}); err == nil || !strings.Contains(err.Error(), "resource budget exceeded: tracked.txt") {
+		t.Fatalf("expected snapshot budget error before Git error, got %v", err)
+	}
+}
+
+func TestOpenInspectsGitAlongsideSnapshot(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Hoolicy Test")
+	runGit(t, root, "config", "user.email", "hoolicy@example.com")
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("tracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-qm", "test: inspect")
+	head := runGit(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "untracked.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := Open(root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitContext := repo.Git()
+	if gitContext.Commit != head || gitContext.Branch != "main" || !gitContext.Dirty || len(gitContext.CommitSubjects) != 1 || gitContext.CommitSubjects[0].Subject != "test: inspect" {
+		t.Fatalf("unexpected Git context: %#v", gitContext)
+	}
+	if len(repo.AllFiles()) != 2 {
+		t.Fatalf("unexpected snapshot: %#v", repo.AllFiles())
+	}
+	provided := sdk.GitContext{Commit: "provided"}
+	repo, err = Open(root, Options{GitContext: &provided})
+	if err != nil || repo.Git().Commit != "provided" {
+		t.Fatalf("provided Git context not used: %#v, %v", repo.Git(), err)
+	}
+}
+
+func TestSnapshotFailureCancelsConcurrentGitInspection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX executable to simulate blocked Git status")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("too large"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	script := "#!/bin/sh\nfor argument in \"$@\"; do\n  case \"$argument\" in\n    ls-files) printf 'a.txt\\0'; exit 0 ;;\n    status) exec /bin/sleep 5 ;;\n  esac\ndone\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	started := time.Now()
+	if _, err := Open(root, Options{MaximumDocumentBytes: 4}); err == nil || !strings.Contains(err.Error(), "resource budget exceeded: a.txt") {
+		t.Fatalf("expected snapshot budget error, got %v", err)
+	}
+	if duration := time.Since(started); duration > 2*time.Second {
+		t.Fatalf("snapshot failure waited %s for Git status", duration)
+	}
+}
+
+func TestConcurrentGitInspectionDefersGoGitFallback(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("too large"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "")
+	// The go-git fallback cannot be cancelled, so the concurrent phase runs
+	// only the Git CLI and leaves the fallback to a successful snapshot.
+	inspection := inspectGitCommand(root, Options{})
+	if inspection.err != nil || inspection.commandErr == nil {
+		t.Fatalf("expected pending fallback without Git CLI, got %#v", inspection)
+	}
+	gitContext, err := inspection.complete(root, Options{})
+	if err != nil || gitContext.Branch != "main" || !gitContext.Dirty {
+		t.Fatalf("unexpected fallback Git context: %#v, %v", gitContext, err)
+	}
+	if _, err := Open(root, Options{MaximumDocumentBytes: 4}); err == nil || !strings.Contains(err.Error(), "resource budget exceeded: a.txt") {
+		t.Fatalf("expected snapshot budget error, got %v", err)
+	}
+}
+
+func TestReadFileDoesNotTrustSizeHint(t *testing.T) {
+	t.Parallel()
+	for _, hint := range []int64{-1, 0, 3, 1 << 20} {
+		data, err := Options{}.readFile("file.txt", strings.NewReader("content"), hint)
+		if err != nil || string(data) != "content" {
+			t.Fatalf("hint %d: read %q, %v", hint, data, err)
+		}
+		if _, err := (Options{MaximumDocumentBytes: 4}).readFile("file.txt", strings.NewReader("content"), hint); err == nil || !strings.Contains(err.Error(), "resource budget exceeded: file.txt") {
+			t.Fatalf("hint %d bypassed the document budget: %v", hint, err)
+		}
 	}
 }
 
