@@ -337,6 +337,48 @@ func TestRepositoryUsesPureGoGitFallback(t *testing.T) {
 	}
 }
 
+func TestDirectoryOnlySnapshotIgnoresEnclosingGitWorktree(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("*.secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(root, "fixture")
+	if err := os.MkdirAll(filepath.Join(fixture, "dist"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{"config.secret": "fixture\n", "kept.txt": "kept\n", "dist/out.txt": "built\n"} {
+		if err := os.WriteFile(filepath.Join(fixture, filepath.FromSlash(name)), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths := func(repo *Repository) []string {
+		result := make([]string, 0, len(repo.AllFiles()))
+		for _, file := range repo.AllFiles() {
+			result = append(result, file.Path)
+		}
+		return result
+	}
+	gitAware, err := Open(fixture, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := paths(gitAware); slices.Contains(got, "config.secret") || !slices.Contains(got, "kept.txt") {
+		t.Fatalf("Git-aware snapshot must apply enclosing ignore rules: %#v", got)
+	}
+	gitContext := sdk.GitContext{Branch: "main"}
+	directory, err := Open(fixture, Options{DirectoryOnly: true, GitContext: &gitContext})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := paths(directory); !slices.Equal(got, []string{"config.secret", "kept.txt"}) {
+		t.Fatalf("directory snapshot must contain exactly the plain fixture files: %#v", got)
+	}
+	if directory.Git().Branch != "main" {
+		t.Fatalf("directory snapshot must keep the supplied Git context: %#v", directory.Git())
+	}
+}
+
 func TestRepositoryPureGoFallbackSupportsUnbornRepository(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init", "-b", "main")

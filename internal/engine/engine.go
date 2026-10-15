@@ -28,6 +28,9 @@ type Options struct {
 	Branch            string
 	ToolVersion       string
 	GitContext        *sdk.GitContext
+	// DirectoryOnly evaluates the project root as a plain directory snapshot
+	// without Git file discovery. It is intended for synthetic fixtures.
+	DirectoryOnly bool
 }
 
 type Report struct {
@@ -202,6 +205,7 @@ func (e *Engine) Check(ctx context.Context, project *config.Project, options Opt
 	}
 	repoOptions := snapshotOptions(ctx, project)
 	repoOptions.BaseSHA, repoOptions.MergeRequestTitle, repoOptions.Branch, repoOptions.GitContext = options.BaseSHA, options.MergeRequestTitle, options.Branch, options.GitContext
+	repoOptions.DirectoryOnly = options.DirectoryOnly
 	repo, err := repository.Open(project.Root, repoOptions)
 	if err != nil {
 		return nil, &diagnostic.OperationError{Phase: "input", Cause: err}
