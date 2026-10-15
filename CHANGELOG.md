@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2 (2026-10-15)
+
+### Performance
+
+- **repository:** read worktree snapshots concurrently (#54) (b8f243f)
+
 ## 0.7.1 (2026-10-15)
 
 ### Performance
