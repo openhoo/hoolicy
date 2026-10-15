@@ -3,7 +3,9 @@ package policytest
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -74,6 +76,54 @@ cases:
 	}
 	result := Run(context.Background(), root, registry)
 	if result.Passed != 3 || len(result.Errors) != 0 {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestFixturesIgnoreEnclosingGitWorktreeOfTemporaryDirectory(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required to create the enclosing worktree")
+	}
+	worktree := t.TempDir()
+	command := exec.Command("git", "-C", worktree, "init", "-b", "main")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	writePolicyTestFile(t, filepath.Join(worktree, ".gitignore"), "*.secret\n")
+	temporary := filepath.Join(worktree, "tmp")
+	if err := os.MkdirAll(temporary, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, temporary)
+	}
+	pack := t.TempDir()
+	writePolicyTestFile(t, filepath.Join(pack, "pack.yaml"), `version: 1
+name: demo
+release: 1.0.0
+description: Demo pack.
+rules:
+  - id: demo.config
+    title: Config exists
+    description: Requires a fixture file that an enclosing worktree ignores.
+    rationale: Fixture inputs must not depend on the temporary directory.
+    remediation: Add config.secret.
+    severity: error
+    kind: files
+    files: [config.secret]
+    spec: {mode: require, message: config missing}
+`)
+	writePolicyTestFile(t, filepath.Join(pack, "tests", "cases.yaml"), `version: 1
+cases:
+  - {name: present, rule: demo.config, outcome: pass, files: {config.secret: ok}}
+  - {name: absent, rule: demo.config, outcome: fail, files: {}}
+`)
+	registry := sdk.NewRegistry()
+	if err := rules.RegisterCore(registry); err != nil {
+		t.Fatal(err)
+	}
+	result := Run(context.Background(), pack, registry)
+	if result.Passed != 2 || len(result.Errors) != 0 {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 }
@@ -342,5 +392,52 @@ cases:
 	}
 	if result := Run(context.Background(), root, registry); len(result.Errors) > 0 || result.Passed != 2 {
 		t.Fatalf("pack parameters unavailable in fixtures: %#v", result)
+	}
+}
+
+// Instantiations are reused per effective parameter set; overrides and their
+// errors must stay bound to the cases that declare them.
+func TestFixtureParameterOverridesInstantiateIndependently(t *testing.T) {
+	root := t.TempDir()
+	writePolicyTestFile(t, filepath.Join(root, "pack.yaml"), `version: 1
+name: probe
+release: 0.1.0
+description: Probe pack parameters in fixtures.
+maturity: experimental
+owner: openhoo/hoolicy-maintainers
+compatibility: {config: '>=1 <2', hoolicy: '>=0.0.0 <2.0.0'}
+parameters:
+  minimum: {type: number, default: 2, description: Minimum.}
+rules:
+  - id: probe.minimum
+    title: Minimum
+    description: Reads pack parameters.
+    rationale: Fixtures must exercise pack parameters.
+    remediation: Raise the value.
+    severity: error
+    kind: structured.cel
+    files: [a.json]
+    spec:
+      format: json
+      expression: documents.all(d, d.data.value >= pack.minimum)
+      message: Value below pack minimum
+`)
+	writePolicyTestFile(t, filepath.Join(root, "tests", "cases.yaml"), `version: 1
+cases:
+  - {name: default passes, rule: probe.minimum, outcome: pass, files: {a.json: '{"value": 3}'}}
+  - {name: override fails, rule: probe.minimum, outcome: fail, parameters: {minimum: 5}, files: {a.json: '{"value": 3}'}}
+  - {name: string override is rejected, rule: probe.minimum, outcome: pass, parameters: {minimum: five}, files: {a.json: '{"value": 3}'}}
+  - {name: default after override passes, rule: probe.minimum, outcome: pass, files: {a.json: '{"value": 3}'}}
+  - {name: repeated override passes, rule: probe.minimum, outcome: pass, parameters: {minimum: 5}, files: {a.json: '{"value": 5}'}}
+  - {name: default after error fails, rule: probe.minimum, outcome: fail, files: {a.json: '{"value": 1}'}}
+`)
+	registry := sdk.NewRegistry()
+	if err := rules.RegisterCore(registry); err != nil {
+		t.Fatal(err)
+	}
+	result := Run(context.Background(), root, registry)
+	want := []string{"string override is rejected: pack probe: parameter minimum must be number"}
+	if result.Passed != 5 || !slices.Equal(result.Errors, want) {
+		t.Fatalf("unexpected result: %#v", result)
 	}
 }

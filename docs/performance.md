@@ -35,6 +35,8 @@ The runtime image remains one layer. Local comparison on 2026-08-27 measured Hoo
 - Git branch, revision, and dirty state come from one porcelain-v2 status call. A check now uses three Git processes including file discovery, down from five.
 - The registered CEL rule kind shares one environment and a bounded 128-entry compiled-program cache. Validation and evaluation no longer compile the same expression twice.
 - Pack fixtures inject deterministic Git context instead of spawning five Git processes per case. This also keeps `hoolicy test` functional in the minimal image.
+- Fixture snapshots read their temporary directory directly instead of first probing Git file discovery, which spawned a failing Git process per case. Fixture inputs therefore no longer depend on ignore rules of a worktree that happens to contain the temporary directory.
+- Pack fixtures instantiate a pack once per distinct effective parameter set instead of once per case. Instantiation expands and statically checks every pack rule; a 626-case pack previously repeated this for each case.
 - Release builds omit development-only module metadata fallback, empty the Go build ID, disable VCS stamping, strip debug data, and retain normal compiler inlining.
 - Docker builds use a digest-pinned Go builder, persistent module/build caches, and narrow source copies. Runtime remains `scratch` and non-root.
 

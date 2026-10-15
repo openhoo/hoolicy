@@ -37,6 +37,11 @@ type Options struct {
 	Context              context.Context
 	MaximumFiles         int
 	MaximumDocumentBytes int64
+	// DirectoryOnly snapshots root as a plain directory without Git discovery.
+	// Policy fixtures are never Git worktrees; probing Git for each case only
+	// spawns a failing process and could otherwise apply ignore rules of an
+	// enclosing worktree that happens to contain the temporary directory.
+	DirectoryOnly bool
 }
 
 func (o Options) context() context.Context {
@@ -365,42 +370,9 @@ func Subset(base sdk.Repository, patterns []string) (*Repository, error) {
 }
 
 func discoverFiles(root string, options Options) ([]sdk.File, error) {
-	paths, gitErr := gitFileListContext(options.context(), root)
-	if gitErr != nil {
-		if err := options.context().Err(); err != nil {
-			return nil, err
-		}
-		paths, gitErr = goGitFileList(root)
-	}
-	if gitErr != nil {
-		if _, found := findGitRoot(root); found {
-			return nil, fmt.Errorf("enumerate Git repository files: %w", gitErr)
-		}
-		paths = nil
-		walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-			if err := options.context().Err(); err != nil {
-				return err
-			}
-			if err != nil {
-				return err
-			}
-			relative, relErr := filepath.Rel(root, path)
-			if relErr != nil {
-				return relErr
-			}
-			relative = filepath.ToSlash(relative)
-			if entry.IsDir() && (relative == ".git" || relative == ".hoolicy/vendor" || relative == ".hoolicy-cache" || relative == "dist" || relative == "bin") {
-				return filepath.SkipDir
-			}
-			if relative == "." || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-				return nil
-			}
-			paths = append(paths, relative)
-			return nil
-		})
-		if walkErr != nil {
-			return nil, walkErr
-		}
+	paths, err := listFiles(root, options)
+	if err != nil {
+		return nil, err
 	}
 	sort.Strings(paths)
 	capacity := len(paths)
@@ -459,6 +431,55 @@ func discoverFiles(root string, options Options) ([]sdk.File, error) {
 		files = append(files, sdk.File{Path: filepath.ToSlash(path), Mode: info.Mode(), Data: data})
 	}
 	return files, nil
+}
+
+func listFiles(root string, options Options) ([]string, error) {
+	if options.DirectoryOnly {
+		return walkFiles(root, options)
+	}
+	paths, gitErr := gitFileListContext(options.context(), root)
+	if gitErr != nil {
+		if err := options.context().Err(); err != nil {
+			return nil, err
+		}
+		paths, gitErr = goGitFileList(root)
+	}
+	if gitErr == nil {
+		return paths, nil
+	}
+	if _, found := findGitRoot(root); found {
+		return nil, fmt.Errorf("enumerate Git repository files: %w", gitErr)
+	}
+	return walkFiles(root, options)
+}
+
+func walkFiles(root string, options Options) ([]string, error) {
+	var paths []string
+	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err := options.context().Err(); err != nil {
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		relative = filepath.ToSlash(relative)
+		if entry.IsDir() && (relative == ".git" || relative == ".hoolicy/vendor" || relative == ".hoolicy-cache" || relative == "dist" || relative == "bin") {
+			return filepath.SkipDir
+		}
+		if relative == "." || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		paths = append(paths, relative)
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return paths, nil
 }
 
 func gitFileList(root string) ([]string, error) {

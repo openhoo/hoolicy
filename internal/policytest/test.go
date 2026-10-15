@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -97,11 +98,12 @@ func BuildSnapshot(ctx context.Context, packPath string, registry *sdk.Registry)
 		return nil, err
 	}
 	snapshot := &Snapshot{Version: 1, Pack: pack.Name, Release: pack.Release, Cases: make([]SnapshotCase, 0, len(tests.Cases))}
+	instantiated := &instantiations{pack: pack}
 	for _, testCase := range tests.Cases {
 		if err := validateCaseFixtures(testCase); err != nil {
 			return nil, fmt.Errorf("%s: %w", testCase.Name, err)
 		}
-		selected, err := instantiateRule(pack, merge(tests.Parameters, testCase.Parameters), testCase.Rule)
+		selected, err := instantiated.rule(merge(tests.Parameters, testCase.Parameters), testCase.Rule)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", testCase.Name, err)
 		}
@@ -156,6 +158,7 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 		knownRules[rule.ID] = true
 	}
 	caseNames := make(map[string]bool, len(tests.Cases))
+	instantiated := &instantiations{pack: pack}
 	for _, testCase := range tests.Cases {
 		if err := ctx.Err(); err != nil {
 			result.Errors = append(result.Errors, err.Error())
@@ -186,7 +189,7 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 		if testCase.Outcome != "error" {
 			coverage[testCase.Rule][testCase.Outcome] = true
 		}
-		selected, instantiateErr := instantiateRule(pack, merge(tests.Parameters, testCase.Parameters), testCase.Rule)
+		selected, instantiateErr := instantiated.rule(merge(tests.Parameters, testCase.Parameters), testCase.Rule)
 		if instantiateErr != nil {
 			result.Errors = append(result.Errors, testCase.Name+": "+instantiateErr.Error())
 			continue
@@ -206,8 +209,34 @@ func Run(ctx context.Context, packPath string, registry *sdk.Registry) Result {
 	return result
 }
 
-func instantiateRule(pack *config.Pack, parameters map[string]any, ruleID string) (sdk.Rule, error) {
-	rules, err := pack.Instantiate(parameters)
+// instantiations memoizes pack instantiation per distinct effective parameter
+// set. Instantiation expands and statically checks every rule of the pack, so
+// repeating it for each case dominated large fixture suites. reflect.DeepEqual
+// keeps differently typed values, such as int and float, distinct; values it
+// cannot equate are instantiated again rather than reused.
+type instantiations struct {
+	pack    *config.Pack
+	entries []instantiation
+}
+
+type instantiation struct {
+	parameters map[string]any
+	rules      []sdk.Rule
+	err        error
+}
+
+func (c *instantiations) rule(parameters map[string]any, ruleID string) (sdk.Rule, error) {
+	for _, entry := range c.entries {
+		if reflect.DeepEqual(entry.parameters, parameters) {
+			return selectRule(entry.rules, entry.err, ruleID)
+		}
+	}
+	rules, err := c.pack.Instantiate(parameters)
+	c.entries = append(c.entries, instantiation{parameters: parameters, rules: rules, err: err})
+	return selectRule(rules, err, ruleID)
+}
+
+func selectRule(rules []sdk.Rule, err error, ruleID string) (sdk.Rule, error) {
 	if err != nil {
 		return sdk.Rule{}, err
 	}
@@ -273,7 +302,7 @@ func runCase(ctx context.Context, rule sdk.Rule, testCase Case, registry *sdk.Re
 		return nil, err
 	}
 	report, err := engine.New(registry).Check(ctx, loaded, engine.Options{
-		Now: now, ToolVersion: "test", GitContext: &gitContext,
+		Now: now, ToolVersion: "test", GitContext: &gitContext, DirectoryOnly: true,
 	})
 	if err != nil {
 		return nil, err
@@ -414,7 +443,7 @@ func rerunWithFixtureWaiver(ctx context.Context, project *config.Project, rule s
 	if err := config.SaveWaivers(waiverPath, config.WaiverFile{Version: config.CurrentVersion, Waivers: waivers}); err != nil {
 		return nil, err
 	}
-	return engine.New(registry).Check(ctx, project, engine.Options{Now: now, ToolVersion: "test", GitContext: &gitContext})
+	return engine.New(registry).Check(ctx, project, engine.Options{Now: now, ToolVersion: "test", GitContext: &gitContext, DirectoryOnly: true})
 }
 
 func assertFindings(rule sdk.Rule, testCase Case, report *engine.Report) error {
