@@ -26,6 +26,8 @@ Repository reads and fixes reject absolute paths, traversal, symlinks, and non-r
 
 The system `git` executable is the fast path for file discovery, status, and commit metadata. Minimal images use a read-only built-in Git fallback for repository-local tracked, untracked, ignore, branch, commit, linked-worktree, and dirty-state inputs. If a bind-mounted Git index is unreadable, the fallback derives tracked paths from `HEAD`, adds non-ignored worktree files, and marks the repository dirty conservatively. If Git metadata exists but neither path can interpret it safely, evaluation fails closed instead of walking ignored content or silently skipping Git rules.
 
+Worktree snapshots inspect each directory component once per snapshot and read files with bounded concurrency while Git status runs alongside; file and document budgets and the first reported error still follow path order. Git inspection uses `--no-optional-locks`, so a check never refreshes or locks the index and can be cancelled safely; the uncancellable go-git fallback starts only after the snapshot succeeded.
+
 ## Evaluation model
 
 1. Locate one `hoolicy.yaml`, stopping at the Git root.
